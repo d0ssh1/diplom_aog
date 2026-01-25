@@ -380,7 +380,7 @@ class MeshGeneratorService:
         )
         
         # Фильтруем слишком маленькие контуры
-        min_area = 500
+        min_area = 50
         filtered_contours = [
             c for c in contours 
             if cv2.contourArea(c) > min_area

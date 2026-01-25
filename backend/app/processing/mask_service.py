@@ -90,13 +90,17 @@ class MaskService:
             morph = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel, iterations=2)
             
             # 6. Удаление мелкого шума (по площади контуров)
-            cnts, _ = cv2.findContours(morph, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            # 6. Удаление мелкого шума (по площади компонент)
+            # Используем connectedComponents вместо findContours, чтобы не заливать дырки внутри рамок
+            num_labels, labels, stats, centroids = cv2.connectedComponentsWithStats(morph, connectivity=8)
+            
             mask = np.zeros_like(morph)
             
-            for c in cnts:
-                area = cv2.contourArea(c)
-                if area > 100: # Фильтр мелких точек
-                    cv2.drawContours(mask, [c], -1, 255, -1)
+            # Label 0 is background (black). Start from 1.
+            for i in range(1, num_labels):
+                area = stats[i, cv2.CC_STAT_AREA]
+                if area > 50:
+                    mask[labels == i] = 255
 
             # 7. Сохранение
             # Используем тот же ID для маски, но сохраняем как PNG (маска всегда PNG)
