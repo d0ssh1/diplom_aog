@@ -2,7 +2,7 @@
 
 Система для построения 3D-моделей этажей зданий на основе планов эвакуации с функцией навигации.
 
-## 🏗️ Структура проекта
+## Структура проекта
 
 ```
 diplom_aog/
@@ -27,7 +27,7 @@ diplom_aog/
 └── README.md
 ```
 
-## 🚀 Быстрый старт
+## Быстрый старт
 
 ### Backend
 ```bash
@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-## 📚 Технологии
+## Технологии
 
 - **Backend**: Python 3.12, FastAPI, OpenCV, SQLAlchemy
 - **Frontend**: React, TypeScript, Three.js
