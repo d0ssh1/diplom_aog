@@ -154,7 +154,8 @@ async def calculate_mesh(
             status_display=status_display,
             created_at=reconstruction.created_at,
             created_by=reconstruction.created_by or 1,
-            url=mesh_url
+            url=mesh_url,
+            error_message=reconstruction.error_message
         )
     except Exception as e:
         raise HTTPException(

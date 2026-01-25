@@ -18,6 +18,7 @@ interface MeshData {
   name: string;
   url: string | null;
   status: number;
+  error_message?: string;
 }
 
 function ViewMeshPage() {
@@ -59,17 +60,24 @@ function ViewMeshPage() {
 
       <main className="mesh-viewer">
         <div style={{ width: '100%', height: '100%' }}>
-          {meshData.url ? (
-             // Определяем формат по расширению URL
-             <MeshViewer 
-               url={meshData.url} 
-               format={meshData.url.endsWith('.glb') ? 'glb' : 'obj'} 
-             />
-          ) : (
-            <div className="placeholder-3d">
-              <p>URL модели отсутствует</p>
-            </div>
-          )}
+            {meshData.url ? (
+               // Определяем формат по расширению URL
+               <MeshViewer 
+                 url={meshData.url} 
+                 format={meshData.url.endsWith('.glb') ? 'glb' : 'obj'} 
+               />
+            ) : (
+              <div className="placeholder-3d">
+                {meshData.status === 4 ? (
+                    <div style={{ color: '#ef4444' }}>
+                        <h3>Ошибка построения</h3>
+                        <p>{meshData.error_message || 'Не удалось построить модель'}</p>
+                    </div>
+                ) : (
+                    <p>URL модели отсутствует (Статус: {meshData.status})</p>
+                )}
+              </div>
+            )}
         </div>
       </main>
 

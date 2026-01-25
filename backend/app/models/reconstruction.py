@@ -89,6 +89,7 @@ class CalculateMeshResponse(BaseModel):
     created_by: int
     saved_at: Optional[datetime] = None
     url: Optional[str] = None
+    error_message: Optional[str] = None
 
 
 class SaveReconstructionRequest(BaseModel):
