@@ -45,7 +45,7 @@ npm install
 npm run dev
 ```
 
-## 📚 Технологии
+## Технологии
 
 - **Backend**: Python 3.12, FastAPI, OpenCV, SQLAlchemy
 - **Frontend**: React, TypeScript, Three.js
