@@ -109,14 +109,17 @@ export default function MaskEditor({ planUrl, maskUrl, onSave }: MaskEditorProps
   };
 
   return (
-    <div className="mask-editor-container" style={{ display: 'flex', gap: '20px' }}>
+    <div className="mask-editor-container" style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
         <div 
             ref={containerRef} 
             style={{ 
                 position: 'relative', 
                 border: '1px solid #ccc',
-                minWidth: '600px',
-                minHeight: '400px'
+                flex: 1,
+                minWidth: '300px',
+                minHeight: '400px',
+                overflow: 'auto',
+                maxWidth: '100%'
             }}
         >
             {/* План как подложка */}
@@ -128,6 +131,12 @@ export default function MaskEditor({ planUrl, maskUrl, onSave }: MaskEditorProps
                         position: 'absolute', 
                         top: 0, 
                         left: 0, 
+                        // Remove width: 100% to let canvas control size? 
+                        // No, visually we want it to match canvas
+                        // But canvas size is set in JS.
+                        // Let's rely on JS scaling.
+                        // Just ensure this img doesn't force width?
+                        // Actually, if we scaled canvas to containerWidth, img should match.
                         width: '100%', 
                         height: 'auto',
                         opacity: 0.5,

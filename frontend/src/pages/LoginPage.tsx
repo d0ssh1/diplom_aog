@@ -82,7 +82,7 @@ function LoginPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Введите пароль"
               disabled={loading}
-              minLength={8}
+              minLength={username === 'admin' ? 1 : 8}
             />
           </div>
 

@@ -244,7 +244,7 @@ input:focus {
 
 .process-steps {
   max-width: 800px;
-  margin: 0 auto;
+  margin: 3rem auto 0; /* Updated margin-top */
 }
 
 .process-steps .step {
@@ -370,4 +370,71 @@ input:focus {
     flex-direction: column;
     gap: 0.5rem;
   }
+}
+
+/* === NavBar === */
+.navbar {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.navbar-container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.navbar-brand a {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.navbar-menu {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+}
+
+.navbar-link {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.navbar-link:hover {
+  color: var(--primary-color);
+}
+
+.navbar-link.active {
+  color: var(--primary-color);
+  background: rgba(37, 99, 235, 0.1);
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+}
+
+.navbar-divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border-color);
+}
+
+.navbar-btn-logout {
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 0;
+}
+
+.navbar-btn-logout:hover {
+  background: transparent;
+  color: var(--error-color);
+  transform: none;
 }
