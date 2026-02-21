@@ -40,3 +40,4 @@ python-dotenv==1.0.0
 aiofiles==23.2.1
 httpx==0.26.0
 shapely>=2.0.0
+mapbox-earcut>=1.0.0
