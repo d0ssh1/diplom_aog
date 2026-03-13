@@ -7,10 +7,13 @@
 3. Экспорт в форматы OBJ, GLB, STL
 """
 
+import logging
 import os
 from typing import List, Tuple, Optional, Dict, Any
 from dataclasses import dataclass
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     import trimesh
@@ -18,14 +21,14 @@ try:
     from trimesh.path.polygons import paths_to_polygons
 except ImportError:
     trimesh = None
-    print("Warning: trimesh не установлен")
+    logger.warning("trimesh не установлен")
 
 try:
     from shapely.geometry import Polygon, MultiPolygon
     from shapely.ops import unary_union
 except ImportError:
     Polygon = None
-    print("Warning: shapely не установлен. Установите: pip install shapely")
+    logger.warning("shapely не установлен. Установите: pip install shapely")
 
 
 @dataclass
@@ -157,7 +160,7 @@ class MeshGeneratorService:
                         if new_poly.is_valid:
                             polygons.append(new_poly)
                     except Exception as e:
-                        print(f"Ошибка обработки полигона: {e}")
+                        logger.debug("Ошибка обработки полигона: %s", e)
         
         return polygons
     
@@ -193,7 +196,7 @@ class MeshGeneratorService:
             
             return mesh
         except Exception as e:
-            print(f"Ошибка создания стены: {e}")
+            logger.debug("Ошибка создания стены: %s", e)
             return None
     
     def create_floor_mesh(
@@ -250,14 +253,14 @@ class MeshGeneratorService:
         if trimesh is None:
             raise RuntimeError("Trimesh не установлен")
         
-        print(f"Генерация 3D модели этажа {floor_number}...")
-        print(f"  Контуров стен: {len(wall_contours)}")
-        
+        logger.info("Генерация 3D модели этажа %d...", floor_number)
+        logger.debug("  Контуров стен: %d", len(wall_contours))
+
         meshes = []
-        
+
         # Преобразуем контуры в полигоны
         polygons = self.contours_to_polygons(wall_contours, image_height)
-        print(f"  Валидных полигонов: {len(polygons)}")
+        logger.debug("  Валидных полигонов: %d", len(polygons))
         
         # Создаем стены
         for i, poly in enumerate(polygons):
@@ -265,7 +268,7 @@ class MeshGeneratorService:
             if wall_mesh is not None:
                 meshes.append(wall_mesh)
         
-        print(f"  Создано мешей стен: {len(meshes)}")
+        logger.debug("  Создано мешей стен: %d", len(meshes))
         
         # Размеры этажа в метрах
         floor_width = image_width / self.pixels_per_meter
@@ -286,7 +289,7 @@ class MeshGeneratorService:
             meshes.append(ceiling)
         
         if not meshes:
-            print("Предупреждение: не удалось создать меши")
+            logger.warning("Предупреждение: не удалось создать меши")
             return None
         
         # Объединяем все меши
@@ -298,10 +301,10 @@ class MeshGeneratorService:
             matrix = trimesh.transformations.rotation_matrix(-np.pi/2, [1, 0, 0])
             combined.apply_transform(matrix)
         except Exception as e:
-            print(f"  Warning: Orientation rotation failed: {e}")
-            
-        print(f"  Вершин: {len(combined.vertices)}")
-        print(f"  Граней: {len(combined.faces)}")
+            logger.warning("  Warning: Orientation rotation failed: %s", e)
+
+        logger.debug("  Вершин: %d", len(combined.vertices))
+        logger.debug("  Граней: %d", len(combined.faces))
         
         return combined
     
@@ -340,8 +343,8 @@ class MeshGeneratorService:
             
             try:
                 mesh.export(output_path, file_type=fmt)
-                print(f"  Экспорт {fmt.upper()}: {output_path}")
-                
+                logger.info("  Экспорт %s: %s", fmt.upper(), output_path)
+
                 if fmt == 'obj':
                     result.obj_path = output_path
                 elif fmt == 'glb':
@@ -349,7 +352,7 @@ class MeshGeneratorService:
                 elif fmt == 'stl':
                     result.stl_path = output_path
             except Exception as e:
-                print(f"  Ошибка экспорта {fmt}: {e}")
+                logger.error("  Ошибка экспорта %s: %s", fmt, e)
         
         return result
     
@@ -386,10 +389,10 @@ class MeshGeneratorService:
             if cv2.contourArea(c) > min_area
         ]
         
-        print(f"Контуров после фильтрации: {len(filtered_contours)}")
-        
+        logger.debug("Контуров после фильтрации: %d", len(filtered_contours))
+
         if not filtered_contours:
-            print("Ошибка: не найдены контуры стен")
+            logger.error("Ошибка: не найдены контуры стен")
             return None
         
         # Генерируем 3D модель

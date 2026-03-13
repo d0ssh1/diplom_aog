@@ -194,3 +194,49 @@ class NavigationGraphService:
             "total_distance": total_distance,
             "estimated_time": estimated_time
         }
+
+
+def a_star(
+    graph: dict,
+    start_id: int,
+    end_id: int,
+) -> Optional[List[int]]:
+    """
+    A* поиск пути между двумя узлами графа.
+
+    Args:
+        graph: Граф навигации как dict. node_id → {"neighbors": [(id, weight)], "pos": (x, y)}.
+        start_id: ID стартового узла.
+        end_id: ID конечного узла.
+
+    Returns:
+        Список node_id от start до end включительно, или None если пути нет.
+    """
+
+    # Euclidean heuristic
+    def heuristic(a: int, b: int) -> float:
+        ax, ay = graph[a]["pos"]
+        bx, by = graph[b]["pos"]
+        return math.hypot(ax - bx, ay - by)
+
+    open_set = [(0, start_id)]
+    came_from: Dict[int, int] = {}
+    g_score: Dict[int, float] = {start_id: 0}
+
+    while open_set:
+        _, current = heapq.heappop(open_set)
+        if current == end_id:
+            path: List[int] = []
+            while current in came_from:
+                path.append(current)
+                current = came_from[current]
+            path.append(start_id)
+            return list(reversed(path))
+        for neighbor, weight in graph[current]["neighbors"]:
+            tentative_g = g_score[current] + weight
+            if tentative_g < g_score.get(neighbor, float("inf")):
+                came_from[neighbor] = current
+                g_score[neighbor] = tentative_g
+                f = tentative_g + heuristic(neighbor, end_id)
+                heapq.heappush(open_set, (f, neighbor))
+    return None
