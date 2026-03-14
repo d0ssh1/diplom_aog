@@ -23,6 +23,7 @@ from app.models import (
 )
 from app.services.reconstruction_service import ReconstructionService
 from app.services.mask_service import MaskService
+from app.models.domain import VectorizationResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reconstruction", tags=["Reconstruction"])
@@ -46,7 +47,9 @@ async def calculate_initial_mask(
             'height': request.crop.height,
         }
     try:
-        filename = await svc.calculate_mask(request.file_id, crop=crop_dict, rotation=request.rotation)
+        filename, text_blocks = await svc.calculate_mask(
+            request.file_id, crop=crop_dict, rotation=request.rotation
+        )
     except Exception as e:
         logger.error("calculate_mask failed: %s", e)
         raise HTTPException(status_code=500, detail="Ошибка обработки изображения")
@@ -182,6 +185,35 @@ async def delete_reconstruction(
     deleted = await svc.delete_reconstruction(id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+
+
+# === Vectorization Data ===
+
+@router.get("/reconstructions/{id}/vectors", response_model=VectorizationResult)
+async def get_vectorization_data(
+    id: int = Path(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+):
+    """Retrieve vectorization data for reconstruction."""
+    result = await svc.get_vectorization_data(id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Vectorization data not available")
+    return result
+
+
+@router.put("/reconstructions/{id}/vectors", response_model=dict)
+async def update_vectorization_data(
+    id: int,
+    data: VectorizationResult,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+):
+    """Update vectorization data (from floor-editor)."""
+    result = await svc.update_vectorization_data(id, data)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    return {"message": "Vectorization data updated"}
 
 
 # === Rooms ===

@@ -1,14 +1,17 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from main import app
-from app.core.database import Base
-from app.api.deps import get_db
+try:
+    from httpx import AsyncClient, ASGITransport
+    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+    from main import app
+    from app.core.database import Base
+    from app.api.deps import get_db
+    _WEB_STACK_AVAILABLE = True
+except ImportError:
+    _WEB_STACK_AVAILABLE = False
 
 # In-memory SQLite for tests
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"

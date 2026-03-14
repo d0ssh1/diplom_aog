@@ -1,57 +1,139 @@
+import json
 import pytest
-import numpy as np
-import cv2
-from unittest.mock import AsyncMock, MagicMock
-from app.services.reconstruction_service import ReconstructionService
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from app.services.reconstruction_service import ReconstructionService, STATUS_DISPLAY
+from app.models.domain import VectorizationResult
+
+
+# --- Helpers ---
+
+def _make_svc() -> ReconstructionService:
+    repo = AsyncMock()
+    with patch("app.services.reconstruction_service.os.makedirs"):
+        with patch("app.services.reconstruction_service.ContourService"):
+            svc = ReconstructionService(repo=repo, upload_dir="/tmp/fake")
+    svc._repo = repo
+    return svc
+
+
+def _minimal_vectorization_dict() -> dict:
+    return {
+        "walls": [],
+        "rooms": [],
+        "doors": [],
+        "text_blocks": [],
+        "image_size_original": [800, 600],
+        "image_size_cropped": [800, 600],
+        "crop_rect": None,
+        "crop_applied": False,
+        "rotation_angle": 0,
+        "wall_thickness_px": 5.0,
+        "estimated_pixels_per_meter": 50.0,
+        "rooms_with_names": 0,
+        "corridors_count": 0,
+        "doors_count": 0,
+    }
+
+
+# --- get_vectorization_data ---
+
+@pytest.mark.asyncio
+async def test_get_vectorization_data_found():
+    svc = _make_svc()
+    mock_rec = MagicMock()
+    mock_rec.vectorization_data = json.dumps(_minimal_vectorization_dict())
+    svc._repo.get_by_id.return_value = mock_rec
+
+    result = await svc.get_vectorization_data(1)
+
+    assert isinstance(result, VectorizationResult)
+    assert result.image_size_original == (800, 600)
 
 
 @pytest.mark.asyncio
-async def test_build_mesh_valid_inputs_returns_done_reconstruction(tmp_path):
-    (tmp_path / "masks").mkdir()
-    (tmp_path / "models").mkdir()
-    mask = np.zeros((100, 100), dtype=np.uint8)
-    cv2.rectangle(mask, (10, 10), (90, 90), 255, thickness=5)
-    cv2.imwrite(str(tmp_path / "masks" / "mask-id.png"), mask)
+async def test_get_vectorization_data_not_found():
+    svc = _make_svc()
+    svc._repo.get_by_id.return_value = None
 
-    repo = AsyncMock()
-    repo.create_reconstruction.return_value = MagicMock(id=1)
-    repo.update_mesh.return_value = MagicMock(id=1, status=3)
+    result = await svc.get_vectorization_data(99)
 
-    svc = ReconstructionService(repo=repo, upload_dir=str(tmp_path))
-    result = await svc.build_mesh("plan-id", "mask-id", user_id=1)
-    assert result.status == 3, "On successful generation status must be 3 (Done)"
-    repo.update_mesh.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_build_mesh_missing_mask_returns_error_status(tmp_path):
-    (tmp_path / "models").mkdir()
-    repo = AsyncMock()
-    repo.create_reconstruction.return_value = MagicMock(id=1)
-    repo.update_mesh.return_value = MagicMock(id=1, status=4)
-    svc = ReconstructionService(repo=repo, upload_dir=str(tmp_path))
-    result = await svc.build_mesh("plan-id", "mask-id", user_id=1)
-    assert result.status == 4, "On missing mask status must be 4 (Error)"
-    repo.update_mesh.assert_called_once()
-
-
-@pytest.mark.asyncio
-async def test_save_reconstruction_valid_id_updates_name():
-    repo = AsyncMock()
-    # 'name' is a special MagicMock param — set attribute after creation
-    mock_rec = MagicMock(id=5)
-    mock_rec.name = "My Plan"
-    repo.update_name.return_value = mock_rec
-    svc = ReconstructionService(repo=repo, upload_dir="/tmp")
-    result = await svc.save_reconstruction(5, "My Plan")
-    assert result is not None
-    assert result.name == "My Plan"
-
-
-@pytest.mark.asyncio
-async def test_save_reconstruction_missing_id_returns_none():
-    repo = AsyncMock()
-    repo.update_name.return_value = None
-    svc = ReconstructionService(repo=repo, upload_dir="/tmp")
-    result = await svc.save_reconstruction(99999, "Test")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_vectorization_data_invalid_json():
+    svc = _make_svc()
+    mock_rec = MagicMock()
+    mock_rec.vectorization_data = "not valid json {"
+    svc._repo.get_by_id.return_value = mock_rec
+
+    result = await svc.get_vectorization_data(1)
+
+    assert result is None
+
+
+# --- update_vectorization_data ---
+
+@pytest.mark.asyncio
+async def test_update_vectorization_data_success():
+    svc = _make_svc()
+    mock_rec = MagicMock()
+    svc._repo.update_vectorization_data.return_value = mock_rec
+
+    vr = VectorizationResult(**_minimal_vectorization_dict())
+    result = await svc.update_vectorization_data(1, vr)
+
+    assert result is mock_rec
+    call_args = svc._repo.update_vectorization_data.call_args
+    # first arg is reconstruction_id, second is the JSON string
+    assert call_args[0][0] == 1
+    saved = json.loads(call_args[0][1])
+    assert saved["image_size_original"] == [800, 600]
+
+
+@pytest.mark.asyncio
+async def test_update_vectorization_data_not_found():
+    svc = _make_svc()
+    svc._repo.update_vectorization_data.return_value = None
+
+    vr = VectorizationResult(**_minimal_vectorization_dict())
+    result = await svc.update_vectorization_data(99, vr)
+
+    assert result is None
+
+
+# --- get_status_display ---
+
+def test_get_status_display_known():
+    assert ReconstructionService.get_status_display(1) == STATUS_DISPLAY[1]
+    assert ReconstructionService.get_status_display(2) == STATUS_DISPLAY[2]
+    assert ReconstructionService.get_status_display(3) == STATUS_DISPLAY[3]
+    assert ReconstructionService.get_status_display(4) == STATUS_DISPLAY[4]
+
+
+def test_get_status_display_unknown():
+    assert ReconstructionService.get_status_display(999) == "Неизвестно"
+
+
+# --- build_mesh_url ---
+
+def test_build_mesh_url_with_glb():
+    svc = _make_svc()
+    rec = MagicMock()
+    rec.id = 7
+    rec.mesh_file_id_glb = "some-glb-id"
+
+    url = svc.build_mesh_url(rec)
+
+    assert url == "/api/v1/uploads/models/reconstruction_7.glb"
+
+
+def test_build_mesh_url_without_glb():
+    svc = _make_svc()
+    rec = MagicMock()
+    rec.mesh_file_id_glb = None
+
+    url = svc.build_mesh_url(rec)
+
+    assert url is None

@@ -42,7 +42,8 @@ class Reconstruction(Base):
     
     status: Mapped[int] = mapped_column(Integer, default=1)  # 1=Created, 2=Processing, 3=Done, 4=Error
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
-    
+    vectorization_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON VectorizationResult
+
     created_by: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

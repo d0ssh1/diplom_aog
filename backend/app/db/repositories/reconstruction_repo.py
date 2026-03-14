@@ -85,12 +85,14 @@ class ReconstructionRepository:
         glb_path: Optional[str],
         status: int,
         error_message: Optional[str] = None,
-    ) -> Reconstruction:
+    ) -> Optional[Reconstruction]:
         """UPDATE mesh_file_id_obj, mesh_file_id_glb, status, error_message."""
         logger.debug(
             "update_mesh: reconstruction_id=%d, status=%d", reconstruction_id, status
         )
         reconstruction = await self._session.get(Reconstruction, reconstruction_id)
+        if not reconstruction:
+            return None
         reconstruction.mesh_file_id_obj = obj_path
         reconstruction.mesh_file_id_glb = glb_path
         reconstruction.status = status
@@ -141,3 +143,19 @@ class ReconstructionRepository:
         await self._session.delete(reconstruction)
         await self._session.commit()
         return True
+
+    async def update_vectorization_data(
+        self,
+        reconstruction_id: int,
+        vectorization_json: str,
+    ) -> Optional[Reconstruction]:
+        """UPDATE vectorization_data field. Returns None if not found."""
+        logger.debug("update_vectorization_data: reconstruction_id=%d", reconstruction_id)
+        reconstruction = await self._session.get(Reconstruction, reconstruction_id)
+        if not reconstruction:
+            return None
+        reconstruction.vectorization_data = vectorization_json
+        reconstruction.updated_at = datetime.utcnow()
+        await self._session.commit()
+        await self._session.refresh(reconstruction)
+        return reconstruction
