@@ -1,20 +1,20 @@
 import glob
+import json
 import logging
 import os
-from typing import List, Tuple
+from typing import Tuple
 
 import cv2
 
 from app.core.exceptions import FileStorageError, ImageProcessingError
 from app.processing.binarization import BinarizationService
 from app.processing.pipeline import (
-    auto_crop_suggest,
     color_filter,
     normalize_brightness,
-    remove_text_regions,
+    remove_colored_elements,
     text_detect,
+    remove_text_regions,
 )
-from app.models.domain import TextBlock
 
 logger = logging.getLogger(__name__)
 
@@ -40,14 +40,17 @@ class MaskService:
         file_id: str,
         crop: dict | None = None,
         rotation: int = 0,
-    ) -> Tuple[str, List[TextBlock]]:
+        enable_normalize: bool = False,
+        enable_color_filter: bool = False,
+        enable_color_removal: bool = True,
+        enable_text_removal: bool = True,
+    ) -> str:
         """
-        Full mask pipeline:
-        load → normalize → color filter → crop → binarize → text detect → remove.
-
+        Mask pipeline: load → rotate → [normalize] → [color filter] → color removal
+        → crop → binarize → text detect → text removal → save mask + text.json.
 
         Returns:
-            Tuple of (mask_filename, text_blocks)
+            mask_filename
 
         Raises:
             FileStorageError: plan file not found on disk
@@ -61,8 +64,6 @@ class MaskService:
         if img is None:
             raise ImageProcessingError("cv2.imread", f"Failed to load image: {plan_path}")
 
-        original_h, original_w = img.shape[:2]
-
         # 2. Rotate if provided
         if rotation:
             r = rotation % 360
@@ -73,54 +74,79 @@ class MaskService:
             elif r == 270:
                 img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
 
-        # Step 1: Brightness normalization
-        img = normalize_brightness(img)
+        # Step 1: Brightness normalization (disabled by default — corrupts Otsu threshold)
+        if enable_normalize:
+            img = normalize_brightness(img)
 
-        # Step 2: Color filtering (remove green arrows, red symbols)
-        img = color_filter(img)
+        # Step 2a: Color filtering (disabled by default — too aggressive for evacuation plans)
+        if enable_color_filter:
+            img = color_filter(img)
 
-        # Step 3: Auto-crop suggestion (use user crop if provided)
-        crop_rect = crop
-        if crop is None:
-            crop_rect = auto_crop_suggest(img)
+        # Step 2b: Color removal (enabled by default — removes green arrows, red symbols)
+        if enable_color_removal:
+            img = remove_colored_elements(img)
 
-        if crop_rect is not None:
+        # Step 3: Apply user-provided crop (no auto-crop — it picks wrong regions)
+        if crop is not None:
             h, w = img.shape[:2]
-            x = int(crop_rect["x"] * w)
-            y = int(crop_rect["y"] * h)
-            cw = int(crop_rect["width"] * w)
-            ch = int(crop_rect["height"] * h)
+            x = int(crop["x"] * w)
+            y = int(crop["y"] * h)
+            cw = int(crop["width"] * w)
+            ch = int(crop["height"] * h)
             x = max(0, min(x, w - 1))
             y = max(0, min(y, h - 1))
             cw = max(1, min(cw, w - x))
             ch = max(1, min(ch, h - y))
             img = img[y:y + ch, x:x + cw]
 
-        cropped_h, cropped_w = img.shape[:2]
+        # Keep reference to cropped BGR for text_detect (OCR works on color image)
+        cropped_bgr = img
 
-        # Step 4: Adaptive binarization (delegate to BinarizationService)
+        # Step 4: Binarization
+        # Adaptive threshold preserves thin wall lines that global Otsu misses.
+        # GaussianBlur(3,3) removes noise without destroying thin lines.
         gray = self._binarization.to_grayscale(img)
-        binary, _ = self._binarization.binarize_otsu(gray)
-        binary = self._binarization.apply_morphology(binary, kernel_size=3, iterations=2)
-        binary = self._binarization.invert_if_needed(binary)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        binary = cv2.adaptiveThreshold(
+            blurred, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,  # walls (dark lines) become white
+            blockSize=15,
+            C=10,
+        )
+        # Only closing — fills small gaps in walls. No opening (it erases thin lines).
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
-        # Step 5: Text detection
-        text_blocks = text_detect(img, binary)
-
-        # Step 6: Text removal
-        mask = remove_text_regions(binary, text_blocks, (cropped_w, cropped_h))
+        # Step 5: Text detection + removal
+        text_blocks = []
+        if enable_text_removal:
+            text_blocks = text_detect(cropped_bgr, mask)
+            if text_blocks:
+                mask = remove_text_regions(
+                    mask, text_blocks,
+                    (cropped_bgr.shape[1], cropped_bgr.shape[0]),
+                )
 
         # Save mask
         output_path = os.path.join(self._masks_dir, f"{file_id}.png")
         cv2.imwrite(output_path, mask)
         logger.info("Mask saved: %s", output_path)
 
-        # Save text blocks for later use by reconstruction pipeline
+        # Save text blocks
         if text_blocks:
-            import json
             text_json_path = os.path.join(self._masks_dir, f"{file_id}_text.json")
+            text_data = [
+                {
+                    "text": tb.text,
+                    "center": {"x": tb.center.x, "y": tb.center.y},
+                    "confidence": tb.confidence,
+                    "is_room_number": tb.is_room_number,
+                }
+                for tb in text_blocks
+            ]
             with open(text_json_path, "w", encoding="utf-8") as f:
-                json.dump([tb.model_dump() for tb in text_blocks], f, ensure_ascii=False)
+                json.dump(text_data, f, ensure_ascii=False, indent=2)
             logger.info("Text blocks saved: %s (%d blocks)", text_json_path, len(text_blocks))
 
-        return os.path.basename(output_path), text_blocks
+        return os.path.basename(output_path)

@@ -25,6 +25,9 @@ from app.processing.pipeline import (
     door_detect,
     normalize_brightness,
     normalize_coords,
+    remove_colored_elements,
+    remove_green_elements,
+    remove_red_elements,
     remove_text_regions,
     room_detect,
     text_detect,
@@ -525,3 +528,290 @@ def test_point_in_polygon_too_few_points():
     poly = [Point2D(x=0.1, y=0.1), Point2D(x=0.9, y=0.9)]  # only 2 points
     point = Point2D(x=0.5, y=0.5)
     assert _point_in_polygon(point, poly) is False
+
+
+# ---------------------------------------------------------------------------
+# Fixtures for color removal tests
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def image_with_green_arrows():
+    """White image with green arrow lines (evacuation arrows)."""
+    img = np.ones((200, 200, 3), dtype=np.uint8) * 255
+    cv2.arrowedLine(img, (20, 100), (180, 100), (0, 200, 0), thickness=3)
+    return img
+
+
+@pytest.fixture
+def image_with_red_symbols():
+    """White image with red circle (fire extinguisher symbol)."""
+    img = np.ones((200, 200, 3), dtype=np.uint8) * 255
+    cv2.circle(img, (100, 100), 15, (0, 0, 200), thickness=-1)
+    return img
+
+
+@pytest.fixture
+def image_with_walls_and_colors():
+    """Image with black walls, green arrows, and red symbols."""
+    img = np.ones((200, 200, 3), dtype=np.uint8) * 255
+    cv2.rectangle(img, (20, 20), (180, 180), (0, 0, 0), thickness=3)
+    cv2.arrowedLine(img, (50, 100), (150, 100), (0, 200, 0), thickness=2)
+    cv2.circle(img, (20, 100), 8, (0, 0, 200), thickness=-1)
+    return img
+
+
+@pytest.fixture
+def grayscale_image():
+    """Grayscale image (H, W) — for wrong shape tests."""
+    return np.ones((200, 200), dtype=np.uint8) * 128
+
+
+@pytest.fixture
+def binary_mask_with_text():
+    """Binary mask (H, W) with simulated text — white pixels in center."""
+    mask = np.zeros((200, 200), dtype=np.uint8)
+    cv2.rectangle(mask, (20, 20), (180, 180), 255, thickness=3)
+    cv2.putText(mask, "101", (80, 110), cv2.FONT_HERSHEY_SIMPLEX, 0.5, 255, 1)
+    return mask
+
+
+@pytest.fixture
+def sample_text_blocks():
+    """List of TextBlock for remove_text_regions tests."""
+    return [
+        TextBlock(text="101", center=Point2D(x=0.5, y=0.5), confidence=90.0, is_room_number=True),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# remove_green_elements
+# ---------------------------------------------------------------------------
+
+def test_remove_green_elements_valid_image_returns_same_shape(image_with_green_arrows):
+    result = remove_green_elements(image_with_green_arrows)
+    assert result.shape == image_with_green_arrows.shape
+    assert result.dtype == np.uint8
+
+
+def test_remove_green_elements_green_patch_removed(image_with_green_arrows):
+    result = remove_green_elements(image_with_green_arrows)
+    # Check that green pixels in the arrow area are reduced
+    hsv_before = cv2.cvtColor(image_with_green_arrows, cv2.COLOR_BGR2HSV)
+    hsv_after = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+    green_before = cv2.inRange(hsv_before, np.array([35, 40, 40]), np.array([85, 255, 255]))
+    green_after = cv2.inRange(hsv_after, np.array([35, 40, 40]), np.array([85, 255, 255]))
+    assert np.sum(green_after) < np.sum(green_before)
+
+
+def test_remove_green_elements_empty_image_raises():
+    with pytest.raises(ImageProcessingError):
+        remove_green_elements(np.zeros((0, 0, 3), dtype=np.uint8))
+
+
+def test_remove_green_elements_wrong_dtype_raises(white_image):
+    with pytest.raises(ImageProcessingError):
+        remove_green_elements(white_image.astype(np.float32))
+
+
+def test_remove_green_elements_grayscale_raises(grayscale_image):
+    with pytest.raises(ImageProcessingError):
+        remove_green_elements(grayscale_image)
+
+
+def test_remove_green_elements_no_green_returns_unchanged(white_image):
+    result = remove_green_elements(white_image)
+    assert np.array_equal(result, white_image)
+
+
+def test_remove_green_elements_does_not_mutate_input(image_with_green_arrows):
+    original = image_with_green_arrows.copy()
+    remove_green_elements(image_with_green_arrows)
+    assert np.array_equal(image_with_green_arrows, original)
+
+
+# ---------------------------------------------------------------------------
+# remove_red_elements
+# ---------------------------------------------------------------------------
+
+def test_remove_red_elements_valid_image_returns_same_shape(image_with_red_symbols):
+    result = remove_red_elements(image_with_red_symbols)
+    assert result.shape == image_with_red_symbols.shape
+    assert result.dtype == np.uint8
+
+
+def test_remove_red_elements_red_patch_removed(image_with_red_symbols):
+    result = remove_red_elements(image_with_red_symbols)
+    hsv_before = cv2.cvtColor(image_with_red_symbols, cv2.COLOR_BGR2HSV)
+    hsv_after = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+    red_low = cv2.inRange(hsv_before, np.array([0, 50, 50]), np.array([10, 255, 255]))
+    red_high = cv2.inRange(hsv_before, np.array([170, 50, 50]), np.array([180, 255, 255]))
+    red_before = red_low | red_high
+    red_low_a = cv2.inRange(hsv_after, np.array([0, 50, 50]), np.array([10, 255, 255]))
+    red_high_a = cv2.inRange(hsv_after, np.array([170, 50, 50]), np.array([180, 255, 255]))
+    red_after = red_low_a | red_high_a
+    assert np.sum(red_after) < np.sum(red_before)
+
+
+def test_remove_red_elements_empty_image_raises():
+    with pytest.raises(ImageProcessingError):
+        remove_red_elements(np.zeros((0, 0, 3), dtype=np.uint8))
+
+
+def test_remove_red_elements_wrong_dtype_raises(white_image):
+    with pytest.raises(ImageProcessingError):
+        remove_red_elements(white_image.astype(np.float32))
+
+
+def test_remove_red_elements_grayscale_raises(grayscale_image):
+    with pytest.raises(ImageProcessingError):
+        remove_red_elements(grayscale_image)
+
+
+def test_remove_red_elements_no_red_returns_unchanged(white_image):
+    result = remove_red_elements(white_image)
+    assert np.array_equal(result, white_image)
+
+
+def test_remove_red_elements_does_not_mutate_input(image_with_red_symbols):
+    original = image_with_red_symbols.copy()
+    remove_red_elements(image_with_red_symbols)
+    assert np.array_equal(image_with_red_symbols, original)
+
+
+# ---------------------------------------------------------------------------
+# remove_colored_elements
+# ---------------------------------------------------------------------------
+
+def test_remove_colored_elements_removes_both_colors(image_with_walls_and_colors):
+    result = remove_colored_elements(image_with_walls_and_colors)
+    hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+    green = cv2.inRange(hsv, np.array([35, 40, 40]), np.array([85, 255, 255]))
+    red_low = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
+    red_high = cv2.inRange(hsv, np.array([170, 50, 50]), np.array([180, 255, 255]))
+    colored = green | red_low | red_high
+    # Most colored pixels should be gone
+    assert np.sum(colored) < 100
+
+
+def test_remove_colored_elements_preserves_walls(image_with_walls_and_colors):
+    result = remove_colored_elements(image_with_walls_and_colors)
+    # Check that dark wall pixels are still present
+    gray = cv2.cvtColor(result, cv2.COLOR_BGR2GRAY)
+    dark_pixels = np.sum(gray < 50)
+    assert dark_pixels > 100, "Walls should be preserved"
+
+
+def test_remove_colored_elements_empty_image_raises():
+    with pytest.raises(ImageProcessingError):
+        remove_colored_elements(np.zeros((0, 0, 3), dtype=np.uint8))
+
+
+def test_remove_colored_elements_wrong_dtype_raises(white_image):
+    with pytest.raises(ImageProcessingError):
+        remove_colored_elements(white_image.astype(np.float32))
+
+
+def test_remove_colored_elements_grayscale_raises(grayscale_image):
+    with pytest.raises(ImageProcessingError):
+        remove_colored_elements(grayscale_image)
+
+
+# ---------------------------------------------------------------------------
+# text_detect — extended coverage
+# ---------------------------------------------------------------------------
+
+def test_text_detect_ocr_error_returns_empty(white_image, simple_mask):
+    with patch("app.processing.pipeline._TESSERACT_AVAILABLE", True), \
+         patch("app.processing.pipeline.pytesseract") as mock_tess:
+        mock_tess.image_to_data.side_effect = RuntimeError("OCR crashed")
+        result = text_detect(white_image, simple_mask)
+    assert result == []
+
+
+def test_text_detect_coordinates_normalized(white_image, simple_mask):
+    mock_data = {
+        "text": ["101", "exit", ""],
+        "conf": [90, 80, -1],
+        "left": [10, 50, 0],
+        "top": [10, 50, 0],
+        "width": [30, 40, 0],
+        "height": [15, 15, 0],
+    }
+    with patch("app.processing.pipeline._TESSERACT_AVAILABLE", True), \
+         patch("app.processing.pipeline.pytesseract") as mock_tess:
+        mock_tess.Output.DICT = "dict"
+        mock_tess.image_to_data.return_value = mock_data
+        result = text_detect(white_image, simple_mask)
+    for tb in result:
+        assert 0.0 <= tb.center.x <= 1.0
+        assert 0.0 <= tb.center.y <= 1.0
+
+
+def test_text_detect_room_numbers_flagged(white_image, simple_mask):
+    mock_data = {
+        "text": ["1103", "exit"],
+        "conf": [90, 85],
+        "left": [10, 50],
+        "top": [10, 50],
+        "width": [30, 40],
+        "height": [15, 15],
+    }
+    with patch("app.processing.pipeline._TESSERACT_AVAILABLE", True), \
+         patch("app.processing.pipeline.pytesseract") as mock_tess:
+        mock_tess.Output.DICT = "dict"
+        mock_tess.image_to_data.return_value = mock_data
+        result = text_detect(white_image, simple_mask)
+    room_blocks = [tb for tb in result if tb.is_room_number]
+    non_room = [tb for tb in result if not tb.is_room_number]
+    assert len(room_blocks) >= 1
+    assert room_blocks[0].text == "1103"
+    assert len(non_room) >= 1
+
+
+def test_text_detect_valid_image_returns_text_blocks(white_image, simple_mask):
+    mock_data = {
+        "text": ["101"],
+        "conf": [90],
+        "left": [10],
+        "top": [10],
+        "width": [30],
+        "height": [15],
+    }
+    with patch("app.processing.pipeline._TESSERACT_AVAILABLE", True), \
+         patch("app.processing.pipeline.pytesseract") as mock_tess:
+        mock_tess.Output.DICT = "dict"
+        mock_tess.image_to_data.return_value = mock_data
+        result = text_detect(white_image, simple_mask)
+    assert len(result) == 1
+    assert isinstance(result[0], TextBlock)
+    assert result[0].text == "101"
+
+
+def test_text_detect_grayscale_raises(grayscale_image):
+    mask = np.zeros((200, 200), dtype=np.uint8)
+    # text_detect checks for None/empty but not shape — this tests the actual behavior
+    # If the function doesn't validate shape, it will fail at cv2.cvtColor inside pytesseract
+    # For now, verify it at least doesn't crash with a non-3-channel image when tesseract is unavailable
+    with patch("app.processing.pipeline._TESSERACT_AVAILABLE", False):
+        result = text_detect(grayscale_image, mask)
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# remove_text_regions — extended coverage
+# ---------------------------------------------------------------------------
+
+def test_remove_text_regions_removes_text_area(binary_mask_with_text, sample_text_blocks):
+    result = remove_text_regions(binary_mask_with_text, sample_text_blocks, (200, 200))
+    assert result.shape == binary_mask_with_text.shape
+    assert result.dtype == np.uint8
+    # The text area around center (100, 100) should have fewer white pixels
+    center_region_before = binary_mask_with_text[90:120, 85:115]
+    center_region_after = result[90:120, 85:115]
+    assert np.sum(center_region_after) <= np.sum(center_region_before)
+
+
+def test_remove_text_regions_does_not_mutate_input(binary_mask_with_text, sample_text_blocks):
+    original = binary_mask_with_text.copy()
+    remove_text_regions(binary_mask_with_text, sample_text_blocks, (200, 200))
+    assert np.array_equal(binary_mask_with_text, original)

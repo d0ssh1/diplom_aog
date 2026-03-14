@@ -47,7 +47,7 @@ async def calculate_initial_mask(
             'height': request.crop.height,
         }
     try:
-        filename, text_blocks = await svc.calculate_mask(
+        filename = await svc.calculate_mask(
             request.file_id, crop=crop_dict, rotation=request.rotation
         )
     except Exception as e:

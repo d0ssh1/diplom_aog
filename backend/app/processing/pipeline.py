@@ -120,6 +120,162 @@ def color_filter(
 
 
 # ===================================================================
+# Step 2b: Targeted Color Removal (green arrows, red symbols)
+# ===================================================================
+
+def remove_green_elements(
+    image: np.ndarray,
+    hue_low: int = 35,
+    hue_high: int = 85,
+    sat_min: int = 40,
+    val_min: int = 40,
+    inpaint_radius: int = 3,
+) -> np.ndarray:
+    """
+    Remove green elements (evacuation arrows) via HSV filtering + inpaint.
+
+    Args:
+        image: BGR image (H, W, 3), dtype=uint8
+        hue_low: lower bound of green hue (OpenCV 0-180)
+        hue_high: upper bound of green hue
+        sat_min: minimum saturation
+        val_min: minimum value
+        inpaint_radius: inpainting radius (pixels)
+
+    Returns:
+        BGR image (H, W, 3), dtype=uint8 with green elements replaced
+    """
+    if image is None or image.size == 0:
+        raise ImageProcessingError("remove_green_elements", "Empty image")
+    if image.dtype != np.uint8:
+        raise ImageProcessingError(
+            "remove_green_elements", f"Expected uint8, got {image.dtype}"
+        )
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ImageProcessingError(
+            "remove_green_elements",
+            f"Expected BGR (H,W,3), got shape {image.shape}",
+        )
+
+    start = time.perf_counter()
+    result = image.copy()
+
+    hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+    lower = np.array([hue_low, sat_min, val_min], dtype=np.uint8)
+    upper = np.array([hue_high, 255, 255], dtype=np.uint8)
+    green_mask = cv2.inRange(hsv, lower, upper)
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    green_mask = cv2.dilate(green_mask, kernel, iterations=1)
+
+    result = cv2.inpaint(result, green_mask, inpaint_radius, cv2.INPAINT_TELEA)
+
+    elapsed = time.perf_counter() - start
+    logger.info("remove_green_elements completed in %.3fs", elapsed)
+    return result
+
+
+def remove_red_elements(
+    image: np.ndarray,
+    hue_low1: int = 0,
+    hue_high1: int = 10,
+    hue_low2: int = 170,
+    hue_high2: int = 180,
+    sat_min: int = 50,
+    val_min: int = 50,
+    inpaint_radius: int = 3,
+) -> np.ndarray:
+    """
+    Remove red elements (fire extinguisher symbols) via HSV filtering + inpaint.
+
+    Red wraps around H=0/180 in OpenCV HSV, so two ranges are needed.
+
+    Args:
+        image: BGR image (H, W, 3), dtype=uint8
+        hue_low1: lower red range start
+        hue_high1: lower red range end
+        hue_low2: upper red range start
+        hue_high2: upper red range end
+        sat_min: minimum saturation
+        val_min: minimum value
+        inpaint_radius: inpainting radius (pixels)
+
+    Returns:
+        BGR image (H, W, 3), dtype=uint8 with red elements replaced
+    """
+    if image is None or image.size == 0:
+        raise ImageProcessingError("remove_red_elements", "Empty image")
+    if image.dtype != np.uint8:
+        raise ImageProcessingError(
+            "remove_red_elements", f"Expected uint8, got {image.dtype}"
+        )
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ImageProcessingError(
+            "remove_red_elements",
+            f"Expected BGR (H,W,3), got shape {image.shape}",
+        )
+
+    start = time.perf_counter()
+    result = image.copy()
+
+    hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
+
+    lower1 = np.array([hue_low1, sat_min, val_min], dtype=np.uint8)
+    upper1 = np.array([hue_high1, 255, 255], dtype=np.uint8)
+    mask1 = cv2.inRange(hsv, lower1, upper1)
+
+    lower2 = np.array([hue_low2, sat_min, val_min], dtype=np.uint8)
+    upper2 = np.array([hue_high2, 255, 255], dtype=np.uint8)
+    mask2 = cv2.inRange(hsv, lower2, upper2)
+
+    red_mask = mask1 | mask2
+
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    red_mask = cv2.dilate(red_mask, kernel, iterations=1)
+
+    result = cv2.inpaint(result, red_mask, inpaint_radius, cv2.INPAINT_TELEA)
+
+    elapsed = time.perf_counter() - start
+    logger.info("remove_red_elements completed in %.3fs", elapsed)
+    return result
+
+
+def remove_colored_elements(image: np.ndarray) -> np.ndarray:
+    """
+    Remove green and red colored elements from evacuation plan.
+
+    Orchestrator: calls remove_green_elements then remove_red_elements.
+    Order matters — green arrows may overlap red symbols.
+
+    Args:
+        image: BGR image (H, W, 3), dtype=uint8
+
+    Returns:
+        BGR image (H, W, 3), dtype=uint8 with colored elements removed
+    """
+    if image is None or image.size == 0:
+        raise ImageProcessingError("remove_colored_elements", "Empty image")
+    if image.dtype != np.uint8:
+        raise ImageProcessingError(
+            "remove_colored_elements", f"Expected uint8, got {image.dtype}"
+        )
+    if image.ndim != 3 or image.shape[2] != 3:
+        raise ImageProcessingError(
+            "remove_colored_elements",
+            f"Expected BGR (H,W,3), got shape {image.shape}",
+        )
+
+    start = time.perf_counter()
+
+    img = remove_green_elements(image)
+    img = remove_red_elements(img)
+
+    elapsed = time.perf_counter() - start
+    logger.info("remove_colored_elements completed in %.3fs", elapsed)
+    return img
+
+
+# ===================================================================
 # Step 3: Auto-Crop Suggestion
 # ===================================================================
 
@@ -187,6 +343,7 @@ try:
     import pytesseract
     _TESSERACT_AVAILABLE = True
 except ImportError:
+    pytesseract = None  # type: ignore[assignment]
     _TESSERACT_AVAILABLE = False
 
 
