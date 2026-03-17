@@ -1,6 +1,6 @@
-import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
+import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useState } from 'react';
 import { fabric } from 'fabric';
-import type { RoomAnnotation, DoorAnnotation } from '../../types/wizard';
+import type { RoomAnnotation, DoorAnnotation, CropRect } from '../../types/wizard';
 import styles from './WallEditorCanvas.module.css';
 
 export interface WallEditorCanvasRef {
@@ -19,6 +19,11 @@ interface WallEditorCanvasProps {
     onConfirm: (name: string) => void,
     onCancel: () => void,
   ) => void;
+  planUrl?: string;
+  planCropRect?: CropRect | null;
+  planRotation?: number;
+  overlayEnabled?: boolean;
+  overlayOpacity?: number;
 }
 
 const ROOM_FILL: Record<string, string> = {
@@ -36,12 +41,47 @@ const ROOM_STROKE: Record<string, string> = {
 };
 
 const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
-  ({ maskUrl, activeTool, brushSize, onRoomPopupRequest }, ref) => {
+  ({ maskUrl, activeTool, brushSize, onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4 }, ref) => {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
     const roomsRef = useRef<RoomAnnotation[]>([]);
     const doorsRef = useRef<DoorAnnotation[]>([]);
+    const [displayPlanUrl, setDisplayPlanUrl] = useState<string | null>(null);
+    const [bgDims, setBgDims] = useState({ left: 0, top: 0, width: 0, height: 0 });
+
+    useEffect(() => {
+      if (!planUrl) { setDisplayPlanUrl(null); return; }
+
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        const rot = planRotation ?? 0;
+        const swap = rot === 90 || rot === 270;
+        const rCanvas = document.createElement('canvas');
+        rCanvas.width = swap ? img.height : img.width;
+        rCanvas.height = swap ? img.width : img.height;
+        const rCtx = rCanvas.getContext('2d')!;
+        rCtx.translate(rCanvas.width / 2, rCanvas.height / 2);
+        rCtx.rotate((rot * Math.PI) / 180);
+        rCtx.drawImage(img, -img.width / 2, -img.height / 2);
+
+        if (planCropRect) {
+          const cx = Math.round(planCropRect.x * rCanvas.width);
+          const cy = Math.round(planCropRect.y * rCanvas.height);
+          const cw = Math.round(planCropRect.width * rCanvas.width);
+          const ch = Math.round(planCropRect.height * rCanvas.height);
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = cw;
+          cropCanvas.height = ch;
+          cropCanvas.getContext('2d')!.drawImage(rCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+          setDisplayPlanUrl(cropCanvas.toDataURL());
+        } else {
+          setDisplayPlanUrl(rCanvas.toDataURL());
+        }
+      };
+      img.src = planUrl;
+    }, [planUrl, planCropRect, planRotation]);
 
     // Stable ref for onRoomPopupRequest to avoid stale closures
     const popupRequestRef = useRef(onRoomPopupRequest);
@@ -71,7 +111,15 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           const scaleY = c.getHeight() / (img.height ?? 1);
           const scale = Math.min(scaleX, scaleY);
           img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top' });
-          c.setBackgroundImage(img, () => c.renderAll());
+          c.setBackgroundImage(img, () => {
+            c.renderAll();
+            setBgDims({
+              left: 0,
+              top: 0,
+              width: (img.width ?? 0) * scale,
+              height: (img.height ?? 0) * scale,
+            });
+          });
         },
         { crossOrigin: 'anonymous' },
       );
@@ -397,6 +445,20 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     return (
       <div ref={containerRef} className={styles.container}>
         <canvas ref={canvasElRef} className={styles.canvas} />
+        {overlayEnabled && displayPlanUrl && overlayOpacity > 0 && (
+          <img
+            src={displayPlanUrl}
+            alt=""
+            className={styles.planOverlay}
+            style={{
+              opacity: overlayOpacity,
+              left: bgDims.left + 'px',
+              top: bgDims.top + 'px',
+              width: bgDims.width + 'px',
+              height: bgDims.height + 'px',
+            }}
+          />
+        )}
       </div>
     );
   },

@@ -7,6 +7,7 @@ import { RoomPopup } from '../Editor/RoomPopup';
 import { reconstructionApi } from '../../api/apiService';
 import type { CropRect } from '../../types/wizard';
 import styles from './StepWallEditor.module.css';
+import panelStyles from '../Editor/ToolPanelV2.module.css';
 
 type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door';
 
@@ -20,6 +21,7 @@ interface PopupState {
 interface StepWallEditorProps {
   maskUrl: string;
   planFileId: string | null;
+  planUrl?: string;
   cropRect: CropRect | null;
   rotation: number;
   blockSize: number;
@@ -52,6 +54,7 @@ const SECTIONS = [
 export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   maskUrl,
   planFileId,
+  planUrl,
   cropRect,
   rotation,
   blockSize,
@@ -65,6 +68,8 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   const [popupState, setPopupState] = useState<PopupState | null>(null);
   const [currentMaskUrl, setCurrentMaskUrl] = useState(maskUrl);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.4);
   const previewUrlRef = useRef<string | null>(null);
 
   // Debounced preview on slider change
@@ -141,6 +146,11 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             activeTool={activeTool}
             brushSize={brushSize}
             onRoomPopupRequest={handleRoomPopupRequest}
+            planUrl={planUrl}
+            planCropRect={cropRect}
+            planRotation={rotation}
+            overlayEnabled={overlayEnabled}
+            overlayOpacity={overlayOpacity}
           />
           {popupState && (
             <RoomPopup
@@ -165,35 +175,65 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
 
             <div className={styles.paramRow}>
               <span className={styles.paramLabel}>Чувствительность</span>
-              <div className={styles.sliderRow}>
+              <div className={panelStyles.sliderRow}>
                 <input
                   type="range"
-                  className={styles.sliderInput}
+                  className={panelStyles.sliderInput}
                   min={7} max={51} step={2}
                   value={blockSize}
                   onChange={(e) => onBlockSizeChange(Number(e.target.value))}
                   style={{ background: `linear-gradient(to right, #FF5722 ${blockSizePct}%, #3a3a3a ${blockSizePct}%)` }}
                 />
-                <span className={styles.sliderValue}>{blockSize}</span>
+                <span className={panelStyles.sliderValue}>{blockSize}</span>
               </div>
             </div>
 
             <div className={styles.paramRow}>
               <span className={styles.paramLabel}>Контраст</span>
-              <div className={styles.sliderRow}>
+              <div className={panelStyles.sliderRow}>
                 <input
                   type="range"
-                  className={styles.sliderInput}
+                  className={panelStyles.sliderInput}
                   min={2} max={20} step={1}
                   value={thresholdC}
                   onChange={(e) => onThresholdCChange(Number(e.target.value))}
                   style={{ background: `linear-gradient(to right, #FF5722 ${thresholdCPct}%, #3a3a3a ${thresholdCPct}%)` }}
                 />
-                <span className={styles.sliderValue}>{thresholdC}</span>
+                <span className={panelStyles.sliderValue}>{thresholdC}</span>
               </div>
             </div>
 
             {isPreviewLoading && <div className={styles.previewSpinner}>Обновление...</div>}
+
+            <h4 className={styles.paramSectionTitle}>// НАЛОЖЕНИЕ</h4>
+
+            <label className={styles.toggleLabel}>
+              <span className={styles.paramLabel}>Показать оригинал</span>
+              <button
+                className={`${styles.toggle} ${overlayEnabled ? styles.toggleActive : ''}`}
+                onClick={() => setOverlayEnabled(!overlayEnabled)}
+                type="button"
+              >
+                <span className={styles.toggleKnob} />
+              </button>
+            </label>
+
+            {overlayEnabled && (
+              <div className={styles.paramRow}>
+                <span className={styles.paramLabel}>Прозрачность</span>
+                <div className={panelStyles.sliderRow}>
+                  <input
+                    type="range"
+                    className={panelStyles.sliderInput}
+                    min={5} max={95} step={5}
+                    value={Math.round(overlayOpacity * 100)}
+                    onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+                    style={{ background: `linear-gradient(to right, #FF5722 ${Math.round(overlayOpacity * 100)}%, #3a3a3a ${Math.round(overlayOpacity * 100)}%)` }}
+                  />
+                  <span className={panelStyles.sliderValue}>{Math.round(overlayOpacity * 100)}%</span>
+                </div>
+              </div>
+            )}
           </div>
         }
       />

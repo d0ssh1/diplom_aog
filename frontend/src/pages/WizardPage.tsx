@@ -83,6 +83,7 @@ export const WizardPage: React.FC = () => {
           <StepWallEditor
             maskUrl={`/api/v1/uploads/masks/${state.maskFileId}.png`}
             planFileId={state.planFileId}
+            planUrl={state.planUrl ?? undefined}
             cropRect={state.cropRect}
             rotation={state.rotation}
             blockSize={state.blockSize}

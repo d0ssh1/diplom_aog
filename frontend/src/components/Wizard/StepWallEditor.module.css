@@ -127,3 +127,43 @@
   color: #FF5722;
   letter-spacing: 0.05em;
 }
+
+.toggleLabel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+}
+
+.toggle {
+  width: 44px;
+  height: 24px;
+  background: #555;
+  border: none;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+
+.toggleActive {
+  background: #FF5722;
+}
+
+.toggleKnob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+  display: block;
+}
+
+.toggleActive .toggleKnob {
+  transform: translateX(20px);
+}
+
