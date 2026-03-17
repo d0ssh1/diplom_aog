@@ -1,19 +1,22 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
+
+type EditorTool = 'crop' | 'auto' | 'brush' | 'eraser';
 
 interface MaskEditorProps {
   planUrl: string;
-  maskUrl?: string; // Если уже есть маска (например, автосгенерированная)
+  maskUrl?: string;
   onSave: (blob: Blob) => void;
+  activeTool?: EditorTool;
+  brushSize?: number;
 }
 
-export default function MaskEditor({ planUrl, maskUrl, onSave }: MaskEditorProps) {
+export default function MaskEditor({ planUrl, maskUrl, onSave, activeTool = 'brush', brushSize = 20 }: MaskEditorProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const fabricCanvasRef = useRef<fabric.Canvas | null>(null);
-  
-  const [isErasing, setIsErasing] = useState(false);
-  const [brushSize, setBrushSize] = useState(20);
+
+  const isErasing = activeTool === 'eraser';
 
   // Инициализация Canvas
   useEffect(() => {
@@ -150,43 +153,18 @@ export default function MaskEditor({ planUrl, maskUrl, onSave }: MaskEditorProps
             <canvas ref={canvasRef} style={{ zIndex: 1 }} />
         </div>
 
-        <div className="tools-panel" style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <h3>Инструменты</h3>
-            
+        <div className="tools-panel" style={{ display: 'none' }}>
             <div>
-                <button 
-                    onClick={() => setIsErasing(false)}
-                    className={!isErasing ? 'active' : ''}
-                    style={{ background: !isErasing ? 'green' : ''}}
-                >
-                    ✏️ Рисовать (Стена)
-                </button>
-                <button 
-                    onClick={() => setIsErasing(true)}
-                    className={isErasing ? 'active' : ''}
-                    style={{ background: isErasing ? 'red' : ''}}
-                >
-                    🧹 Стереть
-                </button>
+                <button className={!isErasing ? 'active' : ''}>✏️ Рисовать (Стена)</button>
+                <button className={isErasing ? 'active' : ''}>🧹 Стереть</button>
             </div>
-
             <div>
                 <label>Размер кисти: {brushSize}px</label>
-                <input 
-                    type="range" 
-                    min="5" 
-                    max="50" 
-                    value={brushSize} 
-                    onChange={(e) => setBrushSize(Number(e.target.value))} 
-                />
+                <input type="range" min="5" max="50" value={brushSize} readOnly />
             </div>
-
             <button onClick={clearCanvas}>Очистить всё</button>
-            
             <div style={{ marginTop: 'auto' }}>
-                <button onClick={handleSave} className="btn-primary">
-                    💾 Сохранить и продолжить
-                </button>
+                <button onClick={handleSave} className="btn-primary">💾 Сохранить и продолжить</button>
             </div>
         </div>
     </div>

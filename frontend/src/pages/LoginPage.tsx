@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Layout, ArrowLeft } from 'lucide-react';
 import { authApi } from '../api/apiService';
-import { Button } from '../components/UI/Button';
 import styles from './LoginPage.module.css';
-import buildingIsometric from '../assets/building-isometric.png';
 
 interface LoginResponse {
   auth_token: string;
@@ -28,7 +27,7 @@ export const LoginPage: React.FC = () => {
       const result = await authApi.login(username, password);
       const data = result as LoginResponse;
       localStorage.setItem('auth_token', data.auth_token);
-      navigate('/');
+      navigate('/admin');
     } catch {
       setError('Неверный логин или пароль');
     } finally {
@@ -38,40 +37,40 @@ export const LoginPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
+      {/* Left: orange panel */}
       <div className={styles.left}>
-        <img
-          src={buildingIsometric}
-          alt="Building"
-          className={styles.illustration}
-        />
+        <div className={styles.leftPattern} />
+        <div className={styles.leftDividerH} />
+        <div className={styles.leftDividerV} />
+        <div className={styles.leftContent}>
+          <Layout size={120} strokeWidth={1} className={styles.leftIcon} />
+          <p className={styles.leftLabel}>Auth_Module</p>
+        </div>
       </div>
+
+      {/* Right: form */}
       <div className={styles.right}>
+        <button className={styles.backBtn} onClick={() => navigate('/')} type="button">
+          <ArrowLeft size={24} />
+        </button>
+
         <form className={styles.form} onSubmit={handleSubmit} noValidate>
           <h1 className={styles.title}>Вход в систему</h1>
 
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="username">
-              Логин
-            </label>
+          <div className={styles.fields}>
             <input
-              id="username"
               type="text"
               className={`${styles.input} ${error ? styles.inputError : ''}`}
+              placeholder="Логин"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               disabled={isLoading}
               autoComplete="username"
             />
-          </div>
-
-          <div className={styles.field}>
-            <label className={styles.label} htmlFor="password">
-              Пароль
-            </label>
             <input
-              id="password"
               type="password"
               className={`${styles.input} ${error ? styles.inputError : ''}`}
+              placeholder="Пароль"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               disabled={isLoading}
@@ -81,9 +80,9 @@ export const LoginPage: React.FC = () => {
 
           {error && <p className={styles.error}>{error}</p>}
 
-          <Button variant="secondary" type="submit" disabled={isLoading}>
+          <button type="submit" className={styles.submitBtn} disabled={isLoading}>
             {isLoading ? 'Загрузка...' : 'Войти'}
-          </Button>
+          </button>
         </form>
       </div>
     </div>

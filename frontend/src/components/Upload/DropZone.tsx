@@ -4,13 +4,13 @@ import { Button } from '../UI/Button';
 import styles from './DropZone.module.css';
 
 interface DropZoneProps {
-  onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   isUploading: boolean;
   accept?: string;
 }
 
 export const DropZone: React.FC<DropZoneProps> = ({
-  onFileSelect,
+  onFilesSelect,
   isUploading,
   accept = 'image/*',
 }) => {
@@ -22,13 +22,14 @@ export const DropZone: React.FC<DropZoneProps> = ({
 
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) onFileSelect(file);
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) onFilesSelect(files);
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) onFileSelect(file);
+    const files = Array.from(e.target.files ?? []);
+    if (files.length > 0) onFilesSelect(files);
+    e.target.value = '';
   };
 
   return (
@@ -46,6 +47,7 @@ export const DropZone: React.FC<DropZoneProps> = ({
         ref={inputRef}
         type="file"
         accept={accept}
+        multiple
         className={styles.hidden}
         onChange={handleChange}
       />

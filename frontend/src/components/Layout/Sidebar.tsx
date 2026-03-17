@@ -7,19 +7,19 @@ export const Sidebar: React.FC = () => {
 
   return (
     <aside className={styles.sidebar}>
-      <h2 className={styles.title}>// Меню</h2>
+      <h2 className={styles.title}>{'// Меню'}</h2>
       <nav className={styles.nav}>
         <button className={styles.item} onClick={() => navigate('/upload')} type="button">
-          &gt; Загрузить изображение
+          <span className={styles.arrow}>&gt;</span> Загрузить изображение
         </button>
         <button className={styles.item} onClick={() => navigate('/upload')} type="button">
-          &gt; Редактировать план помещения
+          <span className={styles.arrow}>&gt;</span> Редактировать план помещения
         </button>
         <button className={styles.item} type="button" disabled>
-          &gt; Редактировать узловые точки
+          <span className={styles.arrow}>&gt;</span> Редактировать узловые точки
         </button>
         <button className={styles.item} type="button" disabled>
-          &gt; Удалить план помещения
+          <span className={styles.arrow}>&gt;</span> Удалить план помещения
         </button>
       </nav>
     </aside>

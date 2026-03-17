@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import styles from './Header.module.css';
 
 interface HeaderProps {
@@ -6,10 +7,13 @@ interface HeaderProps {
 }
 
 export const Header: React.FC<HeaderProps> = ({ username }) => {
+  const navigate = useNavigate();
   return (
     <header className={styles.header}>
       <span className={styles.brand}>PROJECT_DIPLOM</span>
-      {username && <span className={styles.user}>{username}</span>}
+      <button className={styles.userBtn} onClick={() => navigate('/')}>
+        {username ?? 'Ник_админа'}
+      </button>
     </header>
   );
 };

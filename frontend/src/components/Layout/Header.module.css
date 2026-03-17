@@ -1,23 +1,39 @@
 .header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   height: 56px;
-  padding: 0 24px;
-  background: var(--color-header-bg);
   flex-shrink: 0;
+  background: var(--color-orange);
 }
 
 .brand {
-  font-size: 18px;
-  font-weight: 800;
-  color: var(--color-text-white);
-  letter-spacing: 0.05em;
-  font-style: italic;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  padding: 0 24px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-black);
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
 
-.user {
-  font-size: 14px;
+.userBtn {
+  height: 100%;
+  padding: 0 32px;
+  background: var(--color-black);
+  color: var(--color-white);
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
   font-weight: 500;
-  color: var(--color-text-white);
+  letter-spacing: 0.05em;
+  border: none;
+  cursor: pointer;
+  transition: var(--transition);
+  white-space: nowrap;
+}
+
+.userBtn:hover {
+  background: var(--color-grey-dark);
 }

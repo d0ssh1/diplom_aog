@@ -7,6 +7,7 @@ interface UseFileUploadReturn {
   isUploading: boolean;
   error: string | null;
   addFile: (file: File) => Promise<void>;
+  addFiles: (files: File[]) => Promise<void>;
   removeFile: (id: string) => void;
   clearFiles: () => void;
 }
@@ -32,7 +33,34 @@ export const useFileUpload = (): UseFileUploadReturn => {
         url: String(data.url ?? ''),
         name: file.name,
       };
-      setFiles([uploaded]);
+      setFiles((prev) => [...prev, uploaded]);
+    } catch {
+      setError('Ошибка загрузки файла');
+    } finally {
+      setIsUploading(false);
+    }
+  }, []);
+
+  const addFiles = useCallback(async (newFiles: File[]) => {
+    const valid = newFiles.filter((f) => ALLOWED_TYPES.includes(f.type));
+    if (valid.length === 0) {
+      setError('Неверный формат файла. Допустимы: JPG, PNG, PDF');
+      return;
+    }
+    setIsUploading(true);
+    setError(null);
+    try {
+      const results = await Promise.all(
+        valid.map(async (file) => {
+          const data = await uploadApi.uploadPlanPhoto(file);
+          return {
+            id: String(data.id ?? data.file_id ?? ''),
+            url: String(data.url ?? ''),
+            name: file.name,
+          } as UploadedFile;
+        })
+      );
+      setFiles((prev) => [...prev, ...results]);
     } catch {
       setError('Ошибка загрузки файла');
     } finally {
@@ -48,5 +76,5 @@ export const useFileUpload = (): UseFileUploadReturn => {
     setFiles([]);
   }, []);
 
-  return { files, isUploading, error, addFile, removeFile, clearFiles };
+  return { files, isUploading, error, addFile, addFiles, removeFile, clearFiles };
 };

@@ -1,7 +1,6 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { StepIndicator } from './StepIndicator';
-import { Button } from '../UI/Button';
 import styles from './WizardShell.module.css';
 
 interface WizardShellProps {
@@ -39,12 +38,12 @@ export const WizardShell: React.FC<WizardShellProps> = ({
       <div className={styles.content}>{children}</div>
 
       <footer className={styles.footer}>
-        <Button variant="secondary" onClick={onPrev} disabled={currentStep === 1}>
+        <button type="button" className={styles.btnBack} onClick={onPrev} disabled={currentStep === 1}>
           Назад
-        </Button>
-        <Button variant="primary" onClick={onNext} disabled={nextDisabled}>
+        </button>
+        <button type="button" className={styles.btnNext} onClick={onNext} disabled={nextDisabled}>
           {resolvedNextLabel}
-        </Button>
+        </button>
       </footer>
     </div>
   );

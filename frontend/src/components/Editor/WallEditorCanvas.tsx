@@ -124,6 +124,24 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
         canvas.freeDrawingBrush.color = 'black';
         canvas.freeDrawingBrush.width = brushSizeRef.current;
+
+        // Custom cursor — orange dashed circle sized to brush
+        const size = brushSizeRef.current;
+        const cursorCanvas = document.createElement('canvas');
+        cursorCanvas.width = size + 4;
+        cursorCanvas.height = size + 4;
+        const ctx = cursorCanvas.getContext('2d');
+        if (ctx) {
+          ctx.strokeStyle = '#FF5722';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.arc((size + 4) / 2, (size + 4) / 2, size / 2, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+        const cursorUrl = cursorCanvas.toDataURL();
+        const offset = Math.round((size + 4) / 2);
+        canvas.freeDrawingCursor = `url(${cursorUrl}) ${offset} ${offset}, crosshair`;
         return;
       }
 

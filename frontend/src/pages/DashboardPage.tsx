@@ -1,11 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { X } from 'lucide-react';
+import { X, Layout } from 'lucide-react';
 import { reconstructionApi } from '../api/apiService';
-import { Button } from '../components/UI/Button';
 import type { ReconstructionCard } from '../types/dashboard';
 import styles from './DashboardPage.module.css';
-import buildingBlur from '../assets/building-blur.png';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
@@ -37,20 +35,25 @@ export const DashboardPage: React.FC = () => {
   };
 
   if (isLoading) {
-    return <div className={styles.loading}>Загрузка...</div>;
+    return <div className={styles.loading}>SYS.LOADING...</div>;
   }
 
   if (reconstructions.length === 0) {
     return (
-      <div className={styles.empty} style={{ backgroundImage: `url(${buildingBlur})` }}>
-        <div className={styles.emptyIcon}>
-          <X size={40} />
+      <div className={styles.empty}>
+        <div className={styles.emptyPattern} />
+        <div className={styles.emptyBox}>
+          <div className={styles.emptyIcon}>
+            <Layout size={80} strokeWidth={1} />
+          </div>
+          <h3 className={styles.emptyTitle}>Рабочая область пуста</h3>
+          <div className={styles.emptyDivider} />
+          <p className={styles.emptyMsg}>SYS.MSG: Требуется загрузка исходных данных для начала работы</p>
+          {error && <p className={styles.error}>{error}</p>}
+          <button className={styles.startBtn} onClick={() => navigate('/upload')}>
+            Начать работу
+          </button>
         </div>
-        <p className={styles.emptyText}>Нет загруженных планов</p>
-        <Button variant="primary" onClick={() => navigate('/upload')}>
-          Начать
-        </Button>
-        {error && <p className={styles.error}>{error}</p>}
       </div>
     );
   }
@@ -63,10 +66,10 @@ export const DashboardPage: React.FC = () => {
           <div
             key={r.id}
             className={styles.card}
-            onClick={() => navigate(`/mesh/${r.id}`)}
+            onClick={() => navigate(`/admin/mesh/${r.id}`)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && navigate(`/mesh/${r.id}`)}
+            onKeyDown={(e) => e.key === 'Enter' && navigate(`/admin/mesh/${r.id}`)}
           >
             <div className={styles.preview}>
               {r.url ? (
@@ -77,10 +80,7 @@ export const DashboardPage: React.FC = () => {
               <button
                 type="button"
                 className={styles.deleteBtn}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(r.id);
-                }}
+                onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
                 title="Удалить"
               >
                 <X size={14} />
