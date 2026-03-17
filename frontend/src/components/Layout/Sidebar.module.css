@@ -1,0 +1,45 @@
+.sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--color-sidebar-bg);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border-right: 1px solid var(--color-grey-bg);
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  font-style: italic;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item {
+  text-align: left;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  padding: 6px 0;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.item:hover:not(:disabled) {
+  color: var(--color-orange);
+}
+
+.item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

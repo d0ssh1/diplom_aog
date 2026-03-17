@@ -1,0 +1,47 @@
+.step {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 400px;
+  padding: 48px;
+}
+
+.title {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.input {
+  padding: 12px;
+  border: 2px solid var(--color-grey-bg);
+  border-radius: var(--border-radius);
+  font-size: 16px;
+  outline: none;
+  transition: var(--transition);
+}
+
+.input:focus {
+  border-color: var(--color-orange);
+}

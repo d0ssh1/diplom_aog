@@ -1,0 +1,49 @@
+/* === Design Tokens === */
+:root {
+  --color-black: #000000;
+  --color-white: #FFFFFF;
+  --color-orange: #FF5722;
+  --color-orange-hover: #E64A19;
+  --color-grey-bg: #E0E0E0;
+  --color-grey-dark: #4A4A4A;
+  --color-grey-medium: #9E9E9E;
+  --color-grey-light: #F5F5F5;
+  --color-sidebar-bg: #FFFFFF;
+  --color-header-bg: #000000;
+  --color-text-primary: #000000;
+  --color-text-white: #FFFFFF;
+  --color-text-muted: #9E9E9E;
+  --color-error: #dc2626;
+  --border-radius: 4px;
+  --transition: all 0.2s ease;
+}
+
+/* === Reset === */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  font-family: 'Inter', 'Helvetica Neue', sans-serif;
+  background: var(--color-white);
+  color: var(--color-text-primary);
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+}
+
+input {
+  font-family: inherit;
+}

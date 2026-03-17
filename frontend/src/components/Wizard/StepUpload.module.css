@@ -1,0 +1,17 @@
+.step {
+  display: flex;
+  height: 100%;
+}
+
+.left {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.right {
+  flex: 1;
+  overflow: auto;
+}

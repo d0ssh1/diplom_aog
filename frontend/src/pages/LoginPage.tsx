@@ -1,133 +1,93 @@
-/**
- * Страница авторизации
- */
-
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/apiService';
+import { Button } from '../components/UI/Button';
+import styles from './LoginPage.module.css';
+import buildingIsometric from '../assets/building-isometric.png';
 
-function LoginPage() {
+interface LoginResponse {
+  auth_token: string;
+}
+
+export const LoginPage: React.FC = () => {
   const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [isRegister, setIsRegister] = useState(false);
-  const [rePassword, setRePassword] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
     if (!username || !password) {
       setError('Заполните все поля');
       return;
     }
-
-    if (isRegister && password !== rePassword) {
-        setError('Пароли не совпадают');
-        return;
-    }
-
-    setLoading(true);
+    setIsLoading(true);
     setError(null);
-
     try {
-      if (isRegister) {
-          await authApi.register({ username, password, re_password: rePassword });
-          // Auto login after register? Or ask to login?
-          // Let's auto login 
-          const response = await authApi.login(username, password);
-          localStorage.setItem('auth_token', response.auth_token);
-      } else {
-          const response = await authApi.login(username, password);
-          localStorage.setItem('auth_token', response.auth_token);
-      }
-      navigate('/reconstructions');
-    } catch (err: any) {
-      if (isRegister) {
-          setError(err.response?.data?.detail || 'Ошибка регистрации');
-      } else {
-          setError('Неверный логин или пароль');
-      }
+      const result = await authApi.login(username, password);
+      const data = result as LoginResponse;
+      localStorage.setItem('auth_token', data.auth_token);
+      navigate('/');
+    } catch {
+      setError('Неверный логин или пароль');
     } finally {
-      setLoading(false);
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="login-page">
-      <main className="login-container">
-        <h1>{isRegister ? 'Регистрация' : 'Вход в систему'}</h1>
-        
-        <form onSubmit={handleSubmit} className="login-form">
-          <div className="form-group">
-            <label htmlFor="username">Логин</label>
+    <div className={styles.page}>
+      <div className={styles.left}>
+        <img
+          src={buildingIsometric}
+          alt="Building"
+          className={styles.illustration}
+        />
+      </div>
+      <div className={styles.right}>
+        <form className={styles.form} onSubmit={handleSubmit} noValidate>
+          <h1 className={styles.title}>Вход в систему</h1>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="username">
+              Логин
+            </label>
             <input
               id="username"
               type="text"
+              className={`${styles.input} ${error ? styles.inputError : ''}`}
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="Введите логин"
-              disabled={loading}
-              minLength={4}
+              disabled={isLoading}
+              autoComplete="username"
             />
           </div>
-          
-          <div className="form-group">
-            <label htmlFor="password">Пароль</label>
+
+          <div className={styles.field}>
+            <label className={styles.label} htmlFor="password">
+              Пароль
+            </label>
             <input
               id="password"
               type="password"
+              className={`${styles.input} ${error ? styles.inputError : ''}`}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder="Введите пароль"
-              disabled={loading}
-              minLength={username === 'admin' ? 1 : 8}
+              disabled={isLoading}
+              autoComplete="current-password"
             />
           </div>
 
-          {isRegister && (
-             <div className="form-group">
-                <label htmlFor="rePassword">Повторите пароль</label>
-                <input
-                  id="rePassword"
-                  type="password"
-                  value={rePassword}
-                  onChange={(e) => setRePassword(e.target.value)}
-                  placeholder="Повторите пароль"
-                  disabled={loading}
-                  minLength={8}
-                />
-            </div>
-          )}
-          
-          {error && <div className="error-message">{error}</div>}
-          
-          <button type="submit" disabled={loading} className="btn-login">
-            {loading ? 'Загрузка...' : (isRegister ? 'Зарегистрироваться' : 'Войти')}
-          </button>
-        </form>
+          {error && <p className={styles.error}>{error}</p>}
 
-        <div className="auth-switch">
-            <p>
-                {isRegister ? 'Уже есть аккаунт? ' : 'Нет аккаунта? '}
-                <button 
-                    type="button" 
-                    onClick={() => {
-                        setIsRegister(!isRegister);
-                        setError(null);
-                        setPassword('');
-                        setRePassword('');
-                    }}
-                    style={{ background: 'none', border: 'none', color: '#60a5fa', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                    {isRegister ? 'Войти' : 'Зарегистрироваться'}
-                </button>
-            </p>
-        </div>
-      </main>
+          <Button variant="secondary" type="submit" disabled={isLoading}>
+            {isLoading ? 'Загрузка...' : 'Войти'}
+          </Button>
+        </form>
+      </div>
     </div>
   );
-}
+};
 
 export default LoginPage;

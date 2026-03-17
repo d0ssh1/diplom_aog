@@ -1,0 +1,82 @@
+.page {
+  display: flex;
+  height: 100vh;
+}
+
+.left {
+  flex: 1;
+  background: var(--color-orange);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.illustration {
+  max-width: 80%;
+  max-height: 80%;
+  object-fit: contain;
+}
+
+.right {
+  flex: 1;
+  background: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 48px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 360px;
+}
+
+.title {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.input {
+  padding: 12px;
+  border: 2px dashed #BDBDBD;
+  border-radius: var(--border-radius);
+  font-size: 16px;
+  outline: none;
+  transition: var(--transition);
+  background: var(--color-white);
+  color: var(--color-text-primary);
+}
+
+.input:focus {
+  border-color: var(--color-orange);
+  border-style: solid;
+}
+
+.inputError {
+  border-color: var(--color-error);
+  border-style: solid;
+}
+
+.error {
+  font-size: 14px;
+  color: var(--color-error);
+  margin: 0;
+}

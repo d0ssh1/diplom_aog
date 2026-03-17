@@ -1,0 +1,112 @@
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 16px;
+  color: var(--color-text-muted);
+}
+
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  gap: 16px;
+  background-size: cover;
+  background-position: center;
+}
+
+.emptyIcon {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 2px solid var(--color-grey-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-white);
+}
+
+.emptyText {
+  font-size: 16px;
+  color: var(--color-text-primary);
+  font-weight: 500;
+}
+
+.page {
+  padding: 24px;
+  background: var(--color-grey-bg);
+  min-height: 100%;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+
+.card {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.card:focus {
+  outline: 2px solid var(--color-orange);
+  border-radius: var(--border-radius);
+}
+
+.preview {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3/2;
+  background: var(--color-grey-medium);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.previewImg {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.previewPlaceholder {
+  width: 100%;
+  height: 100%;
+  background: var(--color-grey-medium);
+}
+
+.deleteBtn {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--color-orange);
+  border: none;
+  color: var(--color-white);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+}
+
+.cardName {
+  font-size: 13px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.error {
+  font-size: 13px;
+  color: var(--color-error);
+  margin: 0;
+}

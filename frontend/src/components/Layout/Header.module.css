@@ -1,0 +1,23 @@
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 24px;
+  background: var(--color-header-bg);
+  flex-shrink: 0;
+}
+
+.brand {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--color-text-white);
+  letter-spacing: 0.05em;
+  font-style: italic;
+}
+
+.user {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-white);
+}

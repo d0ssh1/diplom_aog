@@ -1,0 +1,12 @@
+.step {
+  height: 100%;
+  overflow: hidden;
+}
+
+.empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--color-text-muted);
+}

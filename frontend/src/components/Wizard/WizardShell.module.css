@@ -1,0 +1,45 @@
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  height: 56px;
+  background: var(--color-header-bg);
+  flex-shrink: 0;
+  padding: 0 24px;
+}
+
+.closeBtn {
+  position: absolute;
+  right: 24px;
+  top: 50%;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--color-text-white);
+  cursor: pointer;
+  font-size: 20px;
+  line-height: 1;
+  padding: 4px;
+}
+
+.content {
+  flex: 1;
+  overflow: auto;
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 24px;
+  background: var(--color-white);
+  border-top: 1px solid var(--color-grey-bg);
+  flex-shrink: 0;
+}

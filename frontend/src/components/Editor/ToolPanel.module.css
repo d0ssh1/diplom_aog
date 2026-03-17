@@ -1,0 +1,28 @@
+.panel {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--color-grey-dark);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.sectionTitle {
+  font-size: 28px;
+  font-weight: 700;
+  font-style: italic;
+  color: var(--color-text-white);
+  margin: 0;
+}
+
+.buttons {
+  display: flex;
+  gap: 12px;
+}

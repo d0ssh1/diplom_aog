@@ -22,7 +22,7 @@ export default function MaskEditor({ planUrl, maskUrl, onSave }: MaskEditorProps
     // Создаем canvas
     const canvas = new fabric.Canvas(canvasRef.current, {
       isDrawingMode: true,
-      backgroundColor: null, // Transparent to see the plan underneath
+      backgroundColor: undefined, // Transparent to see the plan underneath
     });
     
     fabricCanvasRef.current = canvas;

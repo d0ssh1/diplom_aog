@@ -1,0 +1,37 @@
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  flex: 1;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-white);
+}
+
+.input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-grey-medium);
+  color: var(--color-text-white);
+  font-size: 15px;
+  padding: 6px 0;
+  outline: none;
+  transition: var(--transition);
+}
+
+.input:focus {
+  border-bottom-color: var(--color-orange);
+}
+
+.input::placeholder {
+  color: var(--color-grey-medium);
+}
