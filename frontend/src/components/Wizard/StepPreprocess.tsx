@@ -34,9 +34,28 @@ export const StepPreprocess: React.FC<StepPreprocessProps> = ({
 }) => {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [autoRotated, setAutoRotated] = useState(false);
+  const [displayUrl, setDisplayUrl] = useState(planUrl);
   const imageRef = useRef<HTMLImageElement>(null);
 
   const effectiveCrop = cropRect ?? DEFAULT_CROP;
+
+  useEffect(() => {
+    if (rotation === 0) { setDisplayUrl(planUrl); return; }
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const swap = rotation === 90 || rotation === 270;
+      canvas.width = swap ? img.height : img.width;
+      canvas.height = swap ? img.width : img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((rotation * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      setDisplayUrl(canvas.toDataURL());
+    };
+    img.src = planUrl;
+  }, [planUrl, rotation]);
 
   // Auto-rotate portrait images once on mount
   useEffect(() => {
@@ -75,10 +94,9 @@ export const StepPreprocess: React.FC<StepPreprocessProps> = ({
         <div className={styles.imageWrapper}>
           <img
             ref={imageRef}
-            src={planUrl}
+            src={displayUrl}
             alt="План"
             className={styles.planImage}
-            style={{ transform: `rotate(${rotation}deg)` }}
           />
           {activeTool === 'crop' && (
             <CropOverlay
