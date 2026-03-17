@@ -9,7 +9,6 @@
   width: 150px;
   height: 100px;
   background: var(--color-grey-bg);
-  border-radius: var(--border-radius);
   overflow: hidden;
 }
 
@@ -30,7 +29,6 @@
   justify-content: center;
   background: var(--color-orange);
   border: none;
-  border-radius: 50%;
   color: var(--color-white);
   cursor: pointer;
   padding: 0;

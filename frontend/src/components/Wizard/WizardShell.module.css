@@ -31,7 +31,9 @@
 
 .content {
   flex: 1;
-  overflow: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .footer {
@@ -42,4 +44,55 @@
   background: var(--color-white);
   border-top: 1px solid var(--color-grey-bg);
   flex-shrink: 0;
+}
+
+.btnBack {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
+  width: 120px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: 'Courier New', monospace;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  background: var(--color-black);
+  color: var(--color-white);
+  transition: background 0.15s ease;
+}
+
+.btnBack:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnBack:hover:not(:disabled) {
+  background: var(--color-grey-dark);
+}
+
+.btnNext {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 0;
+  width: 160px;
+  font-size: 16px;
+  font-weight: 600;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  background: var(--color-orange);
+  color: var(--color-white);
+  transition: background 0.15s ease;
+}
+
+.btnNext:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btnNext:hover:not(:disabled) {
+  background: var(--color-orange-hover);
 }
