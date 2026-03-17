@@ -5,6 +5,7 @@ import os
 from typing import Tuple
 
 import cv2
+import numpy as np
 
 from app.core.exceptions import FileStorageError, ImageProcessingError
 from app.processing.binarization import BinarizationService
@@ -118,6 +119,37 @@ class MaskService:
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
 
+        # Step 4b: Remove small connected components (noise, symbol remnants)
+        min_component_area = max(100, int(mask.shape[0] * mask.shape[1] * 0.0005))
+        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        clean_mask = np.zeros_like(mask)
+        for i in range(1, num_labels):
+            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
+                clean_mask[labels == i] = 255
+        mask = clean_mask
+
+        # Step 4c: Remove text-like components (small, square aspect ratio)
+        num_labels2, labels2, stats2, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
+        text_mask = np.zeros_like(mask)
+        for i in range(1, num_labels2):
+            w_comp = stats2[i, cv2.CC_STAT_WIDTH]
+            h_comp = stats2[i, cv2.CC_STAT_HEIGHT]
+            area = stats2[i, cv2.CC_STAT_AREA]
+            aspect = max(w_comp, h_comp) / max(1, min(w_comp, h_comp))
+            is_text_like = (
+                area < min_component_area * 5
+                and aspect < 4
+                and w_comp < mask.shape[1] * 0.1
+                and h_comp < mask.shape[0] * 0.1
+            )
+            if is_text_like:
+                text_mask[labels2 == i] = 255
+        if np.any(text_mask):
+            k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            text_mask = cv2.dilate(text_mask, k3, iterations=1)
+            mask = cv2.inpaint(mask, text_mask, 3, cv2.INPAINT_TELEA)
+            _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
+
         # Step 5: Text detection + removal
         text_blocks = []
         if enable_text_removal:
@@ -127,6 +159,10 @@ class MaskService:
                     mask, text_blocks,
                     (cropped_bgr.shape[1], cropped_bgr.shape[0]),
                 )
+
+        # Step 6: Final cleanup — MORPH_OPEN removes remaining tiny dots
+        kernel_final = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_final, iterations=1)
 
         # Save mask
         output_path = os.path.join(self._masks_dir, f"{file_id}.png")

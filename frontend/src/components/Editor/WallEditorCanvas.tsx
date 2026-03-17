@@ -61,14 +61,16 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       });
       fabricRef.current = canvas;
 
-      // Load mask as background
+      // Load mask as background — proportional fit
       fabric.Image.fromURL(
         maskUrl,
         (img) => {
           if (!img || !fabricRef.current) return;
           const c = fabricRef.current;
-          img.scaleToWidth(c.getWidth());
-          img.scaleToHeight(c.getHeight());
+          const scaleX = c.getWidth() / (img.width ?? 1);
+          const scaleY = c.getHeight() / (img.height ?? 1);
+          const scale = Math.min(scaleX, scaleY);
+          img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top' });
           c.setBackgroundImage(img, () => c.renderAll());
         },
         { crossOrigin: 'anonymous' },
