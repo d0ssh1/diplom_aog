@@ -19,6 +19,7 @@ interface ToolPanelV2Props {
   brushSize?: number;
   onBrushSizeChange?: (size: number) => void;
   brushSizeLabel?: string;
+  extraContent?: React.ReactNode;
 }
 
 export const ToolPanelV2: React.FC<ToolPanelV2Props> = ({
@@ -28,6 +29,7 @@ export const ToolPanelV2: React.FC<ToolPanelV2Props> = ({
   brushSize,
   onBrushSizeChange,
   brushSizeLabel = '// ТОЛЩИНА ЛИНИИ',
+  extraContent,
 }) => {
   const showSlider = brushSize !== undefined && onBrushSizeChange !== undefined;
   const fillPct = showSlider ? ((brushSize! - 1) / (50 - 1)) * 100 : 0;
@@ -76,6 +78,8 @@ export const ToolPanelV2: React.FC<ToolPanelV2Props> = ({
             </div>
           </section>
         )}
+
+        {extraContent}
       </div>
     </div>
   );

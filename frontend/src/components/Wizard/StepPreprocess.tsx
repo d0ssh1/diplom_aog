@@ -57,7 +57,6 @@ export const StepPreprocess: React.FC<StepPreprocessProps> = ({
     img.src = planUrl;
   }, [planUrl, rotation]);
 
-  // Auto-rotate portrait images once on mount
   useEffect(() => {
     const img = imageRef.current;
     if (!img) return;
@@ -74,7 +73,6 @@ export const StepPreprocess: React.FC<StepPreprocessProps> = ({
     } else {
       img.addEventListener('load', checkOrientation, { once: true });
     }
-  // Only run on mount — rotation===0 guard prevents re-firing
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

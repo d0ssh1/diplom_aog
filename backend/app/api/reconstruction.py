@@ -9,9 +9,12 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 from app.api.deps import get_reconstruction_service, get_mask_service
+from fastapi.responses import Response
+
 from app.models import (
     CalculateMaskRequest,
     CalculateMaskResponse,
+    MaskPreviewRequest,
     CalculateHoughRequest,
     CalculateHoughResponse,
     CalculateMeshRequest,
@@ -48,7 +51,11 @@ async def calculate_initial_mask(
         }
     try:
         filename = await svc.calculate_mask(
-            request.file_id, crop=crop_dict, rotation=request.rotation
+            request.file_id,
+            crop=crop_dict,
+            rotation=request.rotation,
+            block_size=request.block_size,
+            threshold_c=request.threshold_c,
         )
     except Exception as e:
         logger.error("calculate_mask failed: %s", e)
@@ -60,6 +67,35 @@ async def calculate_initial_mask(
         created_by=1,
         url=f"/api/v1/uploads/masks/{filename}",
     )
+
+
+@router.post("/mask-preview")
+async def mask_preview(
+    request: MaskPreviewRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: MaskService = Depends(get_mask_service),
+):
+    """Генерирует превью маски с заданными параметрами. Не сохраняет на диск."""
+    crop_dict = None
+    if request.crop:
+        crop_dict = {
+            'x': request.crop.x,
+            'y': request.crop.y,
+            'width': request.crop.width,
+            'height': request.crop.height,
+        }
+    try:
+        mask_bytes = await svc.preview_mask(
+            file_id=request.file_id,
+            crop=crop_dict,
+            rotation=request.rotation,
+            block_size=request.block_size,
+            threshold_c=request.threshold_c,
+        )
+    except Exception as e:
+        logger.error("mask_preview failed: %s", e)
+        raise HTTPException(status_code=500, detail="Ошибка генерации превью")
+    return Response(content=mask_bytes, media_type="image/png")
 
 
 # === Hough Transform ===

@@ -41,6 +41,8 @@ export interface WizardState {
   meshUrl: string | null;
   cropRect: CropRect | null;
   rotation: 0 | 90 | 180 | 270;
+  blockSize: number;
+  thresholdC: number;
   rooms: RoomAnnotation[];
   doors: DoorAnnotation[];
   isLoading: boolean;

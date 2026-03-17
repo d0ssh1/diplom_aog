@@ -34,6 +34,28 @@ class CalculateMaskRequest(BaseModel):
     file_id: str
     crop: Optional[CropRect] = None
     rotation: int = 0  # Rotation in degrees (0, 90, 180, 270)
+    block_size: int = 15
+    threshold_c: int = 10
+
+
+class MaskPreviewRequest(BaseModel):
+    """Запрос на превью маски (без сохранения)"""
+    file_id: str
+    crop: Optional[CropRect] = None
+    rotation: int = 0
+    block_size: int = 15
+    threshold_c: int = 10
+    block_size: int = 15
+    threshold_c: int = 10
+
+
+class MaskPreviewRequest(BaseModel):
+    """Запрос на превью маски (без сохранения)"""
+    file_id: str
+    crop: Optional[CropRect] = None
+    rotation: int = 0
+    block_size: int = 15
+    threshold_c: int = 10
 
 
 class CalculateMaskResponse(BaseModel):

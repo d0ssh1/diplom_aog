@@ -82,7 +82,14 @@ export const WizardPage: React.FC = () => {
         return (
           <StepWallEditor
             maskUrl={`/api/v1/uploads/masks/${state.maskFileId}.png`}
+            planFileId={state.planFileId}
+            cropRect={state.cropRect}
+            rotation={state.rotation}
+            blockSize={state.blockSize}
+            thresholdC={state.thresholdC}
             canvasRef={canvasRef}
+            onBlockSizeChange={wizard.setBlockSize}
+            onThresholdCChange={wizard.setThresholdC}
           />
         );
       case 4:

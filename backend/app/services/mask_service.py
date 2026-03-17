@@ -36,11 +36,66 @@ class MaskService:
             raise FileStorageError(file_id, pattern)
         return files[0]
 
+    async def preview_mask(
+        self,
+        file_id: str,
+        crop: dict | None = None,
+        rotation: int = 0,
+        block_size: int = 15,
+        threshold_c: int = 10,
+    ) -> bytes:
+        """Генерирует превью маски БЕЗ сохранения на диск. Возвращает PNG bytes."""
+        plan_path = self._find_file(file_id, "plans")
+        img = cv2.imread(plan_path)
+        if img is None:
+            raise ImageProcessingError("preview_mask", f"Failed to load: {plan_path}")
+
+        if rotation:
+            r = rotation % 360
+            if r == 90:
+                img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+            elif r == 180:
+                img = cv2.rotate(img, cv2.ROTATE_180)
+            elif r == 270:
+                img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+
+        img = remove_colored_elements(img)
+
+        if crop is not None:
+            h, w = img.shape[:2]
+            x = max(0, int(crop["x"] * w))
+            y = max(0, int(crop["y"] * h))
+            cw = max(1, int(crop["width"] * w))
+            ch = max(1, int(crop["height"] * h))
+            img = img[y:y + ch, x:x + cw]
+
+        gray = self._binarization.to_grayscale(img)
+        blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+
+        bs = max(3, block_size)
+        if bs % 2 == 0:
+            bs += 1
+
+        binary = cv2.adaptiveThreshold(
+            blurred, 255,
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV,
+            blockSize=bs,
+            C=threshold_c,
+        )
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+        mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+        _, buffer = cv2.imencode('.png', mask)
+        return buffer.tobytes()
+
     async def calculate_mask(
         self,
         file_id: str,
         crop: dict | None = None,
         rotation: int = 0,
+        block_size: int = 15,
+        threshold_c: int = 10,
         enable_normalize: bool = False,
         enable_color_filter: bool = False,
         enable_color_removal: bool = True,
@@ -108,47 +163,19 @@ class MaskService:
         # GaussianBlur(3,3) removes noise without destroying thin lines.
         gray = self._binarization.to_grayscale(img)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+        bs = max(3, block_size)
+        if bs % 2 == 0:
+            bs += 1
         binary = cv2.adaptiveThreshold(
             blurred, 255,
             cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,  # walls (dark lines) become white
-            blockSize=15,
-            C=10,
+            cv2.THRESH_BINARY_INV,
+            blockSize=bs,
+            C=threshold_c,
         )
         # Only closing — fills small gaps in walls. No opening (it erases thin lines).
         kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
         mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
-
-        # Step 4b: Remove small connected components (noise, symbol remnants)
-        min_component_area = max(100, int(mask.shape[0] * mask.shape[1] * 0.0005))
-        num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        clean_mask = np.zeros_like(mask)
-        for i in range(1, num_labels):
-            if stats[i, cv2.CC_STAT_AREA] >= min_component_area:
-                clean_mask[labels == i] = 255
-        mask = clean_mask
-
-        # Step 4c: Remove text-like components (small, square aspect ratio)
-        num_labels2, labels2, stats2, _ = cv2.connectedComponentsWithStats(mask, connectivity=8)
-        text_mask = np.zeros_like(mask)
-        for i in range(1, num_labels2):
-            w_comp = stats2[i, cv2.CC_STAT_WIDTH]
-            h_comp = stats2[i, cv2.CC_STAT_HEIGHT]
-            area = stats2[i, cv2.CC_STAT_AREA]
-            aspect = max(w_comp, h_comp) / max(1, min(w_comp, h_comp))
-            is_text_like = (
-                area < min_component_area * 5
-                and aspect < 4
-                and w_comp < mask.shape[1] * 0.1
-                and h_comp < mask.shape[0] * 0.1
-            )
-            if is_text_like:
-                text_mask[labels2 == i] = 255
-        if np.any(text_mask):
-            k3 = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-            text_mask = cv2.dilate(text_mask, k3, iterations=1)
-            mask = cv2.inpaint(mask, text_mask, 3, cv2.INPAINT_TELEA)
-            _, mask = cv2.threshold(mask, 127, 255, cv2.THRESH_BINARY)
 
         # Step 5: Text detection + removal
         text_blocks = []
@@ -159,10 +186,6 @@ class MaskService:
                     mask, text_blocks,
                     (cropped_bgr.shape[1], cropped_bgr.shape[0]),
                 )
-
-        # Step 6: Final cleanup — MORPH_OPEN removes remaining tiny dots
-        kernel_final = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel_final, iterations=1)
 
         # Save mask
         output_path = os.path.join(self._masks_dir, f"{file_id}.png")

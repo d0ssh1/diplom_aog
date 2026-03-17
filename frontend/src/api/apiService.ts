@@ -107,21 +107,32 @@ interface CalculateMaskResponse {
 }
 
 export const reconstructionApi = {
-  calculateMask: async (fileId: string, crop?: CropRect, rotation?: number) => {
-    // В реальном API мы бы отправили crop и rotation
-    const cropData = crop ? {
-        x: crop.x,
-        y: crop.y,
-        width: crop.width,
-        height: crop.height 
-    } : null;
-
-    const { data } = await apiClient.post<CalculateMaskResponse>('/reconstruction/initial-masks', { 
-        file_id: fileId,
-        crop: cropData,
-        rotation: rotation || 0
+  calculateMask: async (fileId: string, crop?: CropRect, rotation?: number, blockSize?: number, thresholdC?: number) => {
+    const cropData = crop ? { x: crop.x, y: crop.y, width: crop.width, height: crop.height } : null;
+    const { data } = await apiClient.post<CalculateMaskResponse>('/reconstruction/initial-masks', {
+      file_id: fileId,
+      crop: cropData,
+      rotation: rotation ?? 0,
+      block_size: blockSize ?? 15,
+      threshold_c: thresholdC ?? 10,
     });
     return data;
+  },
+
+  previewMask: async (fileId: string, crop?: CropRect | null, rotation?: number, blockSize?: number, thresholdC?: number): Promise<string> => {
+    const cropData = crop ? { x: crop.x, y: crop.y, width: crop.width, height: crop.height } : null;
+    const response = await apiClient.post(
+      '/reconstruction/mask-preview',
+      {
+        file_id: fileId,
+        crop: cropData,
+        rotation: rotation ?? 0,
+        block_size: blockSize ?? 15,
+        threshold_c: thresholdC ?? 10,
+      },
+      { responseType: 'blob' },
+    );
+    return URL.createObjectURL(response.data);
   },
   
   calculateHough: async (planFileId: string, maskFileId: string) => {

@@ -46,3 +46,84 @@
   font-family: 'Courier New', monospace;
   color: var(--color-text-muted);
 }
+
+.paramSection {
+  padding: 0 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.paramSectionTitle {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: #9E9E9E;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin: 0 0 4px;
+}
+
+.paramRow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.paramLabel {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sliderInput {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  -webkit-appearance: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.sliderInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px;
+  height: 20px;
+  background: #999;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.sliderInput::-moz-range-thumb {
+  width: 16px;
+  height: 20px;
+  background: #999;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+}
+
+.sliderValue {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #FF5722;
+  font-weight: bold;
+  width: 28px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.previewSpinner {
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
+  color: #FF5722;
+  letter-spacing: 0.05em;
+}

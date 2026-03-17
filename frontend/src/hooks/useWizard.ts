@@ -15,6 +15,8 @@ interface UseWizardReturn {
   save: (name: string) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
   setRotation: (deg: 0 | 90 | 180 | 270) => void;
+  setBlockSize: (v: number) => void;
+  setThresholdC: (v: number) => void;
 }
 
 const initialState: WizardState = {
@@ -27,6 +29,8 @@ const initialState: WizardState = {
   meshUrl: null,
   cropRect: null,
   rotation: 0,
+  blockSize: 15,
+  thresholdC: 10,
   rooms: [],
   doors: [],
   isLoading: false,
@@ -57,6 +61,14 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, rotation: deg }));
   }, []);
 
+  const setBlockSize = useCallback((v: number) => {
+    setState((s) => ({ ...s, blockSize: v }));
+  }, []);
+
+  const setThresholdC = useCallback((v: number) => {
+    setState((s) => ({ ...s, thresholdC: v }));
+  }, []);
+
   const setMaskFile = useCallback((id: string) => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
@@ -80,6 +92,8 @@ export const useWizard = (): UseWizardReturn => {
         state.planFileId,
         state.cropRect ?? undefined,
         state.rotation,
+        state.blockSize,
+        state.thresholdC,
       );
       const raw = data as unknown as Record<string, unknown>;
       const fileId = raw.file_id ?? raw.id ?? raw.mask_file_id ?? '';
@@ -87,7 +101,7 @@ export const useWizard = (): UseWizardReturn => {
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка вычисления маски' }));
     }
-  }, [state.planFileId, state.cropRect, state.rotation]);
+  }, [state.planFileId, state.cropRect, state.rotation, state.blockSize, state.thresholdC]);
 
   const buildMesh = useCallback(async () => {
     if (!state.planFileId || !state.maskFileId) return;
@@ -133,5 +147,7 @@ export const useWizard = (): UseWizardReturn => {
     save,
     setCropRect,
     setRotation,
+    setBlockSize,
+    setThresholdC,
   };
 };
