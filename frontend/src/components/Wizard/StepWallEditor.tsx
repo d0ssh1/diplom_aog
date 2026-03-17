@@ -64,6 +64,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   onThresholdCChange,
 }) => {
   const [activeTool, setActiveTool] = useState<ActiveTool>('wall');
+  const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
   const [brushSize, setBrushSize] = useState(6);
   const [popupState, setPopupState] = useState<PopupState | null>(null);
   const [currentMaskUrl, setCurrentMaskUrl] = useState(maskUrl);
@@ -132,9 +133,6 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
     setPopupState(null);
   };
 
-  const blockSizePct = ((blockSize - 7) / (51 - 7)) * 100;
-  const thresholdCPct = ((thresholdC - 2) / (20 - 2)) * 100;
-
   return (
     <div className={styles.step}>
       <div className={styles.canvasArea}>
@@ -145,6 +143,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             maskUrl={currentMaskUrl}
             activeTool={activeTool}
             brushSize={brushSize}
+            eraserMode={eraserMode}
             onRoomPopupRequest={handleRoomPopupRequest}
             planUrl={planUrl}
             planCropRect={cropRect}
@@ -167,11 +166,43 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
         sections={SECTIONS}
         activeTool={activeTool}
         onToolChange={handleToolChange}
-        brushSize={brushSize}
-        onBrushSizeChange={setBrushSize}
         extraContent={
-          <div className={styles.paramSection}>
-            <h4 className={styles.paramSectionTitle}>// НАСТРОЙКА</h4>
+          <>
+            {activeTool === 'eraser' && (
+              <div className={styles.subTools}>
+                <button
+                  type="button"
+                  className={`${styles.subTool} ${eraserMode === 'brush' ? styles.subToolActive : ''}`}
+                  onClick={() => setEraserMode('brush')}
+                >
+                  ○ Кисть
+                </button>
+                <button
+                  type="button"
+                  className={`${styles.subTool} ${eraserMode === 'select' ? styles.subToolActive : ''}`}
+                  onClick={() => setEraserMode('select')}
+                >
+                  ▭ Выделить область
+                </button>
+              </div>
+            )}
+
+            <div className={styles.paramSection}>
+            <h4 className={styles.paramSectionTitle}>// ПАРАМЕТРЫ</h4>
+
+            <div className={styles.paramRow}>
+              <span className={styles.paramLabel}>Толщина линии</span>
+              <div className={panelStyles.sliderRow}>
+                <input
+                  type="range"
+                  className={panelStyles.sliderInput}
+                  min={1} max={50} step={1}
+                  value={brushSize}
+                  onChange={(e) => setBrushSize(Number(e.target.value))}
+                />
+                <span className={panelStyles.sliderValue}>{brushSize} px</span>
+              </div>
+            </div>
 
             <div className={styles.paramRow}>
               <span className={styles.paramLabel}>Чувствительность</span>
@@ -182,7 +213,6 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
                   min={7} max={51} step={2}
                   value={blockSize}
                   onChange={(e) => onBlockSizeChange(Number(e.target.value))}
-                  style={{ background: `linear-gradient(to right, #FF5722 ${blockSizePct}%, #3a3a3a ${blockSizePct}%)` }}
                 />
                 <span className={panelStyles.sliderValue}>{blockSize}</span>
               </div>
@@ -197,7 +227,6 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
                   min={2} max={20} step={1}
                   value={thresholdC}
                   onChange={(e) => onThresholdCChange(Number(e.target.value))}
-                  style={{ background: `linear-gradient(to right, #FF5722 ${thresholdCPct}%, #3a3a3a ${thresholdCPct}%)` }}
                 />
                 <span className={panelStyles.sliderValue}>{thresholdC}</span>
               </div>
@@ -210,11 +239,11 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             <label className={styles.toggleLabel}>
               <span className={styles.paramLabel}>Показать оригинал</span>
               <button
-                className={`${styles.toggle} ${overlayEnabled ? styles.toggleActive : ''}`}
+                className={`${styles.squareToggle} ${overlayEnabled ? styles.squareToggleActive : ''}`}
                 onClick={() => setOverlayEnabled(!overlayEnabled)}
                 type="button"
               >
-                <span className={styles.toggleKnob} />
+                {overlayEnabled && <span className={styles.checkMark}>✓</span>}
               </button>
             </label>
 
@@ -228,13 +257,13 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
                     min={5} max={95} step={5}
                     value={Math.round(overlayOpacity * 100)}
                     onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
-                    style={{ background: `linear-gradient(to right, #FF5722 ${Math.round(overlayOpacity * 100)}%, #3a3a3a ${Math.round(overlayOpacity * 100)}%)` }}
                   />
                   <span className={panelStyles.sliderValue}>{Math.round(overlayOpacity * 100)}%</span>
                 </div>
               </div>
             )}
           </div>
+          </>
         }
       />
     </div>

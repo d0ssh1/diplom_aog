@@ -6,7 +6,6 @@ import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepUpload } from '../components/Wizard/StepUpload';
 import { StepPreprocess } from '../components/Wizard/StepPreprocess';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
-import { StepBuild } from '../components/Wizard/StepBuild';
 import { StepView3D } from '../components/Wizard/StepView3D';
 import { StepSave } from '../components/Wizard/StepSave';
 import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
@@ -31,7 +30,7 @@ export const WizardPage: React.FC = () => {
       const blob = await canvasRef.current.getBlob();
       const { rooms, doors } = canvasRef.current.getAnnotations();
       await wizard.saveMaskAndAnnotations(blob, rooms, doors);
-      wizard.nextStep();
+      await wizard.buildMesh();
     } else if (state.step === 4) {
       wizard.nextStep();
     }
@@ -52,7 +51,6 @@ export const WizardPage: React.FC = () => {
     (state.step === 1 && upload.files.length === 0) ||
     (state.step === 2 && state.isLoading) ||
     (state.step === 3 && state.isLoading) ||
-    (state.step === 4 && !state.reconstructionId) ||
     state.isLoading;
 
   const renderStep = () => {
@@ -95,20 +93,12 @@ export const WizardPage: React.FC = () => {
         );
       case 4:
         return (
-          <StepBuild
-            onBuild={wizard.buildMesh}
-            isBuilding={state.isLoading}
-            error={state.error}
-          />
-        );
-      case 5:
-        return (
           <StepView3D
             meshUrl={state.meshUrl}
             reconstructionId={state.reconstructionId}
           />
         );
-      case 6:
+      case 5:
         return <StepSave onSave={wizard.save} isLoading={state.isLoading} />;
       default:
         return null;
@@ -118,11 +108,12 @@ export const WizardPage: React.FC = () => {
   return (
     <WizardShell
       currentStep={state.step}
-      totalSteps={6}
+      totalSteps={5}
       onNext={handleNext}
       onPrev={handlePrev}
       onClose={() => navigate('/admin')}
       nextDisabled={isNextDisabled}
+      nextLabel={state.step === 3 ? '> ПОСТРОИТЬ' : undefined}
     >
       {renderStep()}
     </WizardShell>

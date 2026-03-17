@@ -14,6 +14,7 @@ interface WallEditorCanvasProps {
   maskUrl: string;
   activeTool: ActiveTool;
   brushSize: number;
+  eraserMode?: 'brush' | 'select';
   onRoomPopupRequest: (
     rect: { x: number; y: number; w: number; h: number },
     onConfirm: (name: string) => void,
@@ -41,7 +42,7 @@ const ROOM_STROKE: Record<string, string> = {
 };
 
 const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
-  ({ maskUrl, activeTool, brushSize, onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4 }, ref) => {
+  ({ maskUrl, activeTool, brushSize, eraserMode = 'brush', onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4 }, ref) => {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
@@ -152,8 +153,10 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     // Tool switching
     const activeToolRef = useRef(activeTool);
     const brushSizeRef = useRef(brushSize);
+    const eraserModeRef = useRef(eraserMode);
     useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
     useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
+    useEffect(() => { eraserModeRef.current = eraserMode; }, [eraserMode]);
 
     const attachToolHandlers = useCallback(() => {
       const canvas = fabricRef.current;
@@ -168,28 +171,122 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       const tool = activeToolRef.current;
 
       if (tool === 'eraser') {
-        canvas.isDrawingMode = true;
-        canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
-        canvas.freeDrawingBrush.color = 'black';
-        canvas.freeDrawingBrush.width = brushSizeRef.current;
+        if (eraserModeRef.current === 'brush') {
+          canvas.isDrawingMode = true;
+          canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
+          canvas.freeDrawingBrush.color = 'black';
+          canvas.freeDrawingBrush.width = brushSizeRef.current;
 
-        // Custom cursor — orange dashed circle sized to brush
-        const size = brushSizeRef.current;
-        const cursorCanvas = document.createElement('canvas');
-        cursorCanvas.width = size + 4;
-        cursorCanvas.height = size + 4;
-        const ctx = cursorCanvas.getContext('2d');
-        if (ctx) {
-          ctx.strokeStyle = '#FF5722';
-          ctx.lineWidth = 2;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath();
-          ctx.arc((size + 4) / 2, (size + 4) / 2, size / 2, 0, Math.PI * 2);
-          ctx.stroke();
+          // Custom cursor — orange dashed circle sized to brush
+          const size = brushSizeRef.current;
+          const cursorCanvas = document.createElement('canvas');
+          cursorCanvas.width = size + 4;
+          cursorCanvas.height = size + 4;
+          const ctx = cursorCanvas.getContext('2d');
+          if (ctx) {
+            ctx.strokeStyle = '#FF5722';
+            ctx.lineWidth = 2;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.arc((size + 4) / 2, (size + 4) / 2, size / 2, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          const cursorUrl = cursorCanvas.toDataURL();
+          const offset = Math.round((size + 4) / 2);
+          canvas.freeDrawingCursor = `url(${cursorUrl}) ${offset} ${offset}, crosshair`;
+        } else {
+          // Select-erase mode
+          canvas.defaultCursor = 'crosshair';
+          let isDrawing = false;
+          let startX = 0;
+          let startY = 0;
+          let selRect: fabric.Rect | null = null;
+          let confirmBtn: fabric.Circle | null = null;
+          let cancelBtn: fabric.Circle | null = null;
+
+          const onMouseDown = (opt: fabric.IEvent<MouseEvent>) => {
+            if (confirmBtn || cancelBtn) return; // selection pending
+            const pointer = canvas.getPointer(opt.e);
+            isDrawing = true;
+            startX = pointer.x;
+            startY = pointer.y;
+            selRect = new fabric.Rect({
+              left: startX, top: startY, width: 0, height: 0,
+              fill: 'rgba(255,0,0,0.2)',
+              stroke: '#FF5722', strokeWidth: 1, strokeDashArray: [4, 4],
+              selectable: false, evented: false,
+            });
+            canvas.add(selRect);
+          };
+
+          const onMouseMove = (opt: fabric.IEvent<MouseEvent>) => {
+            if (!isDrawing || !selRect) return;
+            const pointer = canvas.getPointer(opt.e);
+            const w = pointer.x - startX;
+            const h = pointer.y - startY;
+            selRect.set({
+              left: w < 0 ? pointer.x : startX,
+              top: h < 0 ? pointer.y : startY,
+              width: Math.abs(w),
+              height: Math.abs(h),
+            });
+            canvas.renderAll();
+          };
+
+          const onMouseUp = () => {
+            if (!isDrawing || !selRect) return;
+            isDrawing = false;
+            const w = selRect.width ?? 0;
+            const h = selRect.height ?? 0;
+            if (w < 5 || h < 5) {
+              canvas.remove(selRect);
+              selRect = null;
+              canvas.renderAll();
+              return;
+            }
+            const x = selRect.left ?? 0;
+            const y = selRect.top ?? 0;
+
+            confirmBtn = new fabric.Circle({
+              radius: 12, fill: '#4CAF50',
+              left: x + w + 4, top: y - 4,
+              selectable: false, evented: true,
+            });
+            cancelBtn = new fabric.Circle({
+              radius: 12, fill: '#666',
+              left: x + w + 4, top: y + 24,
+              selectable: false, evented: true,
+            });
+
+            const capturedSel = selRect;
+            const capturedConfirm = confirmBtn;
+            const capturedCancel = cancelBtn;
+
+            capturedConfirm.on('mousedown', () => {
+              const eraseRect = new fabric.Rect({
+                left: x, top: y, width: w, height: h,
+                fill: 'black', selectable: false, evented: false,
+              });
+              canvas.add(eraseRect);
+              canvas.remove(capturedSel, capturedConfirm, capturedCancel);
+              selRect = null; confirmBtn = null; cancelBtn = null;
+              canvas.renderAll();
+            });
+
+            capturedCancel.on('mousedown', () => {
+              canvas.remove(capturedSel, capturedConfirm, capturedCancel);
+              selRect = null; confirmBtn = null; cancelBtn = null;
+              canvas.renderAll();
+            });
+
+            canvas.add(confirmBtn, cancelBtn);
+            canvas.renderAll();
+          };
+
+          canvas.on('mouse:down', onMouseDown);
+          canvas.on('mouse:move', onMouseMove);
+          canvas.on('mouse:up', onMouseUp);
         }
-        const cursorUrl = cursorCanvas.toDataURL();
-        const offset = Math.round((size + 4) / 2);
-        canvas.freeDrawingCursor = `url(${cursorUrl}) ${offset} ${offset}, crosshair`;
         return;
       }
 

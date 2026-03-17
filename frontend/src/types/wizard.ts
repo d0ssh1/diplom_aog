@@ -5,7 +5,7 @@ export interface CropRect {
   height: number;
 }
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 export interface RoomAnnotation {
   id: string;

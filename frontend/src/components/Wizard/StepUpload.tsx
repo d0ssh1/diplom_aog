@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DropZone } from '../Upload/DropZone';
 import { MetadataForm } from '../Upload/MetadataForm';
 import type { UploadedFile } from '../../types/wizard';
@@ -23,9 +22,6 @@ export const StepUpload: React.FC<StepUploadProps> = ({
   const safeIndex = Math.min(activeIndex, Math.max(0, files.length - 1));
   const activeFile = files[safeIndex] ?? null;
 
-  const handlePrev = () => setActiveIndex((i) => Math.max(0, i - 1));
-  const handleNext = () => setActiveIndex((i) => Math.min(files.length - 1, i + 1));
-
   return (
     <div className={styles.step}>
       {/* Left panel */}
@@ -43,13 +39,6 @@ export const StepUpload: React.FC<StepUploadProps> = ({
                 onClick={() => setActiveIndex(i)}
               >
                 <img src={f.url} alt={f.name} className={styles.thumbImg} />
-                <button
-                  type="button"
-                  className={styles.thumbRemove}
-                  onClick={(e) => { e.stopPropagation(); onRemove(f.id); }}
-                >
-                  <X size={10} />
-                </button>
                 <p className={styles.thumbName}>{f.name}</p>
               </div>
             ))}
@@ -62,32 +51,20 @@ export const StepUpload: React.FC<StepUploadProps> = ({
         <div className={styles.rightContent}>
           {activeFile ? (
             <>
-              <div className={styles.previewHeader}>
-                <span className={styles.previewName}>{activeFile.name}</span>
+              <div className={styles.previewCard}>
                 <button
                   type="button"
-                  className={styles.previewRemove}
+                  className={styles.removeBtn}
                   onClick={() => onRemove(activeFile.id)}
                 >
-                  <X size={16} />
+                  ×
                 </button>
-              </div>
-
-              <div className={styles.previewImgWrap}>
-                <img src={activeFile.url} alt={activeFile.name} className={styles.previewImg} />
-              </div>
-
-              {files.length > 1 && (
-                <div className={styles.navArrows}>
-                  <button type="button" onClick={handlePrev} disabled={safeIndex === 0} className={styles.arrowBtn}>
-                    <ChevronLeft size={20} />
-                  </button>
-                  <span className={styles.navCount}>{safeIndex + 1} / {files.length}</span>
-                  <button type="button" onClick={handleNext} disabled={safeIndex === files.length - 1} className={styles.arrowBtn}>
-                    <ChevronRight size={20} />
-                  </button>
+                <img src={activeFile.url} alt={activeFile.name} className={styles.previewImage} />
+                <div className={styles.previewFooter}>
+                  <span className={styles.fileName}>{activeFile.name}</span>
+                  <span className={styles.statusReady}>Готово</span>
                 </div>
-              )}
+              </div>
 
               <MetadataForm />
             </>
@@ -95,8 +72,8 @@ export const StepUpload: React.FC<StepUploadProps> = ({
             <div className={styles.rightEmpty}>Загрузите файл</div>
           )}
         </div>
-        <div className={styles.rightStatus}>
-          Загружено {files.length} {files.length === 1 ? 'изображение' : files.length >= 2 && files.length <= 4 ? 'изображения' : 'изображений'}
+        <div className={styles.uploadCounter}>
+          Загружено: {files.length} {files.length === 1 ? 'изображение' : files.length >= 2 && files.length <= 4 ? 'изображения' : 'изображений'}
         </div>
       </div>
     </div>

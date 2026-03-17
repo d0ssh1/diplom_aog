@@ -1,8 +1,12 @@
 .form {
+  flex: 1;
+}
+
+.metaSection {
+  padding: 16px 20px;
   display: flex;
   flex-direction: column;
   gap: 16px;
-  flex: 1;
 }
 
 .field {
@@ -11,27 +15,36 @@
   gap: 4px;
 }
 
-.label {
-  font-size: 13px;
+.metaLabel {
+  text-transform: uppercase;
+  color: #888;
+  font-size: 11px;
+  letter-spacing: 1px;
   font-weight: 600;
-  color: var(--color-text-white);
 }
 
-.input {
-  background: transparent;
+.metaInput {
+  width: 100%;
   border: none;
-  border-bottom: 1px solid var(--color-grey-medium);
-  color: var(--color-text-white);
+  border-bottom: 1px solid #ddd;
+  padding: 8px 0;
   font-size: 15px;
-  padding: 6px 0;
+  color: #333;
+  background: transparent;
   outline: none;
-  transition: var(--transition);
+  box-sizing: border-box;
 }
 
-.input:focus {
-  border-bottom-color: var(--color-orange);
+.metaInput::placeholder {
+  color: #bbb;
 }
 
-.input::placeholder {
-  color: var(--color-grey-medium);
+.metaInput:focus {
+  border-bottom-color: #FF5722;
+}
+
+.metaRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
 }

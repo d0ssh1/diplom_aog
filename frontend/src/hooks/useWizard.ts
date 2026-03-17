@@ -42,7 +42,7 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
