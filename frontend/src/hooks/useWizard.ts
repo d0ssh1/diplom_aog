@@ -81,7 +81,9 @@ export const useWizard = (): UseWizardReturn => {
         state.cropRect ?? undefined,
         state.rotation,
       );
-      setState((s) => ({ ...s, maskFileId: data.file_id, isLoading: false }));
+      const raw = data as unknown as Record<string, unknown>;
+      const fileId = raw.file_id ?? raw.id ?? raw.mask_file_id ?? '';
+      setState((s) => ({ ...s, maskFileId: String(fileId), isLoading: false }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка вычисления маски' }));
     }

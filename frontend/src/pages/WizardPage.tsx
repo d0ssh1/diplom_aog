@@ -81,7 +81,7 @@ export const WizardPage: React.FC = () => {
       case 3:
         return (
           <StepWallEditor
-            maskUrl={`/api/v1/uploads/${state.maskFileId}`}
+            maskUrl={`/api/v1/uploads/masks/${state.maskFileId}.png`}
             canvasRef={canvasRef}
           />
         );
