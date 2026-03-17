@@ -125,11 +125,11 @@ def color_filter(
 
 def remove_green_elements(
     image: np.ndarray,
-    hue_low: int = 25,
-    hue_high: int = 95,
-    sat_min: int = 25,
-    val_min: int = 30,
-    inpaint_radius: int = 5,
+    hue_low: int = 35,
+    hue_high: int = 85,
+    sat_min: int = 40,
+    val_min: int = 40,
+    inpaint_radius: int = 3,
 ) -> np.ndarray:
     """
     Remove green elements (evacuation arrows) via HSV filtering + inpaint.
@@ -168,7 +168,7 @@ def remove_green_elements(
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
     green_mask = cv2.dilate(green_mask, kernel, iterations=2)
 
-    result = cv2.inpaint(result, green_mask, inpaint_radius, cv2.INPAINT_TELEA)
+    result = cv2.inpaint(result, green_mask, 7, cv2.INPAINT_TELEA)
 
     elapsed = time.perf_counter() - start
     logger.info("remove_green_elements completed in %.3fs", elapsed)
@@ -230,65 +230,13 @@ def remove_red_elements(
 
     red_mask = mask1 | mask2
 
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-    red_mask = cv2.dilate(red_mask, kernel, iterations=1)
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
+    red_mask = cv2.dilate(red_mask, kernel, iterations=2)
 
-    result = cv2.inpaint(result, red_mask, inpaint_radius, cv2.INPAINT_TELEA)
+    result = cv2.inpaint(result, red_mask, 7, cv2.INPAINT_TELEA)
 
     elapsed = time.perf_counter() - start
     logger.info("remove_red_elements completed in %.3fs", elapsed)
-    return result
-
-
-def remove_blue_elements(
-    image: np.ndarray,
-    hue_low: int = 95,
-    hue_high: int = 130,
-    sat_min: int = 50,
-    val_min: int = 50,
-    inpaint_radius: int = 5,
-) -> np.ndarray:
-    """
-    Remove blue elements (You Are Here dot, blue arrows) via HSV filtering + inpaint.
-
-    Args:
-        image: BGR image (H, W, 3), dtype=uint8
-        hue_low: lower bound of blue hue (OpenCV 0-180)
-        hue_high: upper bound of blue hue
-        sat_min: minimum saturation
-        val_min: minimum value
-        inpaint_radius: inpainting radius (pixels)
-
-    Returns:
-        BGR image (H, W, 3), dtype=uint8 with blue elements replaced
-    """
-    if image is None or image.size == 0:
-        raise ImageProcessingError("remove_blue_elements", "Empty image")
-    if image.dtype != np.uint8:
-        raise ImageProcessingError(
-            "remove_blue_elements", f"Expected uint8, got {image.dtype}"
-        )
-    if image.ndim != 3 or image.shape[2] != 3:
-        raise ImageProcessingError(
-            "remove_blue_elements",
-            f"Expected BGR (H,W,3), got shape {image.shape}",
-        )
-
-    start = time.perf_counter()
-    result = image.copy()
-
-    hsv = cv2.cvtColor(result, cv2.COLOR_BGR2HSV)
-    lower = np.array([hue_low, sat_min, val_min], dtype=np.uint8)
-    upper = np.array([hue_high, 255, 255], dtype=np.uint8)
-    blue_mask = cv2.inRange(hsv, lower, upper)
-
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-    blue_mask = cv2.dilate(blue_mask, kernel, iterations=2)
-
-    result = cv2.inpaint(result, blue_mask, inpaint_radius, cv2.INPAINT_TELEA)
-
-    elapsed = time.perf_counter() - start
-    logger.info("remove_blue_elements completed in %.3fs", elapsed)
     return result
 
 
@@ -321,7 +269,6 @@ def remove_colored_elements(image: np.ndarray) -> np.ndarray:
 
     img = remove_green_elements(image)
     img = remove_red_elements(img)
-    img = remove_blue_elements(img)
 
     elapsed = time.perf_counter() - start
     logger.info("remove_colored_elements completed in %.3fs", elapsed)

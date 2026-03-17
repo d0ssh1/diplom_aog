@@ -2,6 +2,51 @@ import pytest
 import numpy as np
 import cv2
 
+from app.models.domain import (
+    Door, Point2D, Room, VectorizationResult, Wall,
+)
+
+
+@pytest.fixture
+def simple_wall_contour() -> np.ndarray:
+    return np.array([[[10, 10]], [[50, 10]], [[50, 50]], [[10, 50]]], dtype=np.int32)
+
+
+@pytest.fixture
+def sample_vectorization_result() -> VectorizationResult:
+    return VectorizationResult(
+        walls=[
+            Wall(
+                id="w0",
+                points=[
+                    Point2D(x=0.1, y=0.1),
+                    Point2D(x=0.5, y=0.1),
+                    Point2D(x=0.5, y=0.5),
+                    Point2D(x=0.1, y=0.5),
+                ],
+                thickness=0.2,
+            )
+        ],
+        rooms=[
+            Room(
+                id="r0",
+                name="Аудитория 101",
+                polygon=[
+                    Point2D(x=0.1, y=0.1),
+                    Point2D(x=0.5, y=0.1),
+                    Point2D(x=0.5, y=0.5),
+                    Point2D(x=0.1, y=0.5),
+                ],
+                center=Point2D(x=0.3, y=0.3),
+                room_type="classroom",
+            )
+        ],
+        doors=[],
+        image_size_original=(500, 500),
+        image_size_cropped=(500, 500),
+        estimated_pixels_per_meter=50.0,
+    )
+
 
 @pytest.fixture
 def blank_white_image() -> np.ndarray:
