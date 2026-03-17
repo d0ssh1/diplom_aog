@@ -1,447 +1,352 @@
 """
-Сервис генерации 3D моделей из 2D контуров стен
+Pure functions for 3D mesh generation from floor plan geometry.
 
-Преобразует 2D контуры плана эвакуации в 3D геометрию:
-1. Извлечение контуров стен из бинарной маски
-2. Вытягивание (extrusion) по оси Z на высоту этажа
-3. Экспорт в форматы OBJ, GLB, STL
+Input: Shapely polygons, trimesh objects, room data.
+Output: trimesh.Trimesh meshes with vertex colors.
+No state, no file I/O, no DB access.
 """
 
 import logging
-import os
-from typing import List, Tuple, Optional, Dict, Any
-from dataclasses import dataclass
+from typing import List, Optional
+
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
 try:
     import trimesh
-    from trimesh.creation import extrude_polygon
-    from trimesh.path.polygons import paths_to_polygons
+    from trimesh import creation as trimesh_creation
+    TRIMESH_AVAILABLE = True
 except ImportError:
-    trimesh = None
-    logger.warning("trimesh не установлен")
+    trimesh = None  # type: ignore[assignment]
+    TRIMESH_AVAILABLE = False
+    logger.warning("trimesh not installed")
 
 try:
-    from shapely.geometry import Polygon, MultiPolygon
-    from shapely.ops import unary_union
+    from shapely.geometry import Polygon, MultiPolygon, box as shapely_box
+    SHAPELY_AVAILABLE = True
 except ImportError:
-    Polygon = None
-    logger.warning("shapely не установлен. Установите: pip install shapely")
+    Polygon = None  # type: ignore[assignment]
+    MultiPolygon = None  # type: ignore[assignment]
+    shapely_box = None  # type: ignore[assignment]
+    SHAPELY_AVAILABLE = False
+    logger.warning("shapely not installed")
 
 
-@dataclass
-class MeshExportResult:
-    """Результат экспорта 3D модели"""
-    mesh_id: int
-    obj_path: Optional[str]
-    glb_path: Optional[str]
-    stl_path: Optional[str]
-    vertices_count: int
-    faces_count: int
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+MIN_DOOR_WIDTH: float = 0.3  # metres — minimum door opening width
+MIN_POLYGON_AREA: float = 0.01  # m² — skip tiny polygons
+
+WALL_COLOR: list = [230, 230, 230, 255]        # light grey #e6e6e6
+DEFAULT_FLOOR_COLOR: list = [245, 240, 232, 255]  # beige #f5f0e8
+
+ROOM_COLORS: dict = {
+    "classroom":  [245, 197, 66,  255],   # yellow  #f5c542
+    "corridor":   [66,  135, 245, 255],   # blue    #4287f5
+    "staircase":  [245, 66,  66,  255],   # red     #f54242
+    "toilet":     [66,  245, 200, 255],   # teal    #42f5c8
+    "other":      [200, 200, 200, 255],   # grey    #c8c8c8
+    "room":       [200, 200, 200, 255],   # grey    #c8c8c8 (legacy default)
+}
 
 
-class MeshGeneratorService:
+# ---------------------------------------------------------------------------
+# Polygon helpers
+# ---------------------------------------------------------------------------
+
+def contour_to_polygon(
+    contour: np.ndarray,
+    scale: float = 1.0,
+) -> "Optional[Polygon]":
     """
-    Сервис генерации 3D моделей этажей
-    
-    Преобразует 2D контуры стен в 3D геометрию
-    путём вытягивания (extrusion) на заданную высоту
+    Convert an OpenCV contour to a Shapely Polygon.
+
+    Args:
+        contour: OpenCV contour, shape (N, 1, 2) or (N, 2), dtype int/float.
+        scale: Multiply all coordinates by this factor (pixels → metres).
+
+    Returns:
+        Valid Shapely Polygon, or None if conversion fails.
     """
-    
-    def __init__(
-        self, 
-        output_dir: str = "uploads/models",
-        default_floor_height: float = 1.5,
-        default_wall_thickness: float = 0.2,
-        pixels_per_meter: float = 50.0
-    ):
-        """
-        Args:
-            output_dir: Директория для сохранения моделей
-            default_floor_height: Высота этажа по умолчанию (метры)
-            default_wall_thickness: Толщина стен (метры)
-            pixels_per_meter: Пикселей на метр для калибровки
-        """
-        self.output_dir = output_dir
-        self.floor_height = default_floor_height
-        self.wall_thickness = default_wall_thickness
-        self.pixels_per_meter = pixels_per_meter
-        
-        os.makedirs(output_dir, exist_ok=True)
-        self._mesh_id = 0
-    
-    def contour_to_polygon(
-        self, 
-        contour: np.ndarray,
-        scale: float = 1.0
-    ) -> Optional['Polygon']:
-        """
-        Преобразование OpenCV контура в Shapely Polygon
-        
-        Args:
-            contour: OpenCV контур (Nx1x2 или Nx2)
-            scale: Масштабный коэффициент (пиксели -> метры)
-            
-        Returns:
-            Shapely Polygon или None если невалидный
-        """
-        if Polygon is None:
-            raise RuntimeError("Shapely не установлен")
-        
-        # Приведение к форме (N, 2)
-        if len(contour.shape) == 3:
-            points = contour.reshape(-1, 2)
-        else:
-            points = contour
-        
-        # Масштабирование
-        points = points.astype(float) * scale
-        
-        # Нужно минимум 3 точки для полигона
-        if len(points) < 3:
-            return None
-        
-        try:
-            poly = Polygon(points)
-            if not poly.is_valid:
-                poly = poly.buffer(0)  # Исправление самопересечений
-            return poly if poly.is_valid else None
-        except Exception:
-            return None
-    
-    def contours_to_polygons(
-        self, 
-        contours: List[np.ndarray],
-        image_height: int
-    ) -> List['Polygon']:
-        """
-        Преобразование списка контуров в полигоны
-        
-        Args:
-            contours: Список OpenCV контуров
-            image_height: Высота изображения для инверсии Y
-            
-        Returns:
-            Список валидных полигонов
-        """
-        scale = 1.0 / self.pixels_per_meter
-        polygons = []
-        
-        for contour in contours:
-            geom = self.contour_to_polygon(contour, scale)
-            if geom is not None:
-                # Обрабатываем и Polygon, и MultiPolygon
-                if geom.geom_type == 'Polygon':
-                    geoms = [geom]
-                elif geom.geom_type == 'MultiPolygon':
-                    geoms = list(geom.geoms)
-                else:
-                    continue
-                
-                for poly in geoms:
-                    # Инвертируем Y координату (OpenCV: Y вниз, 3D: Y вверх)
-                    try:
-                        coords = list(poly.exterior.coords)
-                        flipped = [(x, (image_height * scale) - y) for x, y in coords]
-                        # Воссоздаем с инверсией
-                        new_poly = Polygon(flipped)
-                        
-                        # Также инвертируем дырки (interiors)
-                        if poly.interiors:
-                            holes = []
-                            for hole in poly.interiors:
-                                hole_coords = list(hole.coords)
-                                flipped_hole = [(x, (image_height * scale) - y) for x, y in hole_coords]
-                                holes.append(flipped_hole)
-                            new_poly = Polygon(flipped, holes)
-                            
-                        if new_poly.is_valid:
-                            polygons.append(new_poly)
-                    except Exception as e:
-                        logger.debug("Ошибка обработки полигона: %s", e)
-        
-        return polygons
-    
-    def create_extruded_wall(
-        self, 
-        polygon: 'Polygon',
-        height: float = None
-    ) -> Optional['trimesh.Trimesh']:
-        """
-        Создание 3D стены вытягиванием полигона
-        
-        Args:
-            polygon: 2D полигон стены
-            height: Высота вытягивания (метры)
-            
-        Returns:
-            Trimesh объект или None
-        """
-        if trimesh is None:
-            raise RuntimeError("Trimesh не установлен")
-        
-        height = height or self.floor_height
-        
-        try:
-            # Получаем координаты внешней границы
-            coords = np.array(polygon.exterior.coords)
-            
-            # Создаем 2D путь и вытягиваем
-            mesh = trimesh.creation.extrude_polygon(
-                polygon, 
-                height=height
-            )
-            
-            return mesh
-        except Exception as e:
-            logger.debug("Ошибка создания стены: %s", e)
-            return None
-    
-    def create_floor_mesh(
-        self,
-        width: float,
-        depth: float,
-        z_offset: float = 0.0
-    ) -> 'trimesh.Trimesh':
-        """
-        Создание меша пола
-        
-        Args:
-            width: Ширина (X)
-            depth: Глубина (Y)  
-            z_offset: Смещение по Z
-            
-        Returns:
-            Меш пола
-        """
-        if trimesh is None:
-            raise RuntimeError("Trimesh не установлен")
-        
-        # Создаем плоский прямоугольник
-        floor = trimesh.creation.box(
-            extents=[width, depth, 0.1]
-        )
-        floor.apply_translation([width/2, depth/2, z_offset - 0.05])
-        
-        return floor
-    
-    def generate_floor_model(
-        self,
-        wall_contours: List[np.ndarray],
-        image_width: int,
-        image_height: int,
-        floor_number: int = 1,
-        include_floor: bool = True,
-        include_ceiling: bool = False
-    ) -> Optional['trimesh.Trimesh']:
-        """
-        Генерация полной 3D модели этажа
-        
-        Args:
-            wall_contours: Список контуров стен
-            image_width: Ширина исходного изображения
-            image_height: Высота исходного изображения
-            floor_number: Номер этажа
-            include_floor: Добавить пол
-            include_ceiling: Добавить потолок
-            
-        Returns:
-            Объединенный меш этажа
-        """
-        if trimesh is None:
-            raise RuntimeError("Trimesh не установлен")
-        
-        logger.info("Генерация 3D модели этажа %d...", floor_number)
-        logger.debug("  Контуров стен: %d", len(wall_contours))
+    if not SHAPELY_AVAILABLE:
+        raise RuntimeError("shapely not installed")
 
-        meshes = []
+    pts = contour.copy()
+    if pts.ndim == 3:
+        pts = pts.reshape(-1, 2)
 
-        # Преобразуем контуры в полигоны
-        polygons = self.contours_to_polygons(wall_contours, image_height)
-        logger.debug("  Валидных полигонов: %d", len(polygons))
-        
-        # Создаем стены
-        for i, poly in enumerate(polygons):
-            wall_mesh = self.create_extruded_wall(poly)
-            if wall_mesh is not None:
-                meshes.append(wall_mesh)
-        
-        logger.debug("  Создано мешей стен: %d", len(meshes))
-        
-        # Размеры этажа в метрах
-        floor_width = image_width / self.pixels_per_meter
-        floor_depth = image_height / self.pixels_per_meter
-        
-        # Добавляем пол
-        if include_floor:
-            floor_mesh = self.create_floor_mesh(floor_width, floor_depth, 0)
-            meshes.append(floor_mesh)
-        
-        # Добавляем потолок
-        if include_ceiling:
-            ceiling = self.create_floor_mesh(
-                floor_width, 
-                floor_depth, 
-                self.floor_height
-            )
-            meshes.append(ceiling)
-        
-        if not meshes:
-            logger.warning("Предупреждение: не удалось создать меши")
-            return None
-        
-        # Объединяем все меши
-        combined = trimesh.util.concatenate(meshes)
-        
-        # Поворачиваем модель: Z-up -> Y-up (горизонтальная плоскость)
-        try:
-            # -90 градусов вокруг X
-            matrix = trimesh.transformations.rotation_matrix(-np.pi/2, [1, 0, 0])
-            combined.apply_transform(matrix)
-        except Exception as e:
-            logger.warning("  Warning: Orientation rotation failed: %s", e)
+    pts = pts.astype(float) * scale
 
-        logger.debug("  Вершин: %d", len(combined.vertices))
-        logger.debug("  Граней: %d", len(combined.faces))
-        
-        return combined
-    
-    def export_mesh(
-        self,
-        mesh: 'trimesh.Trimesh',
-        name: str,
-        formats: List[str] = None
-    ) -> MeshExportResult:
-        """
-        Экспорт меша в различные форматы
-        
-        Args:
-            mesh: Trimesh объект
-            name: Имя файла (без расширения)
-            formats: Список форматов ['obj', 'glb', 'stl']
-            
-        Returns:
-            MeshExportResult с путями к файлам
-        """
-        if formats is None:
-            formats = ['obj', 'glb']
-        
-        self._mesh_id += 1
-        result = MeshExportResult(
-            mesh_id=self._mesh_id,
-            obj_path=None,
-            glb_path=None,
-            stl_path=None,
-            vertices_count=len(mesh.vertices),
-            faces_count=len(mesh.faces)
-        )
-        
-        for fmt in formats:
-            output_path = os.path.join(self.output_dir, f"{name}.{fmt}")
-            
+    if len(pts) < 3:
+        return None
+
+    try:
+        poly = Polygon(pts)
+        if not poly.is_valid:
+            poly = poly.buffer(0)
+        return poly if poly.is_valid and not poly.is_empty else None
+    except Exception as exc:
+        logger.debug("contour_to_polygon failed: %s", exc)
+        return None
+
+
+def contours_to_polygons(
+    contours: List[np.ndarray],
+    image_height: int,
+    pixels_per_meter: float,
+) -> "List[Polygon]":
+    """
+    Batch-convert OpenCV contours to Shapely polygons (pixels → metres).
+
+    Args:
+        contours: List of OpenCV contours (N, 1, 2) int32, pixel coordinates.
+        image_height: Image height in pixels (used for Y-axis flip: OpenCV Y-down → 3D Y-up).
+        pixels_per_meter: Scale factor (pixels → metres).
+
+    Returns:
+        List of valid Shapely Polygon objects in metres.
+    """
+    if not SHAPELY_AVAILABLE:
+        raise RuntimeError("shapely not installed")
+
+    scale = 1.0 / pixels_per_meter
+    h_m = image_height * scale  # image height in metres
+    result: List[Polygon] = []
+
+    for contour in contours:
+        geom = contour_to_polygon(contour, scale=scale)
+        if geom is None:
+            continue
+
+        geoms = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+
+        for poly in geoms:
             try:
-                mesh.export(output_path, file_type=fmt)
-                logger.info("  Экспорт %s: %s", fmt.upper(), output_path)
+                if not poly.is_valid or poly.is_empty:
+                    continue
+                # Flip Y: OpenCV uses Y-down, 3D scene uses Y-up
+                coords = list(poly.exterior.coords)
+                flipped = [(x, h_m - y) for x, y in coords]
 
-                if fmt == 'obj':
-                    result.obj_path = output_path
-                elif fmt == 'glb':
-                    result.glb_path = output_path
-                elif fmt == 'stl':
-                    result.stl_path = output_path
-            except Exception as e:
-                logger.error("  Ошибка экспорта %s: %s", fmt, e)
-        
+                holes = []
+                for hole in poly.interiors:
+                    hole_coords = list(hole.coords)
+                    flipped_hole = [(x, h_m - y) for x, y in hole_coords]
+                    holes.append(flipped_hole)
+
+                new_poly = Polygon(flipped, holes) if holes else Polygon(flipped)
+                if not new_poly.is_valid:
+                    new_poly = new_poly.buffer(0)
+                if new_poly.is_valid and not new_poly.is_empty:
+                    result.append(new_poly)
+            except Exception as exc:
+                logger.debug("contours_to_polygons: skipping polygon: %s", exc)
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Mesh builders
+# ---------------------------------------------------------------------------
+
+def extrude_wall(
+    polygon: "Polygon",
+    height: float,
+) -> "Optional[trimesh.Trimesh]":
+    """
+    Extrude a 2D polygon into a 3D wall mesh.
+
+    Args:
+        polygon: Shapely Polygon (footprint of the wall).
+        height: Extrusion height in metres.
+
+    Returns:
+        trimesh.Trimesh or None on failure.
+    """
+    if not TRIMESH_AVAILABLE:
+        raise RuntimeError("trimesh not installed")
+
+    try:
+        mesh = trimesh_creation.extrude_polygon(polygon, height=height)
+        return mesh
+    except Exception as exc:
+        logger.debug("extrude_wall failed: %s", exc)
+        return None
+
+
+def build_floor_mesh(
+    polygon: "Polygon",
+    z_offset: float = 0.0,
+) -> "Optional[trimesh.Trimesh]":
+    """
+    Build a thin floor slab from a room polygon.
+
+    Args:
+        polygon: Shapely Polygon (room footprint, in metres).
+        z_offset: Vertical offset (0.0 = ground level).
+
+    Returns:
+        trimesh.Trimesh (0.05 m thick slab) or None on failure.
+    """
+    if not TRIMESH_AVAILABLE:
+        raise RuntimeError("trimesh not installed")
+
+    try:
+        mesh = trimesh_creation.extrude_polygon(polygon, height=0.05)
+        if z_offset != 0.0:
+            mesh.apply_translation([0.0, 0.0, z_offset])
+        return mesh
+    except Exception as exc:
+        logger.debug("build_floor_mesh failed: %s", exc)
+        return None
+
+
+def build_floor_mesh_rect(
+    width: float,
+    depth: float,
+    z_offset: float = 0.0,
+) -> "trimesh.Trimesh":
+    """
+    Build a rectangular floor slab (fallback when no room polygons).
+
+    Args:
+        width: Floor width in metres (X axis).
+        depth: Floor depth in metres (Y axis).
+        z_offset: Vertical offset.
+
+    Returns:
+        trimesh.Trimesh box centred at [width/2, depth/2, z_offset].
+    """
+    if not TRIMESH_AVAILABLE:
+        raise RuntimeError("trimesh not installed")
+
+    mesh = trimesh_creation.box(extents=[width, depth, 0.05])
+    mesh.apply_translation([width / 2.0, depth / 2.0, z_offset + 0.025])
+    return mesh
+
+
+def build_ceiling_mesh(
+    width: float,
+    depth: float,
+    z_offset: float,
+) -> "trimesh.Trimesh":
+    """
+    Build a rectangular ceiling slab.
+
+    Args:
+        width: Ceiling width in metres.
+        depth: Ceiling depth in metres.
+        z_offset: Height of the ceiling (= floor_height).
+
+    Returns:
+        trimesh.Trimesh box centred at [width/2, depth/2, z_offset].
+    """
+    if not TRIMESH_AVAILABLE:
+        raise RuntimeError("trimesh not installed")
+
+    mesh = trimesh_creation.box(extents=[width, depth, 0.05])
+    mesh.apply_translation([width / 2.0, depth / 2.0, z_offset])
+    return mesh
+
+
+def cut_door_opening(
+    position: "tuple[float, float]",
+    width_m: float,
+    wall_thickness: float = 0.4,
+    pixels_per_meter: float = 50.0,  # noqa: ARG001 — kept for API consistency
+) -> "Optional[Polygon]":
+    """
+    Return a Shapely box representing a door opening footprint (top-down view).
+
+    Args:
+        position: (x, y) centre of the door in metres.
+        width_m: Door width in metres.
+        wall_thickness: Depth of the opening (= wall thickness), default 0.4 m.
+        pixels_per_meter: Unused; kept for API consistency.
+
+    Returns:
+        Shapely box or None if width_m < MIN_DOOR_WIDTH.
+    """
+    if not SHAPELY_AVAILABLE:
+        raise RuntimeError("shapely not installed")
+
+    if width_m < MIN_DOOR_WIDTH:
+        return None
+
+    cx, cy = position
+    half_w = width_m / 2.0
+    half_d = wall_thickness / 2.0
+    return shapely_box(cx - half_w, cy - half_d, cx + half_w, cy + half_d)
+
+
+# ---------------------------------------------------------------------------
+# Colour assignment
+# ---------------------------------------------------------------------------
+
+def assign_room_colors(
+    mesh: "trimesh.Trimesh",
+    rooms: list,
+    pixels_per_meter: float,
+    image_width: int = 0,
+    image_height: int = 0,
+) -> "trimesh.Trimesh":
+    """
+    Assign vertex colours to a combined mesh by room type.
+
+    Walls receive WALL_COLOR; room floors receive their type colour from ROOM_COLORS.
+
+    Args:
+        mesh: Combined trimesh.Trimesh (walls + floors + ceiling).
+        rooms: List of Room domain objects (may be empty).
+        pixels_per_meter: Scale factor used to convert room centres to metres.
+        image_width: Image width in pixels (for denormalizing room centres).
+        image_height: Image height in pixels (for denormalizing room centres).
+
+    Returns:
+        The same mesh with vertex_colors set (modified in-place copy).
+    """
+    if not TRIMESH_AVAILABLE:
+        raise RuntimeError("trimesh not installed")
+
+    result = mesh.copy()
+
+    if not rooms:
+        colors = np.tile(WALL_COLOR, (len(result.vertices), 1))
+        result.visual.vertex_colors = colors.astype(np.uint8)
         return result
-    
-    def process_plan_image(
-        self,
-        mask_image: np.ndarray,
-        name: str = "floor",
-        floor_number: int = 1
-    ) -> Optional[MeshExportResult]:
-        """
-        Полный pipeline обработки плана
-        
-        Args:
-            mask_image: Бинарная маска (белый = стены)
-            name: Имя выходного файла
-            floor_number: Номер этажа
-            
-        Returns:
-            MeshExportResult или None
-        """
-        import cv2
-        
-        # Находим контуры
-        contours, _ = cv2.findContours(
-            mask_image.copy(),
-            cv2.RETR_EXTERNAL,
-            cv2.CHAIN_APPROX_SIMPLE
-        )
-        
-        # Фильтруем слишком маленькие контуры
-        min_area = 50
-        filtered_contours = [
-            c for c in contours 
-            if cv2.contourArea(c) > min_area
-        ]
-        
-        logger.debug("Контуров после фильтрации: %d", len(filtered_contours))
 
-        if not filtered_contours:
-            logger.error("Ошибка: не найдены контуры стен")
-            return None
-        
-        # Генерируем 3D модель
-        mesh = self.generate_floor_model(
-            filtered_contours,
-            mask_image.shape[1],
-            mask_image.shape[0],
-            floor_number
-        )
-        
-        if mesh is None:
-            return None
-        
-        # Экспортируем
-        result = self.export_mesh(mesh, name)
-        
-        return result
+    # Default: wall colour for all vertices
+    colors = np.tile(WALL_COLOR, (len(result.vertices), 1)).astype(np.uint8)
 
+    for room in rooms:
+        room_type = getattr(room, "room_type", "other")
+        color = ROOM_COLORS.get(room_type, ROOM_COLORS["other"])
 
-# Для тестирования
-if __name__ == "__main__":
-    import sys
-    import cv2
-    from binarization import BinarizationService
-    
-    if len(sys.argv) < 2:
-        print("Usage: python mesh_generator.py <image_path>")
-        sys.exit(1)
-    
-    # Бинаризация
-    print("=== Шаг 1: Бинаризация ===")
-    bin_service = BinarizationService()
-    mask, threshold, mask_path = bin_service.process(sys.argv[1])
-    
-    # Генерация 3D
-    print("\n=== Шаг 2: Генерация 3D ===")
-    mesh_service = MeshGeneratorService()
-    
-    # Получаем имя файла
-    import os
-    filename = os.path.basename(sys.argv[1])
-    name = os.path.splitext(filename)[0]
-    
-    result = mesh_service.process_plan_image(mask, name)
-    
-    if result:
-        print(f"\n=== Результат ===")
-        print(f"ID: {result.mesh_id}")
-        print(f"Вершин: {result.vertices_count}")
-        print(f"Граней: {result.faces_count}")
-        print(f"OBJ: {result.obj_path}")
-        print(f"GLB: {result.glb_path}")
+        center = getattr(room, "center", None)
+        if center is None:
+            continue
+
+        cx_norm = getattr(center, "x", 0.0)
+        cy_norm = getattr(center, "y", 0.0)
+
+        # Denormalize [0,1] → metres
+        cx = (cx_norm * image_width) / pixels_per_meter if image_width else cx_norm
+        cy = (cy_norm * image_height) / pixels_per_meter if image_height else cy_norm
+
+        # Vertices whose XY distance to room centre (before rotation) is within radius
+        verts = result.vertices
+        dist = np.sqrt((verts[:, 0] - cx) ** 2 + (verts[:, 1] - cy) ** 2)
+        area_norm = getattr(room, "area_normalized", 0.0)
+        if area_norm > 0 and image_width and image_height:
+            area_m2 = area_norm * (image_width / pixels_per_meter) * (image_height / pixels_per_meter)
+            radius = max(0.5, (area_m2 ** 0.5) / 2.0)
+        else:
+            radius = 2.0
+        mask = dist < radius
+        colors[mask] = color
+
+    result.visual.vertex_colors = colors
+    return result

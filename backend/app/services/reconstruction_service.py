@@ -25,8 +25,8 @@ from app.processing.pipeline import (
     normalize_coords,
     room_detect,
 )
-from app.processing.vectorizer import find_contours
-from app.processing.mesh_builder import build_mesh
+from app.core.config import settings
+from app.processing.mesh_builder import build_mesh_from_mask
 
 logger = logging.getLogger(__name__)
 
@@ -93,8 +93,9 @@ class ReconstructionService:
             image_size = (w, h)
 
             # Step 7a: Extract walls via ContourService
+            # Use all non-noise elements as wall contours for mesh building
             elements = self._contour_service.extract_elements(mask_array)
-            wall_elements = [e for e in elements if e.element_type == "wall"]
+            wall_elements = [e for e in elements if e.element_type not in ("noise",)]
 
             walls: List[Wall] = []
             for i, elem in enumerate(wall_elements):
@@ -105,7 +106,7 @@ class ReconstructionService:
                     )
                     for pt in elem.contour
                 ]
-                if len(points) >= 2:
+                if len(points) >= 3:
                     walls.append(Wall(id=f"wall_{i}", points=points, thickness=0.2))
 
             # Step 7b: Compute wall thickness
@@ -171,9 +172,13 @@ class ReconstructionService:
                 json.dumps(vectorization_result.model_dump(), ensure_ascii=False),
             )
 
-            # Build 3D mesh (existing pipeline)
-            contours = find_contours(mask_array)
-            mesh = build_mesh(contours, w, h)
+            # Build 3D mesh from binary mask (raw contours → correct 3D)
+            mesh = build_mesh_from_mask(
+                mask_array,
+                floor_height=settings.DEFAULT_FLOOR_HEIGHT,
+                pixels_per_meter=pixels_per_meter,
+                vr=vectorization_result,
+            )
 
             obj_path = os.path.join(
                 self._models_dir, f"reconstruction_{reconstruction.id}.obj"
@@ -246,6 +251,28 @@ class ReconstructionService:
     def get_status_display(status: int) -> str:
         """Returns human-readable status from STATUS_DISPLAY."""
         return STATUS_DISPLAY.get(status, "Неизвестно")
+
+    @staticmethod
+    def get_room_labels(vr: Optional[VectorizationResult]) -> list[dict]:
+        """Формирует список меток комнат для API ответа."""
+        if not vr or not vr.rooms:
+            return []
+        colors = {
+            "classroom": "#f5c542", "corridor": "#4287f5",
+            "staircase": "#f54242", "toilet": "#42f5c8",
+            "other": "#c8c8c8", "room": "#c8c8c8",
+        }
+        return [
+            {
+                "id": room.id,
+                "name": room.name,
+                "room_type": room.room_type,
+                "center_x": room.center.x,
+                "center_y": room.center.y,
+                "color": colors.get(room.room_type, "#c8c8c8"),
+            }
+            for room in vr.rooms
+        ]
 
     def build_mesh_url(self, reconstruction: Reconstruction) -> Optional[str]:
         """Forms URL for GLB file."""
