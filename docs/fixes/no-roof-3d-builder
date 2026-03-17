@@ -1,0 +1,44 @@
+Прогресс! Модель строится — стены есть (видно на втором скриншоте справа — проёмы окон/дверей). Две проблемы:
+
+1. **Потолок закрывает всё сверху** — `build_ceiling_mesh` создаёт сплошную плиту на высоте 3м
+2. **Камера далеко и под плохим углом**
+
+Исправления минимальные:
+
+**В `mesh_builder.py` — убрать потолок (и опционально пол):**
+
+Найди эти строки в `build_mesh_from_mask`:
+
+```python
+    # --- Step 4: Floor slab ---
+    floor_w_m = w / pixels_per_meter
+    floor_h_m = h / pixels_per_meter
+
+    meshes.append(build_floor_mesh_rect(floor_w_m, floor_h_m, z_offset=0.0))
+
+    # --- Step 5: Ceiling slab ---
+    ceiling = build_ceiling_mesh(floor_w_m, floor_h_m, z_offset=floor_height)
+    meshes.append(ceiling)
+```
+
+Замени на:
+
+```python
+    # --- Step 4: Floor slab (без потолка — он закрывает вид сверху) ---
+    floor_w_m = w / pixels_per_meter
+    floor_h_m = h / pixels_per_meter
+
+    meshes.append(build_floor_mesh_rect(floor_w_m, floor_h_m, z_offset=0.0))
+
+    # Потолок НЕ добавляем — он мешает просмотру сверху
+```
+
+Это одна строка — удаление двух строк с ceiling. После этого вид сверху покажет стены и пол без закрывающей крышки.
+
+**Для камеры** — покажи мне текущий `MeshViewer.tsx`, я скажу что поменять. Но если хочешь быстро — в `OrbitControls` можно добавить начальную позицию камеры сверху:
+
+```tsx
+<Canvas camera={{ position: [0, 50, 0], fov: 50, up: [0, 0, -1] }}>
+```
+
+Это поставит камеру прямо сверху. Попробуй сначала просто убрать потолок — это должно сразу показать структуру здания.

@@ -1,0 +1,252 @@
+# Fix: 3D Builder — Корневая причина и исправление
+
+## Диагноз
+
+Проблема НЕ в Y-flip, НЕ в цветах, НЕ в door openings.
+
+**Корневая причина:** Новый код использует `VectorizationResult.walls` для построения 3D модели.
+Эти walls — маленькие индивидуальные сегменты стен (каждый ~3м × 0.3м).
+Пол и потолок = огромный прямоугольник по размеру всего изображения (80×53м или 256×171м).
+Результат: стены невидимы на фоне гигантской плиты пола.
+
+**Старый код работал** потому что использовал `cv2.findContours(mask, RETR_EXTERNAL)` —
+это даёт БОЛЬШИЕ полигоны (очертания всех белых областей маски = контуры зданий).
+Экструзия больших полигонов → видимые 3D стены.
+
+## Доказательство (из JSON reconstruction_12)
+
+```
+VectorizationResult.walls: 16 маленьких сегментов
+  wall_0: 3.0м × 0.38м (экструзия 3м)
+  wall_1: 2.2м × 0.38м
+  ...
+
+Пол/потолок: 80.1м × 53.4м (при ppm=15.98)
+             256м × 171м (при ppm=5.0, fallback модели #27)
+
+Соотношение: стена 3м на плите 256м = 1.2% = невидимый бугорок
+```
+
+## Решение
+
+Функция `build_mesh_from_mask()` — берёт маску напрямую, извлекает контуры
+через cv2.findContours (как старый код), но сохраняет новую архитектуру.
+VectorizationResult используется только для цветов комнат (опционально).
+
+---
+
+## Файл 1: `backend/app/processing/mesh_builder.py` — ЗАМЕНИТЬ ПОЛНОСТЬЮ
+
+```python
+import logging
+import math
+from typing import List, TYPE_CHECKING
+
+import cv2
+import numpy as np
+
+from app.core.exceptions import ImageProcessingError
+from app.models.domain import VectorizationResult
+
+if TYPE_CHECKING:
+    import trimesh
+
+logger = logging.getLogger(__name__)
+
+
+def build_mesh_from_mask(
+    mask: np.ndarray,
+    floor_height: float = 3.0,
+    pixels_per_meter: float = 50.0,
+    vr: "VectorizationResult | None" = None,
+) -> "trimesh.Trimesh":
+    """
+    Строит 3D-меш этажа из бинарной маски стен.
+
+    Использует cv2.findContours для извлечения больших контуров стен
+    (как делал старый MeshGeneratorService), затем экструдирует их.
+    Опционально использует VectorizationResult для цветов комнат.
+
+    Args:
+        mask: Бинарная маска (uint8), белый (255) = стены.
+        floor_height: Высота этажа в метрах (default: 3.0).
+        pixels_per_meter: Масштаб пикселей на метр.
+        vr: Опциональный VectorizationResult для цветов комнат.
+
+    Returns:
+        trimesh.Trimesh — объединённый меш. НЕ сохранён на диск.
+
+    Raises:
+        ImageProcessingError: если контуры не найдены или trimesh не установлен.
+    """
+    try:
+        import trimesh as _trimesh
+    except ImportError:
+        raise ImageProcessingError("build_mesh_from_mask", "trimesh not installed")
+
+    from app.processing.mesh_generator import (
+        contours_to_polygons,
+        extrude_wall,
+        build_floor_mesh_rect,
+        build_ceiling_mesh,
+        assign_room_colors,
+    )
+
+    h, w = mask.shape[:2]
+
+    # --- Step 1: Extract wall contours from mask (like old code) ---
+    contours_raw, _ = cv2.findContours(
+        mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+    )
+
+    min_area = 50
+    contours = [c for c in contours_raw if cv2.contourArea(c) > min_area]
+
+    logger.info(
+        "build_mesh_from_mask: image=%dx%d, raw=%d, filtered=%d, ppm=%.2f",
+        w, h, len(contours_raw), len(contours), pixels_per_meter,
+    )
+
+    if not contours:
+        raise ImageProcessingError(
+            "build_mesh_from_mask", "No wall contours found in mask",
+        )
+
+    # --- Step 2: Contours → polygons (pixels → metres, Y-flip) ---
+    polygons = contours_to_polygons(contours, h, pixels_per_meter)
+    logger.info("Polygons: %d", len(polygons))
+
+    if not polygons:
+        raise ImageProcessingError(
+            "build_mesh_from_mask", "No valid polygons from contours",
+        )
+
+    # --- Step 3: Extrude walls ---
+    meshes: list = []
+    for poly in polygons:
+        wall_mesh = extrude_wall(poly, height=floor_height)
+        if wall_mesh is not None:
+            meshes.append(wall_mesh)
+
+    logger.info("Wall meshes: %d", len(meshes))
+
+    # --- Step 4: Floor + ceiling ---
+    floor_w_m = w / pixels_per_meter
+    floor_h_m = h / pixels_per_meter
+
+    meshes.append(build_floor_mesh_rect(floor_w_m, floor_h_m, z_offset=0.0))
+    meshes.append(build_ceiling_mesh(floor_w_m, floor_h_m, z_offset=floor_height))
+
+    # --- Step 5: Combine + colour ---
+    combined = _trimesh.util.concatenate(meshes)
+    rooms = vr.rooms if vr else []
+    combined = assign_room_colors(
+        combined, rooms, pixels_per_meter, w, h,
+    )
+
+    # --- Step 6: Z-up → Y-up (Three.js) ---
+    matrix = _trimesh.transformations.rotation_matrix(
+        -math.pi / 2, [1, 0, 0],
+    )
+    combined.apply_transform(matrix)
+
+    return combined
+
+
+def build_mesh(
+    contours: List[np.ndarray],
+    image_width: int,
+    image_height: int,
+    floor_height: float = 3.0,
+    pixels_per_meter: float = 50.0,
+) -> "trimesh.Trimesh":
+    """Legacy wrapper для обратной совместимости."""
+    if not contours:
+        raise ImageProcessingError("build_mesh", "No contours provided")
+
+    try:
+        import trimesh as _trimesh
+    except ImportError:
+        raise ImageProcessingError("build_mesh", "trimesh not installed")
+
+    from app.processing.mesh_generator import (
+        contours_to_polygons,
+        extrude_wall,
+        build_floor_mesh_rect,
+        build_ceiling_mesh,
+        assign_room_colors,
+    )
+
+    polygons = contours_to_polygons(contours, image_height, pixels_per_meter)
+    meshes = [
+        m for poly in polygons
+        for m in [extrude_wall(poly, height=floor_height)]
+        if m is not None
+    ]
+
+    meshes.append(build_floor_mesh_rect(
+        image_width / pixels_per_meter,
+        image_height / pixels_per_meter,
+    ))
+    meshes.append(build_ceiling_mesh(
+        image_width / pixels_per_meter,
+        image_height / pixels_per_meter,
+        z_offset=floor_height,
+    ))
+
+    combined = _trimesh.util.concatenate(meshes)
+    combined = assign_room_colors(combined, [], pixels_per_meter, image_width, image_height)
+
+    matrix = _trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0])
+    combined.apply_transform(matrix)
+    return combined
+```
+
+---
+
+## Файл 2: `backend/app/services/reconstruction_service.py` — ДВА ИЗМЕНЕНИЯ
+
+### Изменение 1: Импорт (строка ~29)
+
+```python
+# БЫЛО:
+from app.processing.mesh_builder import build_mesh_from_vectorization
+
+# СТАЛО:
+from app.processing.mesh_builder import build_mesh_from_mask
+```
+
+### Изменение 2: Вызов build_mesh (около строки 155)
+
+```python
+# БЫЛО:
+            # Build 3D mesh from VectorizationResult
+            mesh = build_mesh_from_vectorization(
+                vectorization_result, w, h,
+                floor_height=settings.DEFAULT_FLOOR_HEIGHT,
+            )
+
+# СТАЛО:
+            # Build 3D mesh from binary mask (raw contours → correct 3D)
+            mesh = build_mesh_from_mask(
+                mask_array,
+                floor_height=settings.DEFAULT_FLOOR_HEIGHT,
+                pixels_per_meter=pixels_per_meter,
+                vr=vectorization_result,
+            )
+```
+
+---
+
+## Файл 3: `backend/app/processing/mesh_generator.py` — БЕЗ ИЗМЕНЕНИЙ
+
+Текущий mesh_generator.py корректный. Y-flip уже восстановлен.
+Функции contours_to_polygons, extrude_wall и т.д. работают правильно.
+
+---
+
+## Что проверить после применения
+
+1. Перестроить любую модель — должны появиться стены как на скриншоте 1
+2. Проверить все 3 плана эвакуации
+3. Убедиться что GLB файл корректно загружается на фронте

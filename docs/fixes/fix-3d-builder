@@ -1,0 +1,286 @@
+# Fix: 3D Builder — Анализ багов и план исправления
+
+## Контекст проблемы
+
+После рефакторинга `3d-builder-upgrade` 3D модель перестала строиться корректно.
+**Было** (старый код): видны стены, комнаты, структура здания — 3D модель читаемая.
+**Стало** (новый код): плоский блин (только пол/потолок) или плита с еле заметными вмятинами.
+
+---
+
+## ФАЗА 1: Починить (вернуть рабочее состояние)
+
+### Баг #1 (КРИТИЧЕСКИЙ): Убран Y-flip в `contours_to_polygons`
+
+**Файл:** `backend/app/processing/mesh_generator.py`, функция `contours_to_polygons()`
+
+**Проблема:** Старый `MeshGeneratorService.contours_to_polygons()` инвертировал Y-координату каждого полигона:
+```python
+# СТАРЫЙ КОД (работал):
+coords = list(poly.exterior.coords)
+flipped = [(x, (image_height * scale) - y) for x, y in coords]
+new_poly = Polygon(flipped)
+```
+
+Новый код **полностью убрал Y-flip**. В комментарии написано `image_height: unused, kept for API compatibility`. Но OpenCV использует систему координат Y-вниз, а 3D-сцена — Y-вверх. Без инверсии геометрия может оказаться перевёрнутой или наложиться на пол.
+
+**Исправление:** Восстановить Y-flip в `contours_to_polygons`. Параметр `image_height` НЕ unused — он нужен для инверсии:
+
+```python
+def contours_to_polygons(
+    contours: List[np.ndarray],
+    image_height: int,
+    pixels_per_meter: float,
+) -> "List[Polygon]":
+    if not SHAPELY_AVAILABLE:
+        raise RuntimeError("shapely not installed")
+
+    scale = 1.0 / pixels_per_meter
+    result: List[Polygon] = []
+
+    for contour in contours:
+        geom = contour_to_polygon(contour, scale=scale)
+        if geom is None:
+            continue
+
+        geoms = list(geom.geoms) if geom.geom_type == "MultiPolygon" else [geom]
+
+        for poly in geoms:
+            try:
+                if not poly.is_valid or poly.is_empty:
+                    continue
+                # КРИТИЧНО: Инвертируем Y (OpenCV: Y вниз → 3D: Y вверх)
+                h_m = image_height * scale  # высота в метрах
+                coords = list(poly.exterior.coords)
+                flipped = [(x, h_m - y) for x, y in coords]
+
+                holes = []
+                for hole in poly.interiors:
+                    hole_coords = list(hole.coords)
+                    flipped_hole = [(x, h_m - y) for x, y in hole_coords]
+                    holes.append(flipped_hole)
+
+                new_poly = Polygon(flipped, holes) if holes else Polygon(flipped)
+                if not new_poly.is_valid:
+                    new_poly = new_poly.buffer(0)
+                if new_poly.is_valid and not new_poly.is_empty:
+                    result.append(new_poly)
+            except Exception as exc:
+                logger.debug("contours_to_polygons: skipping polygon: %s", exc)
+
+    return result
+```
+
+---
+
+### Баг #2 (КРИТИЧЕСКИЙ): `cut_door_opening` создаёт 2D-box неправильных размеров
+
+**Файл:** `backend/app/processing/mesh_generator.py`, функция `cut_door_opening()`
+
+**Проблема:** Текущий код:
+```python
+cx, _cy = position
+half = width_m / 2.0
+return shapely_box(cx - half, 0.0, cx + half, height)
+```
+
+Это создаёт прямоугольник от `y=0` до `y=floor_height` (3 метра!) по всей высоте. Это 2D footprint, а `shapely_box` используется как 2D полигон для `polygon.difference()`. Прямоугольник высотой 3м в 2D плоскости вырежет ОГРОМНЫЙ кусок из стены.
+
+Дверной проём — это щель в стене. В 2D плоскости (вид сверху) это маленький прямоугольник по ширине двери и глубине стены (~0.2-0.4м). Не по высоте этажа!
+
+**Исправление:**
+```python
+def cut_door_opening(
+    position: "tuple[float, float]",
+    width_m: float,
+    wall_thickness: float = 0.4,
+    pixels_per_meter: float = 50.0,  # kept for API consistency
+) -> "Optional[Polygon]":
+    if not SHAPELY_AVAILABLE:
+        raise RuntimeError("shapely not installed")
+
+    if width_m < MIN_DOOR_WIDTH:
+        return None
+
+    cx, cy = position
+    half_w = width_m / 2.0
+    half_d = wall_thickness / 2.0  # глубина проёма = толщина стены
+    return shapely_box(cx - half_w, cy - half_d, cx + half_w, cy + half_d)
+```
+
+**Также обновить вызов в `mesh_builder.py`:**
+```python
+door_box = cut_door_opening(
+    position=(door_cx_m, door_cy_m),
+    width_m=door_width_m,
+    wall_thickness=0.4,
+)
+```
+
+---
+
+### Баг #3 (СРЕДНИЙ): `assign_room_colors` работает после rotation — координаты не совпадают
+
+**Файл:** `backend/app/processing/mesh_generator.py`, функция `assign_room_colors()`
+
+**Проблема:** В `mesh_builder.py` порядок операций:
+1. Строим меши (координаты в метрах, Z-up)
+2. Вызываем `assign_room_colors` (строка 198)
+3. Потом делаем rotation -90° вокруг X (строка 201-202)
+
+Но `assign_room_colors` считает расстояние по `verts[:, 0]` (X) и `verts[:, 2]` (Z):
+```python
+dist = np.sqrt((verts[:, 0] - cx) ** 2 + (verts[:, 2] - cy) ** 2)
+```
+
+ДО rotation Z-up: оси — X (ширина), Y (глубина), Z (высота).
+Координаты комнат cx, cy — это ширина и глубина.
+Значит расстояние надо считать по `verts[:, 0]` и `verts[:, 1]` (X и Y), а не X и Z!
+
+**Исправление в `assign_room_colors`:**
+```python
+# Vertices whose XY distance to room centre (BEFORE rotation)
+verts = result.vertices
+dist = np.sqrt((verts[:, 0] - cx) ** 2 + (verts[:, 1] - cy) ** 2)
+```
+
+---
+
+### Баг #4 (СРЕДНИЙ): Радиус покраски комнат слишком грубый
+
+**Проблема:** Текущий радиус:
+```python
+radius = max(3.0, (image_width / pixels_per_meter) * 0.15) if image_width else 5.0
+```
+Для изображения 1920px при ppm=50 → `1920/50*0.15 = 5.76м`. Это покрасит всё в радиусе 5.76м от центра комнаты — половина этажа! Комнаты наползают друг на друга.
+
+**Исправление:** Использовать `room.area_normalized` для оценки радиуса:
+```python
+area_norm = getattr(room, "area_normalized", 0.0)
+if area_norm > 0 and image_width and image_height:
+    # Площадь в м² → приблизительный радиус
+    area_m2 = area_norm * (image_width / pixels_per_meter) * (image_height / pixels_per_meter)
+    radius = max(0.5, (area_m2 ** 0.5) / 2.0)
+else:
+    radius = 2.0  # fallback: 2 метра
+```
+
+---
+
+### Баг #5 (НИЗКИЙ): `estimated_pixels_per_meter` может быть 0 или NaN
+
+**Файл:** `backend/app/processing/mesh_builder.py`, строка 111
+
+**Проблема:**
+```python
+pixels_per_meter: float = vr.estimated_pixels_per_meter
+```
+Если smart-vectorization не смог оценить масштаб, это может быть 0.0 → деление на ноль.
+
+**Исправление:**
+```python
+pixels_per_meter: float = vr.estimated_pixels_per_meter
+if not pixels_per_meter or pixels_per_meter <= 0:
+    pixels_per_meter = 50.0  # fallback default
+    logger.warning("estimated_pixels_per_meter invalid (%.2f), using default 50.0",
+                    vr.estimated_pixels_per_meter)
+```
+
+---
+
+### Баг #6 (НИЗКИЙ): Старый `MeshGeneratorService` класс всё ещё в файле
+
+**Файл:** `backend/app/processing/mesh_generator.py` — в загруженном файле класса нет (чистые функции).
+**Файл:** `backend/app/processing/mesh_builder.py`, строка 47-54 — `build_mesh()` всё ещё импортирует `MeshGeneratorService`.
+
+**Проблема:** Если `MeshGeneratorService` удалён из `mesh_generator.py`, то `build_mesh()` упадёт с `ImportError`. Если он остался — нарушение архитектуры (два варианта кода в одном файле).
+
+**Исправление:** Проверь, существует ли `MeshGeneratorService` в текущем `mesh_generator.py`:
+- Если да → оставь `build_mesh()` как есть (legacy fallback)
+- Если нет → `build_mesh()` должен использовать новые чистые функции или быть удалён
+
+---
+
+## ФАЗА 2: Улучшить (сделать красивее)
+
+После того как модель снова строится корректно, применяем визуальные улучшения.
+
+### Улучшение #1: Цвета в стиле 2GIS
+
+Текущие константы уже хорошие, но нужно добавить цвет пола и потолка:
+
+```python
+CEILING_COLOR: list = [230, 230, 230, 200]   # light grey, slight transparency
+FLOOR_COLOR: list = [245, 240, 232, 255]      # warm beige
+
+ROOM_COLORS: dict = {
+    "room":       [220, 218, 210, 255],   # тёплый серый
+    "classroom":  [255, 235, 175, 255],   # мягкий жёлтый
+    "corridor":   [200, 215, 240, 255],   # мягкий голубой
+    "staircase":  [255, 200, 200, 255],   # мягкий красный
+    "elevator":   [255, 200, 200, 255],   # мягкий красный
+    "toilet":     [200, 240, 230, 255],   # мягкий бирюзовый
+    "other":      [220, 220, 220, 255],   # светло-серый
+}
+```
+
+### Улучшение #2: Раздельное присвоение цветов стенам, полам, потолку
+
+Вместо одного `assign_room_colors` на весь `combined` меш — красить компоненты ДО объединения:
+
+```python
+# В mesh_builder.py, между созданием мешей и concatenate:
+
+# Красим стены
+for m in wall_meshes:
+    m.visual.vertex_colors = np.tile(WALL_COLOR, (len(m.vertices), 1)).astype(np.uint8)
+
+# Красим полы комнат по типу
+for i, m in enumerate(floor_meshes):
+    room = vr.rooms[i] if i < len(vr.rooms) else None
+    room_type = getattr(room, "room_type", "other") if room else "other"
+    color = ROOM_COLORS.get(room_type, ROOM_COLORS["other"])
+    m.visual.vertex_colors = np.tile(color, (len(m.vertices), 1)).astype(np.uint8)
+
+# Красим потолок
+ceiling.visual.vertex_colors = np.tile(CEILING_COLOR, (len(ceiling.vertices), 1)).astype(np.uint8)
+
+# Теперь объединяем — цвета сохранятся
+combined = trimesh.util.concatenate(wall_meshes + floor_meshes + [ceiling])
+```
+
+Это **заменяет** `assign_room_colors` и работает точно, без радиусов и расстояний.
+
+### Улучшение #3: Фронтенд — освещение и камера
+
+В `MeshViewer.tsx` улучшить сцену:
+- Фон: `#e8e8e8` (светло-серый)
+- `AmbientLight` intensity 0.6
+- `DirectionalLight` сверху-сбоку, intensity 0.8, castShadow
+- Камера: начальная позиция сверху под углом ~60° (изометрия)
+- `OrbitControls` с `maxPolarAngle={Math.PI / 2}` (нельзя заглянуть снизу)
+
+---
+
+## Порядок применения
+
+1. Исправить баг #1 (Y-flip) — это главная причина поломки
+2. Исправить баг #5 (pixels_per_meter fallback) — защита от деления на 0
+3. Исправить баг #3 (оси в assign_room_colors) — чтобы цвета работали
+4. Исправить баг #4 (радиус покраски) — чтобы цвета были точными
+5. Исправить баг #2 (cut_door_opening) — чтобы двери не ломали стены
+6. Проверить баг #6 (legacy import)
+7. Протестировать — загрузить все 3 плана, убедиться что модель строится как раньше
+8. Только после этого → Улучшения #1, #2, #3
+
+---
+
+## Инструкция для Claude Code
+
+Скопируй этот файл в `docs/fixes/fix-3d-builder.md` и используй команду:
+
+```
+Прочитай docs/fixes/fix-3d-builder.md и выполни исправления СТРОГО по порядку.
+После каждого бага — запусти тесты. НЕ меняй ничего кроме описанного.
+Фаза 2 (улучшения) — только ПОСЛЕ того как Фаза 1 подтверждена работающей.
+```

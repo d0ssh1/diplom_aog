@@ -1,0 +1,27 @@
+Понял — проблема глубже. GLB файл содержит vertex colors, и даже при замене материала Three.js GLTF-загрузчик их подхватывает. Нужно **удалить** атрибут цвета из геометрии.
+
+Замени `applyMapMaterials` на это:
+
+```tsx
+function applyMapMaterials(root: THREE.Object3D) {
+  const wallMaterial = new THREE.MeshStandardMaterial({
+    color: COLORS.wall,
+    roughness: 0.85,
+    metalness: 0.0,
+    side: THREE.DoubleSide,
+  });
+
+  root.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      // КЛЮЧЕВОЕ: удаляем vertex colors из геометрии,
+      // иначе они перезаписывают цвет материала
+      child.geometry.deleteAttribute('color');
+      child.material = wallMaterial;
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+}
+```
+
+Единственное отличие — одна строка: `child.geometry.deleteAttribute('color')`. Это убирает встроенные в GLB тёмные vertex colors, после чего `MeshStandardMaterial({ color: '#9E9E9E' })` наконец-то отработает.

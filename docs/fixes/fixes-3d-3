@@ -1,0 +1,385 @@
+# Fix: 3D Builder — Финальное исправление
+
+## Корневая причина
+
+Новый код использует `VectorizationResult.walls` для построения 3D модели.
+Эти walls — маленькие индивидуальные сегменты стен (каждый ~3м × 0.3м).
+Пол и потолок — огромный прямоугольник по размеру всего изображения (80×53м или 256×171м).
+Результат: стены невидимы на фоне гигантской плиты пола.
+
+Старый код работал потому что использовал `cv2.findContours(mask, RETR_EXTERNAL)` —
+это даёт БОЛЬШИЕ полигоны (очертания всех белых областей маски = контуры зданий).
+
+Дополнительно: тёмные стены `[74,74,74]` на тёмном фоне `#1a1f2e` сливаются.
+Камера стоит под случайным углом далеко от модели.
+
+---
+
+## Изменения (4 файла)
+
+### Файл 1: `backend/app/processing/mesh_builder.py` — ЗАМЕНИТЬ ПОЛНОСТЬЮ
+
+Новая функция `build_mesh_from_mask()` принимает бинарную маску напрямую,
+извлекает контуры через `cv2.findContours` (как старый рабочий код).
+Без пола и потолка — только экструдированные стены.
+`VectorizationResult` передаётся опционально (пока не используется, пригодится для цветов комнат позже).
+
+```python
+import logging
+import math
+from typing import List, TYPE_CHECKING
+
+import cv2
+import numpy as np
+
+from app.core.exceptions import ImageProcessingError
+from app.models.domain import VectorizationResult
+
+if TYPE_CHECKING:
+    import trimesh
+
+logger = logging.getLogger(__name__)
+
+
+def build_mesh_from_mask(
+    mask: np.ndarray,
+    floor_height: float = 3.0,
+    pixels_per_meter: float = 50.0,
+    vr: "VectorizationResult | None" = None,
+) -> "trimesh.Trimesh":
+    """
+    Строит 3D-меш этажа из бинарной маски стен.
+
+    Использует cv2.findContours для извлечения контуров стен из маски,
+    экструдирует их на floor_height. Без пола и потолка — чистые стены
+    для обзора сверху (как карта здания).
+
+    Args:
+        mask: Бинарная маска (uint8), белый (255) = стены.
+        floor_height: Высота этажа в метрах (default: 3.0).
+        pixels_per_meter: Масштаб пикселей на метр.
+        vr: Опциональный VectorizationResult для цветов комнат.
+
+    Returns:
+        trimesh.Trimesh — объединённый меш. НЕ сохранён на диск.
+    """
+    try:
+        import trimesh as _trimesh
+    except ImportError:
+        raise ImageProcessingError("build_mesh_from_mask", "trimesh not installed")
+
+    from app.processing.mesh_generator import (
+        contours_to_polygons,
+        extrude_wall,
+        WALL_COLOR,
+    )
+
+    h, w = mask.shape[:2]
+
+    # Step 1: Extract wall contours from mask
+    contours_raw, _ = cv2.findContours(
+        mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+    )
+
+    min_area = 50
+    contours = [c for c in contours_raw if cv2.contourArea(c) > min_area]
+
+    logger.info(
+        "build_mesh_from_mask: image=%dx%d, raw=%d, filtered=%d, ppm=%.2f",
+        w, h, len(contours_raw), len(contours), pixels_per_meter,
+    )
+
+    if not contours:
+        raise ImageProcessingError(
+            "build_mesh_from_mask", "No wall contours found in mask",
+        )
+
+    # Step 2: Contours → polygons (pixels → metres, Y-flip)
+    polygons = contours_to_polygons(contours, h, pixels_per_meter)
+    logger.info("Polygons: %d", len(polygons))
+
+    if not polygons:
+        raise ImageProcessingError(
+            "build_mesh_from_mask", "No valid polygons from contours",
+        )
+
+    # Step 3: Extrude walls
+    meshes: list = []
+    for poly in polygons:
+        wall_mesh = extrude_wall(poly, height=floor_height)
+        if wall_mesh is not None:
+            # Assign light colour to each wall mesh individually
+            colors = np.tile(WALL_COLOR, (len(wall_mesh.vertices), 1)).astype(np.uint8)
+            wall_mesh.visual.vertex_colors = colors
+            meshes.append(wall_mesh)
+
+    logger.info("Wall meshes: %d", len(meshes))
+
+    if not meshes:
+        raise ImageProcessingError(
+            "build_mesh_from_mask", "No wall meshes created",
+        )
+
+    # NO floor, NO ceiling — clean wall-only view from above
+
+    # Step 4: Combine
+    combined = _trimesh.util.concatenate(meshes)
+
+    # Step 5: Z-up → Y-up (Three.js convention)
+    matrix = _trimesh.transformations.rotation_matrix(
+        -math.pi / 2, [1, 0, 0],
+    )
+    combined.apply_transform(matrix)
+
+    return combined
+
+
+# Legacy wrapper
+def build_mesh(
+    contours: List[np.ndarray],
+    image_width: int,
+    image_height: int,
+    floor_height: float = 3.0,
+    pixels_per_meter: float = 50.0,
+) -> "trimesh.Trimesh":
+    """Legacy: строит меш из готовых контуров."""
+    if not contours:
+        raise ImageProcessingError("build_mesh", "No contours provided")
+
+    try:
+        import trimesh as _trimesh
+    except ImportError:
+        raise ImageProcessingError("build_mesh", "trimesh not installed")
+
+    from app.processing.mesh_generator import (
+        contours_to_polygons,
+        extrude_wall,
+        WALL_COLOR,
+    )
+
+    polygons = contours_to_polygons(contours, image_height, pixels_per_meter)
+    meshes = []
+    for poly in polygons:
+        m = extrude_wall(poly, height=floor_height)
+        if m is not None:
+            colors = np.tile(WALL_COLOR, (len(m.vertices), 1)).astype(np.uint8)
+            m.visual.vertex_colors = colors
+            meshes.append(m)
+
+    combined = _trimesh.util.concatenate(meshes)
+    matrix = _trimesh.transformations.rotation_matrix(-math.pi / 2, [1, 0, 0])
+    combined.apply_transform(matrix)
+    return combined
+```
+
+---
+
+### Файл 2: `backend/app/services/reconstruction_service.py` — ДВА ИЗМЕНЕНИЯ
+
+#### Изменение 1: Импорт (строка ~29)
+
+БЫЛО:
+```python
+from app.processing.mesh_builder import build_mesh_from_vectorization
+```
+
+СТАЛО:
+```python
+from app.processing.mesh_builder import build_mesh_from_mask
+```
+
+#### Изменение 2: Вызов build_mesh (внутри метода `build_mesh`, после сохранения VectorizationResult в БД)
+
+БЫЛО:
+```python
+            # Build 3D mesh from VectorizationResult
+            mesh = build_mesh_from_vectorization(
+                vectorization_result, w, h,
+                floor_height=settings.DEFAULT_FLOOR_HEIGHT,
+            )
+```
+
+СТАЛО:
+```python
+            # Build 3D mesh from binary mask (raw contours → correct 3D)
+            mesh = build_mesh_from_mask(
+                mask_array,
+                floor_height=settings.DEFAULT_FLOOR_HEIGHT,
+                pixels_per_meter=pixels_per_meter,
+                vr=vectorization_result,
+            )
+```
+
+Переменные `mask_array` и `pixels_per_meter` уже существуют в этом методе выше по коду.
+
+---
+
+### Файл 3: `backend/app/processing/mesh_generator.py` — ОДНО ИЗМЕНЕНИЕ
+
+Изменить цвет стен со тёмного на светлый.
+
+БЫЛО:
+```python
+WALL_COLOR: list = [74, 74, 74, 255]          # dark grey #4a4a4a
+```
+
+СТАЛО:
+```python
+WALL_COLOR: list = [230, 230, 230, 255]        # light grey #e6e6e6
+```
+
+Больше ничего в этом файле не менять.
+
+---
+
+### Файл 4: `frontend/src/components/MeshViewer.tsx` — ЗАМЕНИТЬ ПОЛНОСТЬЮ
+
+Изменения:
+- Фон `#e8e8e8` (светлый) вместо `#1a1f2e` (тёмный) — стены видны
+- Камера сверху-сбоку (изометрия ~60°) — видна структура здания
+- Добавлен `hemisphereLight` для равномерного освещения без резких теней
+- `maxPolarAngle={Math.PI / 2}` — нельзя заглянуть под модель
+- `far: 5000` вместо `2000` — большие модели не обрезаются
+
+```tsx
+import { Suspense, useEffect, useRef } from 'react';
+import { Canvas, useLoader, useThree } from '@react-three/fiber';
+import { OrbitControls, useGLTF } from '@react-three/drei';
+import { OBJLoader } from 'three-stdlib';
+import * as THREE from 'three';
+
+function CameraSetup({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> }) {
+  const { camera, controls } = useThree();
+
+  useEffect(() => {
+    if (!modelRef.current) return;
+
+    const box = new THREE.Box3().setFromObject(modelRef.current);
+    const size = box.getSize(new THREE.Vector3());
+    const center = box.getCenter(new THREE.Vector3());
+
+    // Камера сверху-сбоку (изометрия ~60°) — как в 2GIS
+    const maxDim = Math.max(size.x, size.z);
+    const dist = maxDim * 1.2;
+
+    // Сверху со смещением — видны стены и внутренняя структура
+    camera.position.set(
+      center.x,
+      center.y + dist * 0.9,   // высоко сверху
+      center.z + dist * 0.4,   // немного сбоку
+    );
+    camera.lookAt(center);
+
+    if (controls) {
+      const ctrl = controls as unknown as { target: THREE.Vector3; update: () => void };
+      ctrl.target.copy(center);
+      ctrl.update();
+    }
+  }, [camera, controls, modelRef]);
+
+  return null;
+}
+
+function ObjModel({ url }: { url: string }) {
+  const obj = useLoader(OBJLoader, url);
+  const ref = useRef<THREE.Object3D>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = new THREE.MeshLambertMaterial({
+          vertexColors: true,
+          side: THREE.DoubleSide,
+        });
+      }
+    });
+  }, [obj]);
+
+  return (
+    <>
+      <primitive ref={ref} object={obj} />
+      <CameraSetup modelRef={ref} />
+    </>
+  );
+}
+
+function GlbModel({ url }: { url: string }) {
+  const { scene } = useGLTF(url);
+  const ref = useRef<THREE.Object3D>(null);
+
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        child.material = new THREE.MeshLambertMaterial({
+          vertexColors: true,
+          side: THREE.DoubleSide,
+        });
+      }
+    });
+  }, [scene]);
+
+  return (
+    <>
+      <primitive ref={ref} object={scene} />
+      <CameraSetup modelRef={ref} />
+    </>
+  );
+}
+
+interface MeshViewerProps {
+  url: string;
+  format?: 'obj' | 'glb';
+}
+
+export default function MeshViewer({ url, format }: MeshViewerProps) {
+  const modelFormat: 'obj' | 'glb' =
+    format ?? (url.toLowerCase().endsWith('.glb') ? 'glb' : 'obj');
+
+  return (
+    <Canvas
+      camera={{ position: [0, 50, 20], fov: 50, near: 0.1, far: 5000 }}
+      style={{ background: '#e8e8e8' }}
+    >
+      {/* Яркое равномерное освещение — стены хорошо видны */}
+      <ambientLight intensity={1.0} />
+      <directionalLight position={[30, 50, 30]} intensity={1.0} />
+      <directionalLight position={[-20, 40, -10]} intensity={0.5} />
+      <hemisphereLight args={['#ffffff', '#b0b0b0', 0.6]} />
+
+      <Suspense fallback={null}>
+        {modelFormat === 'glb'
+          ? <GlbModel url={url} />
+          : <ObjModel url={url} />
+        }
+      </Suspense>
+
+      <OrbitControls
+        makeDefault
+        enableDamping
+        dampingFactor={0.05}
+        maxPolarAngle={Math.PI / 2}
+      />
+    </Canvas>
+  );
+}
+```
+
+---
+
+## Порядок применения
+
+1. Заменить `backend/app/processing/mesh_builder.py`
+2. Заменить `backend/app/processing/mesh_generator.py` (только WALL_COLOR)
+3. Изменить `backend/app/services/reconstruction_service.py` (импорт + вызов)
+4. Заменить `frontend/src/components/MeshViewer.tsx`
+5. Перестроить любую модель — должны появиться светлые стены на светлом фоне, вид сверху
+
+## Что НЕ менять
+
+- `backend/app/processing/mesh_generator.py` — все функции (contours_to_polygons, extrude_wall и т.д.) работают корректно, Y-flip уже есть. Меняем только константу WALL_COLOR.
+- `backend/app/models/domain.py` — без изменений
+- `backend/app/processing/contours.py` — без изменений
+- `backend/app/processing/pipeline.py` — без изменений
+- `ViewMeshPage.tsx` — без изменений
