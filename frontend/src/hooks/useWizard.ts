@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reconstructionApi, uploadApi } from '../api/apiService';
-import type { WizardState, CropRect } from '../types/wizard';
+import type { WizardState, CropRect, RoomAnnotation, DoorAnnotation } from '../types/wizard';
 
 interface UseWizardReturn {
   state: WizardState;
@@ -10,7 +10,7 @@ interface UseWizardReturn {
   setPlanFile: (id: string, url: string) => void;
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
-  saveMask: (blob: Blob) => Promise<void>;
+  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
   buildMesh: () => Promise<void>;
   save: (name: string) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
@@ -22,10 +22,13 @@ const initialState: WizardState = {
   planFileId: null,
   planUrl: null,
   maskFileId: null,
+  editedMaskFileId: null,
   reconstructionId: null,
   meshUrl: null,
   cropRect: null,
   rotation: 0,
+  rooms: [],
+  doors: [],
   isLoading: false,
   error: null,
 };
@@ -35,7 +38,7 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -58,12 +61,12 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
 
-  const saveMask = useCallback(async (blob: Blob) => {
+  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const file = new File([blob], 'mask.png', { type: 'image/png' });
       const data = await uploadApi.uploadUserMask(file);
-      setState((s) => ({ ...s, maskFileId: String(data.id ?? data.file_id ?? ''), isLoading: false }));
+      setState((s) => ({ ...s, editedMaskFileId: String(data.id ?? data.file_id ?? ''), rooms, doors, isLoading: false }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения маски' }));
     }
@@ -123,7 +126,7 @@ export const useWizard = (): UseWizardReturn => {
     setPlanFile,
     calculateMask,
     setMaskFile,
-    saveMask,
+    saveMaskAndAnnotations,
     buildMesh,
     save,
     setCropRect,

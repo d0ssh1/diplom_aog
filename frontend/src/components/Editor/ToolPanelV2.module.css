@@ -1,0 +1,139 @@
+.panel {
+  width: 300px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  border-left: 1px solid #2a2a2a;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.inner {
+  flex: 1;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  overflow-y: auto;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sectionTitle {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  font-weight: 400;
+  color: #9E9E9E;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin: 0 0 4px;
+}
+
+.buttons {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.toolBtn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 20px;
+  border: 2px solid transparent;
+  background: #2a2a2a;
+  color: #fff;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  outline: none;
+}
+
+.toolBtn:hover {
+  background: #333333;
+}
+
+.toolBtnActive {
+  border-color: #FF5722;
+  color: #FF5722;
+}
+
+.toolIcon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #3a3a3a;
+  border-radius: 6px;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.toolBtnActive .toolIcon {
+  background: #FF5722;
+}
+
+.toolLabel {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 0.05em;
+}
+
+/* Slider */
+.sliderLabel {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #9E9E9E;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  margin: 0 0 8px;
+}
+
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 0 4px;
+}
+
+.sliderInput {
+  flex: 1;
+  height: 4px;
+  appearance: none;
+  outline: none;
+  cursor: pointer;
+  border-radius: 0;
+}
+
+.sliderInput::-webkit-slider-thumb {
+  appearance: none;
+  width: 16px;
+  height: 24px;
+  background: #fff;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.sliderInput::-moz-range-thumb {
+  width: 16px;
+  height: 24px;
+  background: #fff;
+  border-radius: 0;
+  border: none;
+  cursor: pointer;
+}
+
+.sliderValue {
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+  color: #9E9E9E;
+  width: 36px;
+  text-align: right;
+  flex-shrink: 0;
+}

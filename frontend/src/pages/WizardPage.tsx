@@ -1,25 +1,36 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWizard } from '../hooks/useWizard';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepUpload } from '../components/Wizard/StepUpload';
-import { StepEditMask } from '../components/Wizard/StepEditMask';
+import { StepPreprocess } from '../components/Wizard/StepPreprocess';
+import { StepWallEditor } from '../components/Wizard/StepWallEditor';
 import { StepBuild } from '../components/Wizard/StepBuild';
 import { StepView3D } from '../components/Wizard/StepView3D';
 import { StepSave } from '../components/Wizard/StepSave';
+import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
 
 export const WizardPage: React.FC = () => {
   const navigate = useNavigate();
   const wizard = useWizard();
   const upload = useFileUpload();
+  const canvasRef = useRef<WallEditorCanvasRef>(null);
 
   const { state } = wizard;
 
-  const handleNext = () => {
+  const handleNext = async () => {
     if (state.step === 1 && upload.files.length > 0) {
       const file = upload.files[0];
       wizard.setPlanFile(file.id, file.url);
+      wizard.nextStep();
+    } else if (state.step === 2) {
+      await wizard.calculateMask();
+      wizard.nextStep();
+    } else if (state.step === 3 && canvasRef.current) {
+      const blob = await canvasRef.current.getBlob();
+      const { rooms, doors } = canvasRef.current.getAnnotations();
+      await wizard.saveMaskAndAnnotations(blob, rooms, doors);
       wizard.nextStep();
     } else if (state.step === 4) {
       wizard.nextStep();
@@ -28,7 +39,10 @@ export const WizardPage: React.FC = () => {
 
   const handlePrev = () => {
     if (state.step === 1) {
-      navigate('/');
+      navigate('/admin');
+    } else if (state.step === 3) {
+      if (!window.confirm('Вернуться на шаг 2? Все нарисованные стены и разметка будут потеряны.')) return;
+      wizard.prevStep();
     } else {
       wizard.prevStep();
     }
@@ -36,7 +50,9 @@ export const WizardPage: React.FC = () => {
 
   const isNextDisabled =
     (state.step === 1 && upload.files.length === 0) ||
-    (state.step === 3 && !state.reconstructionId) ||
+    (state.step === 2 && state.isLoading) ||
+    (state.step === 3 && state.isLoading) ||
+    (state.step === 4 && !state.reconstructionId) ||
     state.isLoading;
 
   const renderStep = () => {
@@ -45,23 +61,31 @@ export const WizardPage: React.FC = () => {
         return (
           <StepUpload
             files={upload.files}
-            onFileSelect={upload.addFile}
+            onFilesSelect={upload.addFiles}
             onRemove={upload.removeFile}
             isUploading={upload.isUploading}
           />
         );
       case 2:
         return (
-          <StepEditMask
-            planUrl={state.planUrl}
-            maskUrl={state.maskFileId ? `/api/v1/uploads/${state.maskFileId}` : null}
-            onMaskSave={async (blob) => {
-              await wizard.saveMask(blob);
-              wizard.nextStep();
-            }}
+          <StepPreprocess
+            planUrl={state.planUrl!}
+            cropRect={state.cropRect}
+            rotation={state.rotation}
+            onCropChange={wizard.setCropRect}
+            onRotate={() =>
+              wizard.setRotation(((state.rotation + 90) % 360) as 0 | 90 | 180 | 270)
+            }
           />
         );
       case 3:
+        return (
+          <StepWallEditor
+            maskUrl={`/api/v1/uploads/${state.maskFileId}`}
+            canvasRef={canvasRef}
+          />
+        );
+      case 4:
         return (
           <StepBuild
             onBuild={wizard.buildMesh}
@@ -69,14 +93,14 @@ export const WizardPage: React.FC = () => {
             error={state.error}
           />
         );
-      case 4:
+      case 5:
         return (
           <StepView3D
             meshUrl={state.meshUrl}
             reconstructionId={state.reconstructionId}
           />
         );
-      case 5:
+      case 6:
         return <StepSave onSave={wizard.save} isLoading={state.isLoading} />;
       default:
         return null;
@@ -86,10 +110,10 @@ export const WizardPage: React.FC = () => {
   return (
     <WizardShell
       currentStep={state.step}
-      totalSteps={5}
+      totalSteps={6}
       onNext={handleNext}
       onPrev={handlePrev}
-      onClose={() => navigate('/')}
+      onClose={() => navigate('/admin')}
       nextDisabled={isNextDisabled}
     >
       {renderStep()}
