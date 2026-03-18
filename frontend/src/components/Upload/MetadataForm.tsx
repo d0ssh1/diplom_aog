@@ -4,7 +4,6 @@ import styles from './MetadataForm.module.css';
 interface PlanMetadata {
   building: string;
   floor: string;
-  wing: string;
 }
 
 interface MetadataFormProps {
@@ -15,7 +14,6 @@ export const MetadataForm: React.FC<MetadataFormProps> = ({ onChange }) => {
   const [data, setData] = useState<PlanMetadata>({
     building: '',
     floor: '',
-    wing: '',
   });
 
   const handleChange = (field: keyof PlanMetadata, value: string) => {
@@ -38,30 +36,16 @@ export const MetadataForm: React.FC<MetadataFormProps> = ({ onChange }) => {
             onChange={(e) => handleChange('building', e.target.value)}
           />
         </div>
-
-        <div className={styles.metaRow}>
-          <div className={styles.field}>
-            <label className={styles.metaLabel} htmlFor="meta-floor">Этаж</label>
-            <input
-              id="meta-floor"
-              type="text"
-              className={styles.metaInput}
-              placeholder="> 1"
-              value={data.floor}
-              onChange={(e) => handleChange('floor', e.target.value)}
-            />
-          </div>
-          <div className={styles.field}>
-            <label className={styles.metaLabel} htmlFor="meta-wing">Крыло</label>
-            <input
-              id="meta-wing"
-              type="text"
-              className={styles.metaInput}
-              placeholder="> А"
-              value={data.wing}
-              onChange={(e) => handleChange('wing', e.target.value)}
-            />
-          </div>
+        <div className={styles.field}>
+          <label className={styles.metaLabel} htmlFor="meta-floor">Этаж</label>
+          <input
+            id="meta-floor"
+            type="text"
+            className={styles.metaInput}
+            placeholder="> 1"
+            value={data.floor}
+            onChange={(e) => handleChange('floor', e.target.value)}
+          />
         </div>
       </div>
     </form>

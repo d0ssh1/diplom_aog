@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, StretchHorizontal, DoorOpen } from 'lucide-react';
-import { ToolPanelV2 } from '../Editor/ToolPanelV2';
 import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
 import { RoomPopup } from '../Editor/RoomPopup';
@@ -31,24 +30,12 @@ interface StepWallEditorProps {
   onThresholdCChange: (v: number) => void;
 }
 
-const SECTIONS = [
-  {
-    title: '// РЕДАКТОР СТЕН',
-    tools: [
-      { id: 'wall', label: 'Нарисовать стену', icon: <Pencil size={20} /> },
-      { id: 'eraser', label: 'Стереть', icon: <Eraser size={20} /> },
-    ],
-  },
-  {
-    title: '// РАЗМЕТКА',
-    tools: [
-      { id: 'room', label: 'Кабинет', icon: <Square size={20} /> },
-      { id: 'staircase', label: 'Лестница', icon: <ArrowUpDown size={20} /> },
-      { id: 'elevator', label: 'Лифт', icon: <ArrowUp size={20} /> },
-      { id: 'corridor', label: 'Коридор', icon: <StretchHorizontal size={20} /> },
-      { id: 'door', label: 'Дверь', icon: <DoorOpen size={20} /> },
-    ],
-  },
+const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] = [
+  { id: 'room', label: 'Кабинет', icon: <Square size={18} /> },
+  { id: 'staircase', label: 'Лестница', icon: <ArrowUpDown size={18} /> },
+  { id: 'elevator', label: 'Лифт', icon: <ArrowUp size={18} /> },
+  { id: 'corridor', label: 'Коридор', icon: <StretchHorizontal size={18} /> },
+  { id: 'door', label: 'Дверь', icon: <DoorOpen size={18} /> },
 ];
 
 export const StepWallEditor: React.FC<StepWallEditorProps> = ({
@@ -73,10 +60,8 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   const [overlayOpacity, setOverlayOpacity] = useState(0.4);
   const previewUrlRef = useRef<string | null>(null);
 
-  // Debounced preview on slider change
   useEffect(() => {
     if (!planFileId) return;
-
     const timer = setTimeout(async () => {
       setIsPreviewLoading(true);
       try {
@@ -92,20 +77,14 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
         setIsPreviewLoading(false);
       }
     }, 500);
-
     return () => clearTimeout(timer);
   }, [blockSize, thresholdC, planFileId, cropRect, rotation]);
 
-  // Cleanup blob URL on unmount
   useEffect(() => {
     return () => {
       if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
     };
   }, []);
-
-  const handleToolChange = (id: string) => {
-    setActiveTool(id as ActiveTool);
-  };
 
   const handleRoomPopupRequest = (
     rect: { x: number; y: number; w: number; h: number },
@@ -113,12 +92,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
     onCancel: () => void,
   ) => {
     const roomType = activeTool as 'room' | 'staircase' | 'elevator' | 'corridor';
-    setPopupState({
-      position: { x: rect.x, y: rect.y },
-      roomType,
-      onConfirm,
-      onCancel,
-    });
+    setPopupState({ position: { x: rect.x, y: rect.y }, roomType, onConfirm, onCancel });
   };
 
   const handlePopupConfirm = (name: string) => {
@@ -162,110 +136,176 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
         </div>
       </div>
 
-      <ToolPanelV2
-        sections={SECTIONS}
-        activeTool={activeTool}
-        onToolChange={handleToolChange}
-        extraContent={
-          <>
-            {activeTool === 'eraser' && (
-              <div className={styles.subTools}>
-                <button
-                  type="button"
-                  className={`${styles.subTool} ${eraserMode === 'brush' ? styles.subToolActive : ''}`}
-                  onClick={() => setEraserMode('brush')}
-                >
-                  ○ Кисть
-                </button>
-                <button
-                  type="button"
-                  className={`${styles.subTool} ${eraserMode === 'select' ? styles.subToolActive : ''}`}
-                  onClick={() => setEraserMode('select')}
-                >
-                  ▭ Выделить область
-                </button>
-              </div>
-            )}
+      {/* Right panel — rendered manually for inline sub-content */}
+      <div className={panelStyles.panel}>
+        <div className={panelStyles.inner}>
 
-            <div className={styles.paramSection}>
-            <h4 className={styles.paramSectionTitle}>// ПАРАМЕТРЫ</h4>
-
-            <div className={styles.paramRow}>
-              <span className={styles.paramLabel}>Толщина линии</span>
-              <div className={panelStyles.sliderRow}>
-                <input
-                  type="range"
-                  className={panelStyles.sliderInput}
-                  min={1} max={50} step={1}
-                  value={brushSize}
-                  onChange={(e) => setBrushSize(Number(e.target.value))}
-                />
-                <span className={panelStyles.sliderValue}>{brushSize} px</span>
-              </div>
-            </div>
-
-            <div className={styles.paramRow}>
-              <span className={styles.paramLabel}>Чувствительность</span>
-              <div className={panelStyles.sliderRow}>
-                <input
-                  type="range"
-                  className={panelStyles.sliderInput}
-                  min={7} max={51} step={2}
-                  value={blockSize}
-                  onChange={(e) => onBlockSizeChange(Number(e.target.value))}
-                />
-                <span className={panelStyles.sliderValue}>{blockSize}</span>
-              </div>
-            </div>
-
-            <div className={styles.paramRow}>
-              <span className={styles.paramLabel}>Контраст</span>
-              <div className={panelStyles.sliderRow}>
-                <input
-                  type="range"
-                  className={panelStyles.sliderInput}
-                  min={2} max={20} step={1}
-                  value={thresholdC}
-                  onChange={(e) => onThresholdCChange(Number(e.target.value))}
-                />
-                <span className={panelStyles.sliderValue}>{thresholdC}</span>
-              </div>
-            </div>
-
-            {isPreviewLoading && <div className={styles.previewSpinner}>Обновление...</div>}
-
-            <h4 className={styles.paramSectionTitle}>// НАЛОЖЕНИЕ</h4>
-
-            <label className={styles.toggleLabel}>
-              <span className={styles.paramLabel}>Показать оригинал</span>
+          {/* // РЕДАКТОР СТЕН */}
+          <div>
+            <div className={panelStyles.sectionTitle}>// РЕДАКТОР СТЕН</div>
+            <div className={panelStyles.section}>
               <button
-                className={`${styles.squareToggle} ${overlayEnabled ? styles.squareToggleActive : ''}`}
-                onClick={() => setOverlayEnabled(!overlayEnabled)}
                 type="button"
+                className={`${panelStyles.toolBtn} ${activeTool === 'wall' ? panelStyles.toolBtnActive : ''}`}
+                onClick={() => setActiveTool('wall')}
               >
-                {overlayEnabled && <span className={styles.checkMark}>✓</span>}
+                <span className={panelStyles.toolIcon}><Pencil size={18} /></span>
+                Нарисовать стену
               </button>
-            </label>
 
-            {overlayEnabled && (
+              {activeTool === 'wall' && (
+                <div className={styles.inlineParam}>
+                  <span className={styles.inlineParamLabel}>Толщина линии</span>
+                  <div className={styles.sliderRow}>
+                    <input
+                      type="range"
+                      className={styles.sliderInput}
+                      min={1} max={30} step={1}
+                      value={brushSize}
+                      onChange={(e) => setBrushSize(Number(e.target.value))}
+                    />
+                    <span className={styles.sliderValue}>{brushSize} px</span>
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                className={`${panelStyles.toolBtn} ${activeTool === 'eraser' ? panelStyles.toolBtnActive : ''}`}
+                onClick={() => setActiveTool('eraser')}
+              >
+                <span className={panelStyles.toolIcon}><Eraser size={18} /></span>
+                Стереть
+              </button>
+
+              {activeTool === 'eraser' && (
+                <div className={styles.subTools}>
+                  <button
+                    type="button"
+                    className={`${styles.subTool} ${eraserMode === 'brush' ? styles.subToolActive : ''}`}
+                    onClick={() => setEraserMode('brush')}
+                  >
+                    <span className={styles.radioMark}>{eraserMode === 'brush' ? '◉' : '○'}</span>
+                    Кисть
+                  </button>
+                  {eraserMode === 'brush' && (
+                    <div className={styles.inlineParam}>
+                      <span className={styles.inlineParamLabel}>Размер кисти</span>
+                      <div className={styles.sliderRow}>
+                        <input
+                          type="range"
+                          className={styles.sliderInput}
+                          min={1} max={60} step={1}
+                          value={brushSize}
+                          onChange={(e) => setBrushSize(Number(e.target.value))}
+                        />
+                        <span className={styles.sliderValue}>{brushSize} px</span>
+                      </div>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    className={`${styles.subTool} ${eraserMode === 'select' ? styles.subToolActive : ''}`}
+                    onClick={() => setEraserMode('select')}
+                  >
+                    <span className={styles.radioMark}>{eraserMode === 'select' ? '■' : '□'}</span>
+                    Выделить область
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className={panelStyles.sectionDivider} />
+
+          {/* // РАЗМЕТКА */}
+          <div>
+            <div className={panelStyles.sectionTitle}>// РАЗМЕТКА</div>
+            <div className={panelStyles.section}>
+              {MARKUP_TOOLS.map((tool) => (
+                <button
+                  key={tool.id}
+                  type="button"
+                  className={`${panelStyles.toolBtn} ${activeTool === tool.id ? panelStyles.toolBtnActive : ''}`}
+                  onClick={() => setActiveTool(tool.id)}
+                >
+                  <span className={panelStyles.toolIcon}>{tool.icon}</span>
+                  {tool.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className={panelStyles.sectionDivider} />
+
+          {/* // ПАРАМЕТРЫ МАСКИ */}
+          <div>
+            <div className={panelStyles.sectionTitle}>// ПАРАМЕТРЫ МАСКИ</div>
+            <div className={styles.paramSection}>
               <div className={styles.paramRow}>
-                <span className={styles.paramLabel}>Прозрачность</span>
-                <div className={panelStyles.sliderRow}>
+                <span className={styles.paramLabel}>Чувствительность</span>
+                <div className={styles.sliderRow}>
                   <input
                     type="range"
-                    className={panelStyles.sliderInput}
-                    min={5} max={95} step={5}
-                    value={Math.round(overlayOpacity * 100)}
-                    onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+                    className={styles.sliderInput}
+                    min={7} max={51} step={2}
+                    value={blockSize}
+                    onChange={(e) => onBlockSizeChange(Number(e.target.value))}
                   />
-                  <span className={panelStyles.sliderValue}>{Math.round(overlayOpacity * 100)}%</span>
+                  <span className={styles.sliderValue}>{blockSize}</span>
                 </div>
               </div>
-            )}
+              <div className={styles.paramRow}>
+                <span className={styles.paramLabel}>Контраст</span>
+                <div className={styles.sliderRow}>
+                  <input
+                    type="range"
+                    className={styles.sliderInput}
+                    min={2} max={20} step={1}
+                    value={thresholdC}
+                    onChange={(e) => onThresholdCChange(Number(e.target.value))}
+                  />
+                  <span className={styles.sliderValue}>{thresholdC}</span>
+                </div>
+              </div>
+              {isPreviewLoading && <div className={styles.previewSpinner}>Обновление...</div>}
+            </div>
           </div>
-          </>
-        }
-      />
+
+          <div className={panelStyles.sectionDivider} />
+
+          {/* // НАЛОЖЕНИЕ */}
+          <div>
+            <div className={panelStyles.sectionTitle}>// НАЛОЖЕНИЕ</div>
+            <div className={styles.paramSection}>
+              <div className={styles.toggleLabel}>
+                <span className={styles.paramLabel}>Показать оригинал</span>
+                <button
+                  type="button"
+                  className={`${styles.squareToggle} ${overlayEnabled ? styles.squareToggleActive : ''}`}
+                  onClick={() => setOverlayEnabled(!overlayEnabled)}
+                />
+              </div>
+              {overlayEnabled && (
+                <div className={styles.paramRow}>
+                  <span className={styles.paramLabel}>Прозрачность</span>
+                  <div className={styles.sliderRow}>
+                    <input
+                      type="range"
+                      className={styles.sliderInput}
+                      min={5} max={95} step={5}
+                      value={Math.round(overlayOpacity * 100)}
+                      onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+                    />
+                    <span className={styles.sliderValue}>{Math.round(overlayOpacity * 100)}%</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
     </div>
   );
 };

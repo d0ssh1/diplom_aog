@@ -1,8 +1,8 @@
 .panel {
   width: 300px;
   flex-shrink: 0;
-  background: #1a1a1a;
-  border-left: 1px solid #2a2a2a;
+  background: #0d0d0d;
+  border-left: 1px solid #1a1a1a;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -10,33 +10,34 @@
 
 .inner {
   flex: 1;
-  padding: 24px;
+  padding: 0 0 24px;
   display: flex;
   flex-direction: column;
-  gap: 32px;
   overflow-y: auto;
 }
 
 .section {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 4px;
+  padding: 0 16px 12px;
 }
 
 .sectionTitle {
-  font-family: 'Courier New', monospace;
+  font-family: 'Courier New', 'Consolas', monospace;
   font-size: 12px;
-  font-weight: 400;
-  color: #9E9E9E;
+  font-weight: 700;
+  color: #666;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  margin: 0 0 4px;
+  letter-spacing: 2px;
+  padding: 12px 16px 8px;
+  margin: 0;
 }
 
 .buttons {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
 }
 
 .toolBtn {
@@ -44,18 +45,21 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 16px 20px;
+  padding: 14px 16px;
   border: 2px solid transparent;
-  background: #2a2a2a;
-  color: #fff;
+  background: #1a1a1a;
+  color: #ffffff;
   cursor: pointer;
-  border-radius: 8px;
-  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  border-radius: 0;
+  transition: border-color 0.15s;
   outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+  text-align: left;
 }
 
 .toolBtn:hover {
-  background: #333333;
+  background: #222;
 }
 
 .toolBtnActive {
@@ -64,77 +68,95 @@
 }
 
 .toolIcon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  min-width: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #3a3a3a;
-  border-radius: 6px;
+  background: #2a2a2a;
+  border-radius: 0;
   flex-shrink: 0;
-  transition: background 0.15s ease;
-}
-
-.toolBtnActive .toolIcon {
-  background: #FF5722;
   color: #ffffff;
 }
 
+.toolBtnActive .toolIcon {
+  background: #FF4500;
+  color: #000000;
+}
+
 .toolLabel {
-  font-family: 'Courier New', monospace;
-  font-size: 13px;
-  letter-spacing: 0.05em;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 14px;
+}
+
+.sectionDivider {
+  height: 1px;
+  background: rgba(255, 255, 255, 0.06);
+  margin: 12px 16px;
 }
 
 /* Slider */
 .sliderLabel {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #9E9E9E;
+  font-size: 11px;
+  color: #555;
   text-transform: uppercase;
-  letter-spacing: 0.2em;
-  margin: 0 0 8px;
+  letter-spacing: 3px;
+  padding: 12px 16px 8px;
+  margin: 0;
 }
 
 .sliderRow {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 4px;
+  gap: 12px;
 }
 
 .sliderInput {
   flex: 1;
-  height: 4px;
+  height: 3px;
   appearance: none;
+  -webkit-appearance: none;
+  background: #333;
+  border-radius: 0;
   outline: none;
   cursor: pointer;
-  border-radius: 0;
+  margin: 8px 0;
 }
 
 .sliderInput::-webkit-slider-thumb {
+  -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 24px;
-  background: #fff;
+  width: 12px;
+  height: 18px;
+  background: #999;
   border-radius: 0;
   cursor: pointer;
+  border: none;
 }
 
 .sliderInput::-moz-range-thumb {
-  width: 16px;
-  height: 24px;
-  background: #fff;
+  width: 12px;
+  height: 18px;
+  background: #999;
+  border-radius: 0;
+  cursor: pointer;
+  border: none;
+}
+
+.sliderInput::-moz-range-track {
+  height: 3px;
+  background: #333;
   border-radius: 0;
   border: none;
-  cursor: pointer;
 }
 
 .sliderValue {
   font-family: 'Courier New', monospace;
-  font-size: 12px;
-  color: #9E9E9E;
-  width: 36px;
+  font-size: 13px;
+  color: #666;
+  min-width: 40px;
   text-align: right;
   flex-shrink: 0;
 }

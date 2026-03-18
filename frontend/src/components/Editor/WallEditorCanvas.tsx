@@ -51,6 +51,12 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     const [displayPlanUrl, setDisplayPlanUrl] = useState<string | null>(null);
     const [bgDims, setBgDims] = useState({ left: 0, top: 0, width: 0, height: 0 });
 
+    // A5: state for HTML erase selection buttons
+    const [eraseSelection, setEraseSelection] = useState<{
+      left: number; top: number; width: number; height: number;
+      fabricRect: fabric.Rect;
+    } | null>(null);
+
     useEffect(() => {
       if (!planUrl) { setDisplayPlanUrl(null); return; }
 
@@ -99,10 +105,11 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         selection: false,
         width,
         height,
+        backgroundColor: 'transparent',
       });
       fabricRef.current = canvas;
 
-      // Load mask as background — proportional fit
+      // Load mask as background — proportional fit, centered
       fabric.Image.fromURL(
         maskUrl,
         (img) => {
@@ -111,15 +118,14 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           const scaleX = c.getWidth() / (img.width ?? 1);
           const scaleY = c.getHeight() / (img.height ?? 1);
           const scale = Math.min(scaleX, scaleY);
-          img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top' });
+          const scaledW = (img.width ?? 0) * scale;
+          const scaledH = (img.height ?? 0) * scale;
+          const offsetX = (c.getWidth() - scaledW) / 2;
+          const offsetY = (c.getHeight() - scaledH) / 2;
+          img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
           c.setBackgroundImage(img, () => {
             c.renderAll();
-            setBgDims({
-              left: 0,
-              top: 0,
-              width: (img.width ?? 0) * scale,
-              height: (img.height ?? 0) * scale,
-            });
+            setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
           });
         },
         { crossOrigin: 'anonymous' },
@@ -158,6 +164,13 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
     useEffect(() => { eraserModeRef.current = eraserMode; }, [eraserMode]);
 
+    // A5: stable ref for setEraseSelection to use inside callbacks
+    const setEraseSelectionRef = useRef(setEraseSelection);
+    useEffect(() => { setEraseSelectionRef.current = setEraseSelection; }, []);
+
+    // Fix 4: ref to track pending erase confirmation (avoids stale closure issues)
+    const pendingEraseRef = useRef(false);
+
     const attachToolHandlers = useCallback(() => {
       const canvas = fabricRef.current;
       if (!canvas) return;
@@ -167,6 +180,15 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       canvas.off('mouse:down');
       canvas.off('mouse:move');
       canvas.off('mouse:up');
+      canvas.off('path:created'); // A2: clean up path:created handler
+
+      // A1+A6: Always block interactivity of all objects when any tool is active
+      canvas.forEachObject((obj) => {
+        obj.selectable = false;
+        obj.evented = false;
+      });
+      canvas.discardActiveObject();
+      canvas.renderAll();
 
       const tool = activeToolRef.current;
 
@@ -176,6 +198,15 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
           canvas.freeDrawingBrush.color = 'black';
           canvas.freeDrawingBrush.width = brushSizeRef.current;
+
+          // A2: mark eraser paths as non-selectable immediately after creation
+          canvas.on('path:created', (e: fabric.IEvent & { path?: fabric.Path }) => {
+            const path = e.path;
+            if (!path) return;
+            path.selectable = false;
+            path.evented = false;
+            (path as unknown as { data: { type: string } }).data = { type: 'eraser-stroke' };
+          });
 
           // Custom cursor — orange dashed circle sized to brush
           const size = brushSizeRef.current;
@@ -201,11 +232,10 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           let startX = 0;
           let startY = 0;
           let selRect: fabric.Rect | null = null;
-          let confirmBtn: fabric.Circle | null = null;
-          let cancelBtn: fabric.Circle | null = null;
 
           const onMouseDown = (opt: fabric.IEvent<MouseEvent>) => {
-            if (confirmBtn || cancelBtn) return; // selection pending
+            // Fix 4: block new drag while confirmation is pending
+            if (pendingEraseRef.current) return;
             const pointer = canvas.getPointer(opt.e);
             isDrawing = true;
             startX = pointer.x;
@@ -244,43 +274,19 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               canvas.renderAll();
               return;
             }
-            const x = selRect.left ?? 0;
-            const y = selRect.top ?? 0;
 
-            confirmBtn = new fabric.Circle({
-              radius: 12, fill: '#4CAF50',
-              left: x + w + 4, top: y - 4,
-              selectable: false, evented: true,
+            // Fix 4: mark pending so new drag is blocked until confirm/cancel
+            pendingEraseRef.current = true;
+
+            // A5: store selection in state to render HTML buttons
+            const capturedRect = selRect;
+            setEraseSelectionRef.current({
+              left: capturedRect.left ?? 0,
+              top: capturedRect.top ?? 0,
+              width: w,
+              height: h,
+              fabricRect: capturedRect,
             });
-            cancelBtn = new fabric.Circle({
-              radius: 12, fill: '#666',
-              left: x + w + 4, top: y + 24,
-              selectable: false, evented: true,
-            });
-
-            const capturedSel = selRect;
-            const capturedConfirm = confirmBtn;
-            const capturedCancel = cancelBtn;
-
-            capturedConfirm.on('mousedown', () => {
-              const eraseRect = new fabric.Rect({
-                left: x, top: y, width: w, height: h,
-                fill: 'black', selectable: false, evented: false,
-              });
-              canvas.add(eraseRect);
-              canvas.remove(capturedSel, capturedConfirm, capturedCancel);
-              selRect = null; confirmBtn = null; cancelBtn = null;
-              canvas.renderAll();
-            });
-
-            capturedCancel.on('mousedown', () => {
-              canvas.remove(capturedSel, capturedConfirm, capturedCancel);
-              selRect = null; confirmBtn = null; cancelBtn = null;
-              canvas.renderAll();
-            });
-
-            canvas.add(confirmBtn, cancelBtn);
-            canvas.renderAll();
           };
 
           canvas.on('mouse:down', onMouseDown);
@@ -336,8 +342,8 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             const line = new fabric.Line([startPoint.x, startPoint.y, endX, endY], {
               stroke: color,
               strokeWidth: width,
-              selectable: true,
-              evented: true,
+              selectable: false,
+              evented: false,
             });
             (line as unknown as { data: { id: string; type: string } }).data = {
               id,
@@ -444,7 +450,6 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           popupRequestRef.current(
             { x: pointer.x, y: pointer.y, w: normalizedRect.w, h: normalizedRect.h },
             (name: string) => {
-              // onConfirm: replace selection rect with labeled group
               canvas.remove(capturedRect);
 
               const id = crypto.randomUUID();
@@ -465,8 +470,8 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               const group = new fabric.Group([rect, text], {
                 left: rectLeft,
                 top: rectTop,
-                selectable: true,
-                evented: true,
+                selectable: false,
+                evented: false,
               });
               (group as unknown as { data: { id: string; type: string } }).data = {
                 id,
@@ -488,7 +493,6 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               selectionRect = null;
             },
             () => {
-              // onCancel
               canvas.remove(capturedRect);
               canvas.renderAll();
               selectionRect = null;
@@ -502,10 +506,38 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       }
     }, []);
 
-    // Re-attach handlers when tool or brushSize changes
+    // A4: add eraserMode to dependencies so handlers re-attach on mode change
     useEffect(() => {
       attachToolHandlers();
-    }, [activeTool, brushSize, attachToolHandlers]);
+    }, [activeTool, brushSize, eraserMode, attachToolHandlers]);
+
+    // A5: confirm erase — draw black rect, clear selection state
+    const handleConfirmErase = useCallback(() => {
+      const canvas = fabricRef.current;
+      if (!canvas || !eraseSelection) return;
+      const { left, top, width, height, fabricRect } = eraseSelection;
+      const eraseRect = new fabric.Rect({
+        left, top, width, height,
+        fill: 'black', selectable: false, evented: false,
+      });
+      canvas.remove(fabricRect);
+      canvas.add(eraseRect);
+      canvas.renderAll();
+      pendingEraseRef.current = false;
+      setEraseSelection(null);
+      attachToolHandlers();
+    }, [eraseSelection, attachToolHandlers]);
+
+    // A5: cancel erase — remove selection rect, clear state
+    const handleCancelErase = useCallback(() => {
+      const canvas = fabricRef.current;
+      if (!canvas || !eraseSelection) return;
+      canvas.remove(eraseSelection.fabricRect);
+      canvas.renderAll();
+      pendingEraseRef.current = false;
+      setEraseSelection(null);
+      attachToolHandlers();
+    }, [eraseSelection, attachToolHandlers]);
 
     useImperativeHandle(ref, () => ({
       getBlob: () =>
@@ -515,6 +547,9 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             resolve(new Blob());
             return;
           }
+          // Temporarily set black background so export has correct mask background
+          const origBg = canvas.backgroundColor;
+          canvas.backgroundColor = 'black';
           const annotations = canvas
             .getObjects()
             .filter(
@@ -528,6 +563,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           annotations.forEach((o) => {
             o.visible = true;
           });
+          canvas.backgroundColor = origBg;
           canvas.renderAll();
           fetch(dataUrl)
             .then((r) => r.blob())
@@ -555,6 +591,34 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               height: bgDims.height + 'px',
             }}
           />
+        )}
+        {/* A5: HTML confirm/cancel buttons for select-erase */}
+        {eraseSelection && (
+          <div
+            className={styles.eraseButtons}
+            style={{
+              left: eraseSelection.left + eraseSelection.width + 12,
+              top: Math.min(
+                eraseSelection.top + eraseSelection.height - 40,
+                (containerRef.current?.clientHeight ?? 400) - 50,
+              ),
+            }}
+          >
+            <button
+              className={styles.eraseConfirm}
+              onClick={handleConfirmErase}
+              title="Подтвердить удаление"
+            >
+              ✓
+            </button>
+            <button
+              className={styles.eraseCancel}
+              onClick={handleCancelErase}
+              title="Отменить"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
     );
