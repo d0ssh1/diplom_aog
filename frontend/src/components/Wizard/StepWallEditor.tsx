@@ -59,9 +59,30 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [overlayOpacity, setOverlayOpacity] = useState(0.4);
   const previewUrlRef = useRef<string | null>(null);
+  const isFirstRenderRef = useRef(true);
+  const prevBlockSizeRef = useRef(blockSize);
+  const prevThresholdCRef = useRef(thresholdC);
 
   useEffect(() => {
+    // Skip on mount — mask is already provided via maskUrl prop
+    if (isFirstRenderRef.current) {
+      isFirstRenderRef.current = false;
+      return;
+    }
+
+    // Only re-fetch when slider params actually changed
+    if (
+      prevBlockSizeRef.current === blockSize &&
+      prevThresholdCRef.current === thresholdC
+    ) {
+      return;
+    }
+
+    prevBlockSizeRef.current = blockSize;
+    prevThresholdCRef.current = thresholdC;
+
     if (!planFileId) return;
+
     const timer = setTimeout(async () => {
       setIsPreviewLoading(true);
       try {
@@ -77,6 +98,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
         setIsPreviewLoading(false);
       }
     }, 500);
+
     return () => clearTimeout(timer);
   }, [blockSize, thresholdC, planFileId, cropRect, rotation]);
 
