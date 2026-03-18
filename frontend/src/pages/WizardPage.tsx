@@ -29,8 +29,10 @@ export const WizardPage: React.FC = () => {
     } else if (state.step === 3 && canvasRef.current) {
       const blob = await canvasRef.current.getBlob();
       const { rooms, doors } = canvasRef.current.getAnnotations();
-      await wizard.saveMaskAndAnnotations(blob, rooms, doors);
-      await wizard.buildMesh();
+      const editedMaskId = await wizard.saveMaskAndAnnotations(blob, rooms, doors);
+      if (editedMaskId) {
+        await wizard.buildMesh(editedMaskId);
+      }
     } else if (state.step === 4) {
       wizard.nextStep();
     }
@@ -79,7 +81,7 @@ export const WizardPage: React.FC = () => {
       case 3:
         return (
           <StepWallEditor
-            maskUrl={`/api/v1/uploads/masks/${state.maskFileId}.png`}
+            maskUrl={`/api/v1/uploads/masks/${state.editedMaskFileId ?? state.maskFileId}.png`}
             planFileId={state.planFileId}
             planUrl={state.planUrl ?? undefined}
             cropRect={state.cropRect}

@@ -10,8 +10,8 @@ interface UseWizardReturn {
   setPlanFile: (id: string, url: string) => void;
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
-  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
-  buildMesh: () => Promise<void>;
+  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<string | null>;
+  buildMesh: (editedMaskId?: string) => Promise<void>;
   save: (name: string) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
   setRotation: (deg: 0 | 90 | 180 | 270) => void;
@@ -73,14 +73,17 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
 
-  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => {
+  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]): Promise<string | null> => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const file = new File([blob], 'mask.png', { type: 'image/png' });
       const data = await uploadApi.uploadUserMask(file);
-      setState((s) => ({ ...s, editedMaskFileId: String(data.id ?? data.file_id ?? ''), rooms, doors, isLoading: false }));
+      const editedId = String(data.id ?? data.file_id ?? '');
+      setState((s) => ({ ...s, editedMaskFileId: editedId, rooms, doors, isLoading: false }));
+      return editedId;
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения маски' }));
+      return null;
     }
   }, []);
 
@@ -103,11 +106,12 @@ export const useWizard = (): UseWizardReturn => {
     }
   }, [state.planFileId, state.cropRect, state.rotation, state.blockSize, state.thresholdC]);
 
-  const buildMesh = useCallback(async () => {
-    if (!state.planFileId || !state.maskFileId) return;
+  const buildMesh = useCallback(async (editedMaskId?: string) => {
+    const maskId = editedMaskId || state.editedMaskFileId || state.maskFileId;
+    if (!state.planFileId || !maskId) return;
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
-      const data = await reconstructionApi.calculateMesh(state.planFileId, state.maskFileId);
+      const data = await reconstructionApi.calculateMesh(state.planFileId, maskId);
       const detail = await reconstructionApi.getReconstructionById(data.id as number);
       setState((s) => ({
         ...s,
@@ -119,7 +123,7 @@ export const useWizard = (): UseWizardReturn => {
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения 3D-модели' }));
     }
-  }, [state.planFileId, state.maskFileId]);
+  }, [state.planFileId, state.editedMaskFileId, state.maskFileId]);
 
   const save = useCallback(
     async (name: string) => {

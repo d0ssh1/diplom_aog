@@ -48,6 +48,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     const fabricRef = useRef<fabric.Canvas | null>(null);
     const roomsRef = useRef<RoomAnnotation[]>([]);
     const doorsRef = useRef<DoorAnnotation[]>([]);
+    const tempObjectsRef = useRef<fabric.Object[]>([]);
     const [displayPlanUrl, setDisplayPlanUrl] = useState<string | null>(null);
     const [bgDims, setBgDims] = useState({ left: 0, top: 0, width: 0, height: 0 });
 
@@ -175,7 +176,14 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       const canvas = fabricRef.current;
       if (!canvas) return;
 
-      // Reset
+      // Reset — remove all temporary objects (zombie fix)
+      tempObjectsRef.current.forEach((obj) => canvas.remove(obj));
+      tempObjectsRef.current = [];
+
+      // Reset — clear HTML erase selection buttons
+      setEraseSelectionRef.current(null);
+      pendingEraseRef.current = false;
+
       canvas.isDrawingMode = false;
       canvas.off('mouse:down');
       canvas.off('mouse:move');
@@ -247,6 +255,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               selectable: false, evented: false,
             });
             canvas.add(selRect);
+            tempObjectsRef.current.push(selRect);
           };
 
           const onMouseMove = (opt: fabric.IEvent<MouseEvent>) => {
@@ -270,6 +279,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             const h = selRect.height ?? 0;
             if (w < 5 || h < 5) {
               canvas.remove(selRect);
+              tempObjectsRef.current = tempObjectsRef.current.filter((o) => o !== selRect);
               selRect = null;
               canvas.renderAll();
               return;
@@ -317,6 +327,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               },
             );
             canvas.add(previewLine);
+            tempObjectsRef.current.push(previewLine);
             canvas.renderAll();
           } else {
             // Second click — finalize
@@ -332,6 +343,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
 
             if (previewLine) {
               canvas.remove(previewLine);
+              tempObjectsRef.current = tempObjectsRef.current.filter((o) => o !== previewLine);
               previewLine = null;
             }
 
@@ -521,6 +533,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         fill: 'black', selectable: false, evented: false,
       });
       canvas.remove(fabricRect);
+      tempObjectsRef.current = tempObjectsRef.current.filter((o) => o !== fabricRect);
       canvas.add(eraseRect);
       canvas.renderAll();
       pendingEraseRef.current = false;
@@ -533,6 +546,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       const canvas = fabricRef.current;
       if (!canvas || !eraseSelection) return;
       canvas.remove(eraseSelection.fabricRect);
+      tempObjectsRef.current = tempObjectsRef.current.filter((o) => o !== eraseSelection.fabricRect);
       canvas.renderAll();
       pendingEraseRef.current = false;
       setEraseSelection(null);
