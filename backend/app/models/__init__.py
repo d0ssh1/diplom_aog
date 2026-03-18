@@ -34,6 +34,10 @@ try:
         RouteResponse,
         RoutePoint,
         ReconstructionStatus,
+        BuildNavGraphRequest,
+        BuildNavGraphResponse,
+        FindRouteRequest,
+        FindRouteResponse,
     )
 
     from app.models.building import (
@@ -76,6 +80,10 @@ try:
         "RouteResponse",
         "RoutePoint",
         "ReconstructionStatus",
+        "BuildNavGraphRequest",
+        "BuildNavGraphResponse",
+        "FindRouteRequest",
+        "FindRouteResponse",
         # Building
         "BuildingBase",
         "BuildingCreate",

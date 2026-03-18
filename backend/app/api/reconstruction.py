@@ -23,10 +23,16 @@ from app.models import (
     ReconstructionListItem,
     PatchReconstructionRequest,
     RoomsRequest,
+    BuildNavGraphRequest,
+    BuildNavGraphResponse,
+    FindRouteRequest,
+    FindRouteResponse,
 )
 from app.services.reconstruction_service import ReconstructionService
 from app.services.mask_service import MaskService
+from app.services.nav_service import NavService
 from app.models.domain import VectorizationResult
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reconstruction", tags=["Reconstruction"])
@@ -269,3 +275,56 @@ async def save_rooms(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
     pass
+
+
+# === Nav Graph ===
+
+@router.post("/nav-graph", response_model=BuildNavGraphResponse)
+async def build_nav_graph(
+    request: BuildNavGraphRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    try:
+        metadata = await svc.build_graph(
+            mask_file_id=request.mask_file_id,
+            rooms=request.rooms,
+            doors=request.doors,
+            scale_factor=request.scale_factor,
+        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        logger.error("build_nav_graph failed: %s", e)
+        raise HTTPException(status_code=500, detail="Ошибка построения навигационного графа")
+    return BuildNavGraphResponse(
+        graph_id=request.mask_file_id,
+        **metadata,
+    )
+
+
+@router.get("/nav-graph/{graph_id}")
+async def get_nav_graph(
+    graph_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    try:
+        nav_data = svc.load_graph(graph_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return nav_data
+
+
+@router.post("/route", response_model=FindRouteResponse)
+async def find_route_endpoint(
+    request: FindRouteRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+):
+    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    result = await svc.find_route(
+        graph_id=request.graph_id,
+        from_room_id=request.from_room_id,
+        to_room_id=request.to_room_id,
+    )
+    return FindRouteResponse(**result)

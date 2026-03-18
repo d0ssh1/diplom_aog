@@ -144,7 +144,41 @@ class RoomsRequest(BaseModel):
     rooms: List[RoomData]
 
 
+# === Nav Graph ===
+
+class BuildNavGraphRequest(BaseModel):
+    mask_file_id: str
+    rooms: list[dict]
+    doors: list[dict]
+    scale_factor: float = 0.05
+
+
+class BuildNavGraphResponse(BaseModel):
+    graph_id: str
+    nodes_count: int
+    edges_count: int
+    room_nodes: list[str]
+    door_nodes: list[str]
+
+
 # === Navigation ===
+
+class FindRouteRequest(BaseModel):
+    graph_id: str
+    from_room_id: str
+    to_room_id: str
+
+
+class FindRouteResponse(BaseModel):
+    status: str
+    from_room: Optional[str] = None
+    to_room: Optional[str] = None
+    total_distance_meters: Optional[float] = None
+    estimated_time_seconds: Optional[int] = None
+    coordinates: Optional[List[List[float]]] = None
+    path_nodes_count: Optional[int] = None
+    message: Optional[str] = None
+
 
 class RouteRequest(BaseModel):
     """Запрос на построение маршрута"""

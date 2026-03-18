@@ -173,6 +173,42 @@ export const reconstructionApi = {
   saveRooms: async (id: number, rooms: Array<{ number: string; x: number; y: number }>) => {
     await apiClient.put(`/reconstruction/reconstructions/${id}/rooms`, { rooms });
   },
+
+  buildNavGraph: async (maskFileId: string, rooms: unknown[], doors: unknown[]) => {
+    const response = await apiClient.post('/reconstruction/nav-graph', {
+      mask_file_id: maskFileId,
+      rooms,
+      doors,
+      scale_factor: 0.05,
+    });
+    return response.data;
+  },
+
+  getNavGraph: async (graphId: string) => {
+    const response = await apiClient.get(`/reconstruction/nav-graph/${graphId}`);
+    return response.data;
+  },
+
+  findRoute: async (
+    graphId: string,
+    fromRoomId: string,
+    toRoomId: string,
+  ): Promise<{
+    status: string;
+    from_room?: string;
+    to_room?: string;
+    total_distance_meters?: number;
+    estimated_time_seconds?: number;
+    coordinates?: number[][];
+    message?: string;
+  }> => {
+    const res = await apiClient.post('/reconstruction/route', {
+      graph_id: graphId,
+      from_room_id: fromRoomId,
+      to_room_id: toRoomId,
+    });
+    return res.data;
+  },
 };
 
 // === Navigation API ===

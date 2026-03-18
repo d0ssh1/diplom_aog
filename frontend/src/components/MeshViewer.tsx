@@ -145,9 +145,10 @@ function GlbModel({ url }: { url: string }) {
 interface MeshViewerProps {
   url: string;
   format?: 'obj' | 'glb';
+  children?: React.ReactNode;
 }
 
-export default function MeshViewer({ url, format }: MeshViewerProps) {
+export default function MeshViewer({ url, format, children }: MeshViewerProps) {
   const modelFormat: 'obj' | 'glb' =
     format ?? (url.toLowerCase().endsWith('.glb') ? 'glb' : 'obj');
 
@@ -197,6 +198,8 @@ export default function MeshViewer({ url, format }: MeshViewerProps) {
         minDistance={1}
         maxDistance={500}
       />
+
+      {children}
     </Canvas>
   );
 }

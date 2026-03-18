@@ -6,6 +6,7 @@ import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepUpload } from '../components/Wizard/StepUpload';
 import { StepPreprocess } from '../components/Wizard/StepPreprocess';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
+import { StepNavGraph } from '../components/Wizard/StepNavGraph';
 import { StepView3D } from '../components/Wizard/StepView3D';
 import { StepSave } from '../components/Wizard/StepSave';
 import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
@@ -31,9 +32,11 @@ export const WizardPage: React.FC = () => {
       const { rooms, doors } = canvasRef.current.getAnnotations();
       const editedMaskId = await wizard.saveMaskAndAnnotations(blob, rooms, doors);
       if (editedMaskId) {
-        await wizard.buildMesh(editedMaskId);
+        await wizard.buildNavGraph(editedMaskId, rooms, doors);
       }
     } else if (state.step === 4) {
+      await wizard.buildMesh(state.editedMaskFileId ?? state.maskFileId ?? undefined);
+    } else if (state.step === 5) {
       wizard.nextStep();
     }
   };
@@ -51,9 +54,14 @@ export const WizardPage: React.FC = () => {
 
   const isNextDisabled =
     (state.step === 1 && upload.files.length === 0) ||
-    (state.step === 2 && state.isLoading) ||
-    (state.step === 3 && state.isLoading) ||
     state.isLoading;
+
+  const nextLabel =
+    state.step === 3 ? '> ПОСТРОИТЬ ГРАФ' :
+    state.step === 4 ? '> ПОСТРОИТЬ 3D' :
+    undefined;
+
+  const maskUrl = `/api/v1/uploads/masks/${state.editedMaskFileId ?? state.maskFileId}.png`;
 
   const renderStep = () => {
     switch (state.step) {
@@ -81,7 +89,7 @@ export const WizardPage: React.FC = () => {
       case 3:
         return (
           <StepWallEditor
-            maskUrl={`/api/v1/uploads/masks/${state.editedMaskFileId ?? state.maskFileId}.png`}
+            maskUrl={maskUrl}
             planFileId={state.planFileId}
             planUrl={state.planUrl ?? undefined}
             cropRect={state.cropRect}
@@ -95,12 +103,21 @@ export const WizardPage: React.FC = () => {
         );
       case 4:
         return (
-          <StepView3D
-            meshUrl={state.meshUrl}
-            reconstructionId={state.reconstructionId}
+          <StepNavGraph
+            navGraphId={state.navGraphId}
+            maskUrl={maskUrl}
           />
         );
       case 5:
+        return (
+          <StepView3D
+            meshUrl={state.meshUrl}
+            reconstructionId={state.reconstructionId}
+            navGraphId={state.navGraphId}
+            rooms={state.rooms}
+          />
+        );
+      case 6:
         return <StepSave onSave={wizard.save} isLoading={state.isLoading} />;
       default:
         return null;
@@ -110,12 +127,12 @@ export const WizardPage: React.FC = () => {
   return (
     <WizardShell
       currentStep={state.step}
-      totalSteps={5}
+      totalSteps={6}
       onNext={handleNext}
       onPrev={handlePrev}
       onClose={() => navigate('/admin')}
       nextDisabled={isNextDisabled}
-      nextLabel={state.step === 3 ? '> ПОСТРОИТЬ' : undefined}
+      nextLabel={nextLabel}
     >
       {renderStep()}
     </WizardShell>
