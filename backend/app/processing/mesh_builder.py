@@ -42,10 +42,10 @@ def build_mesh_from_mask(
         raise ImageProcessingError("build_mesh_from_mask", "trimesh not installed")
 
     from app.processing.mesh_generator import (
-        contours_to_polygons,
         extrude_wall,
         WALL_COLOR,
     )
+    from shapely.geometry import Polygon as ShapelyPolygon
 
     h, w = mask.shape[:2]
 
@@ -59,27 +59,34 @@ def build_mesh_from_mask(
             white_ratio * 100,
         )
 
-    # Step 1: Extract wall contours from mask
-    # RETR_CCOMP gives 2-level hierarchy; we keep only top-level contours
-    # (hierarchy[i][3] == -1 means no parent) that are also smaller than
-    # 20% of the image area — the closed outer building boundary is a huge
-    # top-level contour (57%+ of image) that extrudes into a solid black slab.
+    # Step 1: Extract wall contours from mask using RETR_CCOMP hierarchy.
+    # For each top-level contour (parent == -1), collect its direct children
+    # as holes. This correctly handles the closed outer building boundary:
+    # outer ring (57% area) + inner hole (52% area) = wall ring (5% area).
     contours_raw, hierarchy = cv2.findContours(
         mask.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE,
     )
 
     min_area = 50
-    max_area = h * w * 0.20  # contours > 20% of image = building perimeter, not a wall
     if hierarchy is not None:
-        hierarchy = hierarchy[0]
-        contours = [
-            c for i, c in enumerate(contours_raw)
-            if hierarchy[i][3] == -1
-            and cv2.contourArea(c) > min_area
-            and cv2.contourArea(c) < max_area
-        ]
+        hier = hierarchy[0]
+        # Build map: parent_idx → list of child contours
+        children: dict = {}
+        for i, c in enumerate(contours_raw):
+            parent = hier[i][3]
+            if parent != -1:
+                children.setdefault(parent, []).append(c)
+
+        # Keep top-level contours; attach their holes
+        # contours list becomes list of (exterior, [holes])
+        contour_pairs = []
+        for i, c in enumerate(contours_raw):
+            if hier[i][3] == -1 and cv2.contourArea(c) > min_area:
+                holes = children.get(i, [])
+                contour_pairs.append((c, holes))
+        contours = contour_pairs
     else:
-        contours = [c for c in contours_raw if min_area < cv2.contourArea(c) < max_area]
+        contours = [(c, []) for c in contours_raw if cv2.contourArea(c) > min_area]
 
     logger.info(
         "build_mesh_from_mask: image=%dx%d, raw=%d, filtered=%d, ppm=%.2f",
@@ -92,7 +99,25 @@ def build_mesh_from_mask(
         )
 
     # Step 2: Contours → polygons (pixels → metres, Y-flip)
-    polygons = contours_to_polygons(contours, h, pixels_per_meter)
+    scale = 1.0 / pixels_per_meter
+    h_m = h * scale
+    polygons = []
+    for exterior_c, hole_cs in contours:
+        ext_pts = exterior_c.reshape(-1, 2).astype(float) * scale
+        ext_flipped = [(x, h_m - y) for x, y in ext_pts]
+        hole_list = []
+        for hole_c in hole_cs:
+            hole_pts = hole_c.reshape(-1, 2).astype(float) * scale
+            hole_flipped = [(x, h_m - y) for x, y in hole_pts]
+            hole_list.append(hole_flipped)
+        try:
+            poly = ShapelyPolygon(ext_flipped, hole_list)
+            if not poly.is_valid:
+                poly = poly.buffer(0)
+            if poly.is_valid and not poly.is_empty and poly.area > 0:
+                polygons.append(poly)
+        except Exception as exc:
+            logger.debug("polygon build failed: %s", exc)
     logger.info("Polygons: %d", len(polygons))
 
     if not polygons:
