@@ -80,6 +80,89 @@ def normalize_brightness(
 
 
 # ===================================================================
+# Step 1b: Multi-pass Adaptive Threshold
+# ===================================================================
+
+def multi_pass_threshold(
+    gray: np.ndarray,
+    passes: list[tuple[int, int, int]] | None = None,
+) -> np.ndarray:
+    """
+    Несколько проходов adaptive threshold с разными параметрами,
+    объединённых через bitwise_OR.
+
+    Проход 1 — пользовательские параметры (толстые стены).
+    Проход 2 — мелкое окно (тонкие линии, перегородки).
+    Проход 3 — среднее окно (промежуточные элементы).
+
+    Args:
+        gray: grayscale (uint8)
+        passes: list of (adaptiveMethod, blockSize, C).
+                blockSize будет скорректирован до нечётного >= 3.
+                Если None — default 3 прохода.
+    Returns:
+        Бинарная маска (uint8, 0 или 255)
+    """
+    t0 = time.perf_counter()
+
+    if passes is None:
+        passes = [
+            (cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 15, 10),
+            (cv2.ADAPTIVE_THRESH_MEAN_C, 7, 3),
+            (cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 11, 5),
+        ]
+
+    result = np.zeros_like(gray)
+
+    for method, block_size, c in passes:
+        bs = max(3, block_size if block_size % 2 == 1 else block_size + 1)
+        mask = cv2.adaptiveThreshold(
+            gray, 255, method, cv2.THRESH_BINARY_INV, bs, c
+        )
+        result = cv2.bitwise_or(result, mask)
+
+    logger.info("multi_pass_threshold: %d passes, %.1fms",
+                len(passes), (time.perf_counter() - t0) * 1000)
+    return result
+
+
+# ===================================================================
+# Step 1c: Directional Morphological Close
+# ===================================================================
+
+def directional_morph_close(
+    binary: np.ndarray,
+    kernel_length: int = 3,
+    iterations: int = 1,
+) -> np.ndarray:
+    """
+    MORPH_CLOSE с линейными ядрами (H + V) вместо квадратного.
+    Закрывает разрывы в линиях вдоль горизонтали и вертикали,
+    не скругляя прямые углы стен.
+
+    Args:
+        binary: бинарная маска (uint8, 0/255)
+        kernel_length: длина линейного ядра (default 3)
+        iterations: количество итераций (default 1)
+    Returns:
+        Обработанная маска (uint8, 0/255)
+    """
+    t0 = time.perf_counter()
+
+    kernel_h = np.ones((1, kernel_length), np.uint8)
+    kernel_v = np.ones((kernel_length, 1), np.uint8)
+
+    closed_h = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_h, iterations=iterations)
+    closed_v = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel_v, iterations=iterations)
+
+    result = cv2.bitwise_or(closed_h, closed_v)
+
+    logger.info("directional_morph_close: kernel=%d, %.1fms",
+                kernel_length, (time.perf_counter() - t0) * 1000)
+    return result
+
+
+# ===================================================================
 # Step 2: Color Filtering
 # ===================================================================
 

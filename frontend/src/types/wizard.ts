@@ -5,7 +5,7 @@ export interface CropRect {
   height: number;
 }
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5;
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface RoomAnnotation {
   id: string;
@@ -23,6 +23,7 @@ export interface DoorAnnotation {
   y1: number;
   x2: number;
   y2: number; // normalized [0,1]
+  room_id?: string | null;
 }
 
 export interface UploadedFile {
@@ -45,6 +46,7 @@ export interface WizardState {
   thresholdC: number;
   rooms: RoomAnnotation[];
   doors: DoorAnnotation[];
+  navGraphId: string | null;
   isLoading: boolean;
   error: string | null;
 }

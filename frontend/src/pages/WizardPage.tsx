@@ -99,6 +99,8 @@ export const WizardPage: React.FC = () => {
             canvasRef={canvasRef}
             onBlockSizeChange={wizard.setBlockSize}
             onThresholdCChange={wizard.setThresholdC}
+            initialRooms={state.rooms}
+            initialDoors={state.doors}
           />
         );
       case 4:

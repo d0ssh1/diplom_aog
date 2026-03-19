@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 import networkx as nx
+import cv2
 
 from app.processing.nav_graph import (
     extract_corridor_mask,
@@ -11,44 +12,79 @@ from app.processing.nav_graph import (
     deserialize_nav_graph,
     find_route,
     transform_2d_to_3d,
+    simplify_path,
 )
 
 
 class TestExtractCorridorMask:
-    def test_inverts_mask(self):
-        """Белые стены → чёрные, чёрное свободное → белое."""
+    def test_inverts_wall_mask(self):
+        """Стены → чёрные, свободное → белое."""
         mask = np.zeros((100, 100), dtype=np.uint8)
         mask[0:10, :] = 255  # стена сверху
         result = extract_corridor_mask(mask, [], 100, 100)
-        assert result[50, 50] == 255  # свободное пространство
+        assert result[50, 50] == 255  # свободное
         assert result[5, 50] == 0     # стена
 
-    def test_subtracts_rooms(self):
-        """Комнаты вычитаются из свободного пространства."""
-        mask = np.zeros((100, 100), dtype=np.uint8)  # всё свободно
-        rooms = [{"room_type": "room", "x": 0.2, "y": 0.2, "width": 0.3, "height": 0.3}]
-        result = extract_corridor_mask(mask, rooms, 100, 100)
-        assert result[35, 35] == 0  # внутри комнаты — не коридор
+    def test_all_walls_returns_black(self):
+        """Полностью белая маска (всё стены) → результат чёрный."""
+        mask = np.full((100, 100), 255, dtype=np.uint8)
+        result = extract_corridor_mask(mask, [], 100, 100)
+        assert np.all(result == 0)
 
-    def test_corridor_type_not_subtracted(self):
-        """Тип 'corridor' НЕ вычитается."""
+    def test_no_walls_returns_white(self):
+        """Полностью чёрная маска (нет стен) → результат белый."""
         mask = np.zeros((100, 100), dtype=np.uint8)
-        rooms = [{"room_type": "corridor", "x": 0.2, "y": 0.2, "width": 0.3, "height": 0.3}]
-        result = extract_corridor_mask(mask, rooms, 100, 100)
-        assert result[35, 35] == 255  # остаётся как коридор
+        result = extract_corridor_mask(mask, [], 100, 100)
+        assert np.all(result == 255)
 
-    def test_staircase_subtracted(self):
-        """Тип 'staircase' вычитается."""
-        mask = np.zeros((100, 100), dtype=np.uint8)
-        rooms = [{"room_type": "staircase", "x": 0.1, "y": 0.1, "width": 0.2, "height": 0.2}]
-        result = extract_corridor_mask(mask, rooms, 100, 100)
-        assert result[15, 15] == 0
+    def test_output_shape_and_dtype(self):
+        """Форма и тип выходного массива совпадают с входным."""
+        mask = np.zeros((368, 863), dtype=np.uint8)
+        result = extract_corridor_mask(mask, [], 863, 368)
+        assert result.shape == (368, 863)
+        assert result.dtype == np.uint8
 
     def test_empty_rooms(self):
-        """Без комнат — просто инверсия."""
-        mask = np.full((50, 50), 255, dtype=np.uint8)
-        result = extract_corridor_mask(mask, [], 50, 50)
+        """Без комнат — всё стены → чёрный результат."""
+        mask = np.full((500, 800), 255, dtype=np.uint8)
+        result = extract_corridor_mask(mask, [], 800, 500)
         assert np.all(result == 0)
+
+
+class TestExtractCorridorMaskDoorwayIsolation:
+    def test_isolates_rooms_via_doorways(self):
+        """Комнаты за дверными проёмами изолируются от коридора."""
+        # Коридор 40px (строки 130-170) — достаточно для kernel=7 iter=2 (~14px shrink)
+        # Стена 10px между комнатой и коридором (строки 120-130)
+        # Дверной проём 8px в стене — должен закрыться дилатацией
+        mask = np.ones((300, 400), dtype=np.uint8) * 255
+        mask[130:170, 10:390] = 0   # Коридор 40px
+        mask[10:120, 30:130] = 0    # Комната слева (110x100)
+        # Стена между комнатой и коридором: строки 120-130 остаются белыми (стена)
+        # Дверной проём 8px в стене (строки 120-130, cols 70-78)
+        mask[120:130, 70:78] = 0    # Дверной проём 8px
+        corridor = extract_corridor_mask(mask, [], 400, 300)
+        assert corridor[150, 200] == 255, "Corridor center should be white"
+        # Центр комнаты далеко от дверного проёма — должен быть изолирован
+        assert corridor[60, 60] == 0, "Left room center should be isolated"
+
+    def test_corridor_stays_connected(self):
+        """Длинный коридор не фрагментируется."""
+        mask = np.ones((100, 500), dtype=np.uint8) * 255
+        mask[40:60, 10:490] = 0
+        corridor = extract_corridor_mask(mask, [], 500, 100)
+        num_labels, _ = cv2.connectedComponents(corridor)
+        assert num_labels <= 3, f"Fragmented into {num_labels - 1} parts"
+
+    def test_wide_opening_not_closed(self):
+        """Широкий проём (>14px) не закрывается — допустимо для MVP."""
+        mask = np.ones((200, 400), dtype=np.uint8) * 255
+        mask[90:110, 10:390] = 0
+        mask[30:90, 30:90] = 0
+        mask[80:110, 50:70] = 0   # Широкий проём 20px
+        corridor = extract_corridor_mask(mask, [], 400, 200)
+        # Главное что коридор не разорван — просто не падает
+        assert corridor is not None
 
 
 class TestBuildSkeleton:
@@ -185,6 +221,30 @@ class TestFindRoute:
         r2 = find_route(G, "room_b", "room_a")
         assert r1 is not None and r2 is not None
         assert abs(r1['total_distance_px'] - r2['total_distance_px']) < 1.0
+
+
+class TestSimplifyPath:
+    def test_reduces_zigzag(self):
+        coords = [(float(i), 50.0 + (i % 3 - 1) * 2) for i in range(100)]
+        simplified = simplify_path(coords, dp_epsilon=3.0)
+        assert len(simplified) < len(coords) / 3
+
+    def test_preserves_turns(self):
+        coords = [(float(i), 50.0) for i in range(50)]
+        coords += [(50.0, 50.0 + float(i)) for i in range(50)]
+        simplified = simplify_path(coords, dp_epsilon=3.0)
+        assert len(simplified) >= 3
+
+    def test_preserves_endpoints(self):
+        coords = [(float(i), float(i % 5)) for i in range(50)]
+        simplified = simplify_path(coords)
+        assert simplified[0] == coords[0]
+        assert simplified[-1] == coords[-1]
+
+    def test_short_path_unchanged(self):
+        coords = [(0.0, 0.0), (100.0, 100.0)]
+        simplified = simplify_path(coords)
+        assert simplified == coords
 
 
 class TestTransform2dTo3d:

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DropZone } from '../Upload/DropZone';
 import { MetadataForm } from '../Upload/MetadataForm';
 import type { UploadedFile } from '../../types/wizard';
@@ -11,6 +11,36 @@ interface StepUploadProps {
   isUploading: boolean;
 }
 
+function useRotatedUrl(url: string | undefined): string | undefined {
+  const [rotatedUrl, setRotatedUrl] = useState<string | undefined>(url);
+  const prevUrlRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (!url) { setRotatedUrl(undefined); return; }
+    if (url === prevUrlRef.current) return;
+    prevUrlRef.current = url;
+
+    const img = new Image();
+    img.onload = () => {
+      if (img.naturalHeight > img.naturalWidth) {
+        const c = document.createElement('canvas');
+        c.width = img.naturalHeight;
+        c.height = img.naturalWidth;
+        const ctx = c.getContext('2d')!;
+        ctx.translate(c.width / 2, c.height / 2);
+        ctx.rotate(Math.PI / 2);
+        ctx.drawImage(img, -img.naturalWidth / 2, -img.naturalHeight / 2);
+        setRotatedUrl(c.toDataURL());
+      } else {
+        setRotatedUrl(url);
+      }
+    };
+    img.src = url;
+  }, [url]);
+
+  return rotatedUrl;
+}
+
 export const StepUpload: React.FC<StepUploadProps> = ({
   files,
   onFilesSelect,
@@ -21,6 +51,7 @@ export const StepUpload: React.FC<StepUploadProps> = ({
 
   const safeIndex = Math.min(activeIndex, Math.max(0, files.length - 1));
   const activeFile = files[safeIndex] ?? null;
+  const rotatedPreviewUrl = useRotatedUrl(activeFile?.url);
 
   return (
     <div className={styles.step}>
@@ -59,7 +90,7 @@ export const StepUpload: React.FC<StepUploadProps> = ({
                 >
                   ×
                 </button>
-                <img src={activeFile.url} alt={activeFile.name} className={styles.previewImage} />
+                <img src={rotatedPreviewUrl ?? activeFile.url} alt={activeFile.name} className={styles.previewImage} />
                 <div className={styles.previewFooter}>
                   <span className={styles.fileName}>{activeFile.name}</span>
                   <span className={styles.statusReady}>Готово</span>

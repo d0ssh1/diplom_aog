@@ -22,7 +22,9 @@ from app.processing.pipeline import (
     color_filter,
     compute_scale_factor,
     compute_wall_thickness,
+    directional_morph_close,
     door_detect,
+    multi_pass_threshold,
     normalize_brightness,
     normalize_coords,
     remove_colored_elements,
@@ -815,3 +817,71 @@ def test_remove_text_regions_does_not_mutate_input(binary_mask_with_text, sample
     original = binary_mask_with_text.copy()
     remove_text_regions(binary_mask_with_text, sample_text_blocks, (200, 200))
     assert np.array_equal(binary_mask_with_text, original)
+
+
+# ---------------------------------------------------------------------------
+# multi_pass_threshold
+# ---------------------------------------------------------------------------
+
+class TestMultiPassThreshold:
+    def test_captures_thin_line(self):
+        """Линия толщиной 1px должна быть захвачена."""
+        img = np.ones((100, 100), dtype=np.uint8) * 200
+        img[50, 20:80] = 30
+        result = multi_pass_threshold(img)
+        captured = np.sum(result[50, 20:80] == 255)
+        assert captured > 50, f"Captured only {captured}/60 pixels of thin line"
+
+    def test_captures_thick_wall(self):
+        """Стена толщиной 5px должна быть захвачена."""
+        img = np.ones((100, 100), dtype=np.uint8) * 200
+        img[40:45, 20:80] = 30
+        result = multi_pass_threshold(img)
+        captured = np.sum(result[42, 20:80] == 255)
+        assert captured > 50
+
+    def test_custom_passes(self):
+        """Пользовательские параметры проходов работают."""
+        img = np.ones((100, 100), dtype=np.uint8) * 200
+        img[50, 20:80] = 30
+        passes = [(cv2.ADAPTIVE_THRESH_MEAN_C, 5, 2)]
+        result = multi_pass_threshold(img, passes=passes)
+        assert result.shape == img.shape
+
+    def test_even_blocksize_corrected(self):
+        """Чётный blockSize корректируется до нечётного."""
+        img = np.ones((50, 50), dtype=np.uint8) * 128
+        passes = [(cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 10, 5)]
+        result = multi_pass_threshold(img, passes=passes)
+        assert result.shape == img.shape
+
+
+# ---------------------------------------------------------------------------
+# directional_morph_close
+# ---------------------------------------------------------------------------
+
+class TestDirectionalMorphClose:
+    def test_preserves_right_angle(self):
+        """Прямой угол не скругляется."""
+        img = np.zeros((100, 100), dtype=np.uint8)
+        img[20:22, 20:60] = 255  # Горизонтальная стена
+        img[20:60, 20:22] = 255  # Вертикальная стена
+        result = directional_morph_close(img)
+        assert result[20, 20] == 255, "Corner pixel lost"
+        assert result[18, 18] == 0, "Corner rounded (diagonal pixel shouldn't be white)"
+
+    def test_closes_horizontal_gap(self):
+        """Закрывает разрыв в горизонтальной линии."""
+        img = np.zeros((50, 100), dtype=np.uint8)
+        img[25, 20:48] = 255
+        img[25, 52:80] = 255  # Разрыв 4px
+        result = directional_morph_close(img, kernel_length=5)
+        assert result[25, 50] == 255, "Gap not closed"
+
+    def test_closes_vertical_gap(self):
+        """Закрывает разрыв в вертикальной линии."""
+        img = np.zeros((100, 50), dtype=np.uint8)
+        img[20:48, 25] = 255
+        img[52:80, 25] = 255  # Разрыв 4px
+        result = directional_morph_close(img, kernel_length=5)
+        assert result[50, 25] == 255, "Gap not closed"

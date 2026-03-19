@@ -11,6 +11,7 @@ interface UseWizardReturn {
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
   saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<string | null>;
+  buildNavGraph: (maskId: string, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
   buildMesh: (editedMaskId?: string) => Promise<void>;
   save: (name: string) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
@@ -33,6 +34,7 @@ const initialState: WizardState = {
   thresholdC: 10,
   rooms: [],
   doors: [],
+  navGraphId: null,
   isLoading: false,
   error: null,
 };
@@ -42,7 +44,7 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -87,6 +89,21 @@ export const useWizard = (): UseWizardReturn => {
     }
   }, []);
 
+  const buildNavGraph = useCallback(async (maskId: string, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => {
+    setState((s) => ({ ...s, isLoading: true, error: null }));
+    try {
+      await reconstructionApi.buildNavGraph(maskId, rooms, doors);
+      setState((s) => ({
+        ...s,
+        navGraphId: maskId,
+        isLoading: false,
+        step: 4,
+      }));
+    } catch {
+      setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения графа' }));
+    }
+  }, []);
+
   const calculateMask = useCallback(async () => {
     if (!state.planFileId) return;
     setState((s) => ({ ...s, isLoading: true, error: null }));
@@ -118,7 +135,7 @@ export const useWizard = (): UseWizardReturn => {
         reconstructionId: data.id as number,
         meshUrl: detail.url as string | null,
         isLoading: false,
-        step: 4,
+        step: 5,
       }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения 3D-модели' }));
@@ -147,6 +164,7 @@ export const useWizard = (): UseWizardReturn => {
     calculateMask,
     setMaskFile,
     saveMaskAndAnnotations,
+    buildNavGraph,
     buildMesh,
     save,
     setCropRect,

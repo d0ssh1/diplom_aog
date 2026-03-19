@@ -25,6 +25,8 @@ interface WallEditorCanvasProps {
   planRotation?: number;
   overlayEnabled?: boolean;
   overlayOpacity?: number;
+  initialRooms?: RoomAnnotation[];
+  initialDoors?: DoorAnnotation[];
 }
 
 const ROOM_FILL: Record<string, string> = {
@@ -42,7 +44,7 @@ const ROOM_STROKE: Record<string, string> = {
 };
 
 const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
-  ({ maskUrl, activeTool, brushSize, eraserMode = 'brush', onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4 }, ref) => {
+  ({ maskUrl, activeTool, brushSize, eraserMode = 'brush', onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4, initialRooms, initialDoors }, ref) => {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
@@ -154,6 +156,67 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         canvas.dispose();
         fabricRef.current = null;
       };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [maskUrl]);
+
+    // Restore annotations when returning to this step
+    useEffect(() => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+
+      const restore = () => {
+        if (initialRooms && initialRooms.length > 0 && roomsRef.current.length === 0) {
+          roomsRef.current = [...initialRooms];
+          for (const room of initialRooms) {
+            const x = room.x * canvas.getWidth();
+            const y = room.y * canvas.getHeight();
+            const w = room.width * canvas.getWidth();
+            const h = room.height * canvas.getHeight();
+            const roomType = room.room_type || 'room';
+            const rect = new fabric.Rect({
+              width: w, height: h,
+              fill: ROOM_FILL[roomType] ?? 'rgba(255,255,255,0.1)',
+              stroke: ROOM_STROKE[roomType] ?? '#fff',
+              strokeWidth: 1,
+            });
+            const text = new fabric.Text(room.name || '', {
+              fontSize: 12,
+              fill: ROOM_STROKE[roomType] ?? '#fff',
+              fontFamily: 'Courier New',
+              left: 4, top: 4,
+            });
+            const group = new fabric.Group([rect, text], {
+              left: x, top: y, selectable: false, evented: false,
+            });
+            (group as unknown as { data: { id: string; type: string } }).data = { id: room.id, type: 'annotation' };
+            canvas.add(group);
+          }
+        }
+
+        if (initialDoors && initialDoors.length > 0 && doorsRef.current.length === 0) {
+          doorsRef.current = [...initialDoors];
+          for (const door of initialDoors) {
+            const x1 = door.x1 * canvas.getWidth();
+            const y1 = door.y1 * canvas.getHeight();
+            const x2 = door.x2 * canvas.getWidth();
+            const y2 = door.y2 * canvas.getHeight();
+            const line = new fabric.Line([x1, y1, x2, y2], {
+              stroke: '#4CAF50', strokeWidth: 3, selectable: false, evented: false,
+            });
+            (line as unknown as { data: { id: string; type: string } }).data = { id: door.id, type: 'door' };
+            canvas.add(line);
+          }
+        }
+
+        canvas.renderAll();
+      };
+
+      // Background image may still be loading — wait for it
+      if (canvas.backgroundImage) {
+        restore();
+      } else {
+        setTimeout(restore, 150);
+      }
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [maskUrl]);
 
@@ -363,12 +426,26 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             };
 
             if (tool === 'door') {
+              const doorMidX = ((startPoint.x + endX) / 2) / canvas.getWidth();
+              const doorMidY = ((startPoint.y + endY) / 2) / canvas.getHeight();
+              let closestRoomId: string | null = null;
+              let minDist = Infinity;
+              for (const room of roomsRef.current) {
+                const roomCx = room.x + room.width / 2;
+                const roomCy = room.y + room.height / 2;
+                const dist = Math.hypot(roomCx - doorMidX, roomCy - doorMidY);
+                if (dist < minDist) {
+                  minDist = dist;
+                  closestRoomId = room.id;
+                }
+              }
               doorsRef.current.push({
                 id,
                 x1: startPoint.x / canvas.getWidth(),
                 y1: startPoint.y / canvas.getHeight(),
                 x2: endX / canvas.getWidth(),
                 y2: endY / canvas.getHeight(),
+                room_id: closestRoomId,
               });
             }
 

@@ -1,4 +1,3 @@
-import json
 import logging
 import math
 import time
@@ -18,36 +17,128 @@ def extract_corridor_mask(
     rooms: list[dict],
     mask_width: int,
     mask_height: int,
+    dilate_kernel_size: int = 7,
+    dilate_iterations: int = 2,
 ) -> np.ndarray:
     """
-    Извлекает маску проходимого пространства (коридоры) из бинарной маски.
+    Извлекает маску коридоров через изоляцию дверных проёмов.
 
-    1. Инвертирует маску стен (белое=стены → чёрное=стены, белое=свободно)
-    2. Вычитает bounding boxes комнат (room, staircase, elevator)
-    3. Тип 'corridor' — НЕ вычитается (остаётся как транзитная зона)
+    Дилатация стен «захлопывает» дверные проёмы → connectedComponents
+    разделяет свободное пространство на изолированные области →
+    самая большая = коридор.
+
+    Параметры дилатации:
+        kernel=7, iterations=2 → расширение ~14px
+        Дверной проём 5-12px → закроется
+        Коридор 30-60px → сузится до 16-46px, не исчезнет
     """
     t0 = time.perf_counter()
 
+    # 1. Свободное пространство
     free_space = cv2.bitwise_not(wall_mask)
 
-    room_types_to_subtract = {'room', 'staircase', 'elevator'}
-    subtracted = 0
+    # 2. Дилатация стен — закрываем дверные проёмы
+    dilate_kernel = np.ones((dilate_kernel_size, dilate_kernel_size), np.uint8)
+    dilated_walls = cv2.dilate(wall_mask, dilate_kernel, iterations=dilate_iterations)
 
+    # 3. Свободное пространство с закрытыми дверями
+    closed_free = cv2.bitwise_not(dilated_walls)
+
+    # 4. Связные компоненты
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        closed_free, connectivity=8
+    )
+
+    # 5. Определить компоненты, касающиеся границ изображения (= экстерьер)
+    h_mask, w_mask = closed_free.shape[:2]
+    border_labels = set()
+    border_labels.update(labels[0, :].flat)
+    border_labels.update(labels[h_mask - 1, :].flat)
+    border_labels.update(labels[:, 0].flat)
+    border_labels.update(labels[:, w_mask - 1].flat)
+    border_labels.discard(0)
+
+    # 6. Самый большой ВНУТРЕННИЙ компонент = коридор
+    # Верхняя граница: реальный коридор не может занимать >50% изображения.
+    # Без этого ограничения закрытый внешний контур создаёт огромный
+    # «внутренний» компонент (экстерьер внутри рамки), который ошибочно
+    # выбирается как коридор и заливает весь этаж.
+    max_corridor_area = h_mask * w_mask * 0.5
+    biggest_label = -1
+    biggest_area = 0
+    for label_id in range(1, num_labels):
+        if label_id in border_labels:
+            continue
+        area = stats[label_id, cv2.CC_STAT_AREA]
+        if area > max_corridor_area:
+            continue
+        if area > biggest_area:
+            biggest_area = area
+            biggest_label = label_id
+
+    # 7. Фоллбэк: если все компоненты касаются границ —
+    #    берём самый большой НЕ-экстерьерный border-компонент.
+    #    Экстерьер = самый большой border-компонент (фон снаружи здания).
+    if biggest_label == -1:
+        logger.warning("extract_corridor_mask: all components touch border, using biggest non-exterior")
+        # Найти самый большой border-компонент (экстерьер) чтобы исключить его
+        exterior_label = -1
+        exterior_area = 0
+        for label_id in range(1, num_labels):
+            if label_id in border_labels:
+                area = stats[label_id, cv2.CC_STAT_AREA]
+                if area > exterior_area:
+                    exterior_area = area
+                    exterior_label = label_id
+        # Взять самый большой из оставшихся border-компонентов
+        for label_id in range(1, num_labels):
+            if label_id == exterior_label:
+                continue
+            area = stats[label_id, cv2.CC_STAT_AREA]
+            if area > biggest_area:
+                biggest_area = area
+                biggest_label = label_id
+        # Если ничего не нашли (только экстерьер) — взять экстерьер как последний resort
+        if biggest_label == -1:
+            biggest_label = exterior_label
+            biggest_area = exterior_area
+
+    if biggest_label == -1:
+        logger.warning("extract_corridor_mask: no free space found")
+        return np.zeros_like(wall_mask)
+
+    # Грубая маска коридора
+    corridor_rough = np.zeros_like(wall_mask)
+    corridor_rough[labels == biggest_label] = 255
+
+    # 6. Расширяем обратно → пересекаем с оригиналом → точные границы
+    corridor_expanded = cv2.dilate(corridor_rough, dilate_kernel, iterations=dilate_iterations)
+    corridor_mask = cv2.bitwise_and(free_space, corridor_expanded)
+
+    # 7. Вычитаем размеченные комнаты (страховка)
+    room_types_to_subtract = {'room', 'staircase', 'elevator'}
+    manual_subtracted = 0
     for room in rooms:
         if room.get('room_type', 'room') in room_types_to_subtract:
             x = int(room['x'] * mask_width)
             y = int(room['y'] * mask_height)
             w = int(room['width'] * mask_width)
             h = int(room['height'] * mask_height)
-            cv2.rectangle(free_space, (x, y), (x + w, y + h), 0, -1)
-            subtracted += 1
+            cv2.rectangle(corridor_mask, (x, y), (x + w, y + h), 0, -1)
+            manual_subtracted += 1
 
     logger.info(
-        "extract_corridor_mask: %dx%d, %d rooms subtracted, %.1fms",
-        mask_width, mask_height, subtracted,
+        "extract_corridor_mask: %dx%d, dilate=%dx iter=%d, "
+        "components=%d, biggest=%.0f%%, manual_sub=%d, %.1fms",
+        mask_width, mask_height,
+        dilate_kernel_size, dilate_iterations,
+        num_labels - 1,
+        biggest_area / max(1, np.sum(free_space > 0)) * 100,
+        manual_subtracted,
         (time.perf_counter() - t0) * 1000,
     )
-    return free_space
+
+    return corridor_mask
 
 
 def build_skeleton(corridor_mask: np.ndarray) -> np.ndarray:
@@ -369,17 +460,167 @@ def find_route(
         if pt != deduped[-1]:
             deduped.append(pt)
 
+    simplified = simplify_path(
+        deduped, dp_epsilon=3.0, angle_threshold_deg=5.0, min_point_distance=5.0,
+    )
+
     logger.info(
         "find_route: %s → %s, %d nodes, %d coords, %.0fpx, %.1fms",
-        from_node, to_node, len(path_nodes), len(deduped),
+        from_node, to_node, len(path_nodes), len(simplified),
         total_distance, (time.perf_counter() - t0) * 1000,
     )
 
     return {
         "path_nodes": path_nodes,
-        "path_coords_2d": deduped,
+        "path_coords_2d": simplified,
         "total_distance_px": total_distance,
     }
+
+
+def los_prune(coords_2d: list, wall_mask: np.ndarray) -> list:
+    """
+    Удаляет промежуточные точки, если между start и end
+    можно провести прямую без пересечения стен.
+    """
+    if len(coords_2d) < 3:
+        return coords_2d
+
+    result = [coords_2d[0]]
+    i = 0
+
+    while i < len(coords_2d) - 1:
+        best_j = i + 1
+        for j in range(len(coords_2d) - 1, i + 1, -1):
+            if _line_of_sight(coords_2d[i], coords_2d[j], wall_mask):
+                best_j = j
+                break
+        result.append(coords_2d[best_j])
+        i = best_j
+
+    return result
+
+
+def _line_of_sight(p1: tuple, p2: tuple, wall_mask: np.ndarray) -> bool:
+    """Проверяет, что прямая p1→p2 не пересекает стены (белые пиксели)."""
+    x1, y1 = int(p1[0]), int(p1[1])
+    x2, y2 = int(p2[0]), int(p2[1])
+
+    dx = abs(x2 - x1)
+    dy = abs(y2 - y1)
+    sx = 1 if x1 < x2 else -1
+    sy = 1 if y1 < y2 else -1
+    err = dx - dy
+
+    h, w = wall_mask.shape[:2]
+    while True:
+        if 0 <= y1 < h and 0 <= x1 < w:
+            if wall_mask[y1, x1] > 127:  # белый = стена
+                return False
+        if x1 == x2 and y1 == y2:
+            break
+        e2 = 2 * err
+        if e2 > -dy:
+            err -= dy
+            x1 += sx
+        if e2 < dx:
+            err += dx
+            y1 += sy
+
+    return True
+
+
+def simplify_path(
+    coords_2d: list[tuple[float, float]],
+    dp_epsilon: float = 3.0,
+    angle_threshold_deg: float = 5.0,
+    min_point_distance: float = 5.0,
+) -> list[tuple[float, float]]:
+    """
+    Упрощает маршрут из пиксельного зигзага в гладкую ломаную.
+
+    Три этапа:
+    1. Douglas-Peucker (cv2.approxPolyDP) — основное упрощение
+    2. Коллинеарная фильтрация — выпрямление длинных участков
+    3. Минимальная дистанция — удаление слишком близких точек
+    """
+    t0 = time.perf_counter()
+    original_count = len(coords_2d)
+
+    if len(coords_2d) < 3:
+        return coords_2d
+
+    # Этап 1: Douglas-Peucker
+    points_array = np.array(coords_2d, dtype=np.float32).reshape(-1, 1, 2)
+    simplified = cv2.approxPolyDP(points_array, epsilon=dp_epsilon, closed=False)
+    coords: list[tuple[float, float]] = [(float(pt[0][0]), float(pt[0][1])) for pt in simplified]
+
+    # Этап 2: Коллинеарная фильтрация
+    coords = _filter_collinear(coords, angle_threshold_deg)
+
+    # Этап 3: Минимальная дистанция
+    coords = _filter_min_distance(coords, min_point_distance)
+
+    logger.info(
+        "simplify_path: %d → %d points (%.0f%% reduction), %.1fms",
+        original_count, len(coords),
+        (1 - len(coords) / max(1, original_count)) * 100,
+        (time.perf_counter() - t0) * 1000,
+    )
+
+    return coords
+
+
+def _filter_collinear(
+    coords: list[tuple[float, float]],
+    angle_threshold_deg: float = 5.0,
+) -> list[tuple[float, float]]:
+    """Убирает точки, которые почти на одной прямой с соседями."""
+    if len(coords) < 3:
+        return coords
+
+    threshold_rad = math.radians(angle_threshold_deg)
+    result = [coords[0]]
+
+    for i in range(1, len(coords) - 1):
+        prev = result[-1]
+        curr = coords[i]
+        next_pt = coords[i + 1]
+
+        v1 = (curr[0] - prev[0], curr[1] - prev[1])
+        v2 = (next_pt[0] - curr[0], next_pt[1] - curr[1])
+
+        len1 = math.hypot(v1[0], v1[1])
+        len2 = math.hypot(v2[0], v2[1])
+
+        if len1 < 1e-6 or len2 < 1e-6:
+            continue
+
+        cos_angle = (v1[0] * v2[0] + v1[1] * v2[1]) / (len1 * len2)
+        cos_angle = max(-1.0, min(1.0, cos_angle))
+        angle = math.acos(cos_angle)
+
+        if angle > threshold_rad:
+            result.append(curr)
+
+    result.append(coords[-1])
+    return result
+
+
+def _filter_min_distance(
+    coords: list[tuple[float, float]],
+    min_dist: float = 5.0,
+) -> list[tuple[float, float]]:
+    """Убирает точки ближе min_dist пикселей к предыдущей."""
+    if len(coords) < 2:
+        return coords
+
+    result = [coords[0]]
+    for pt in coords[1:-1]:
+        prev = result[-1]
+        if math.hypot(pt[0] - prev[0], pt[1] - prev[1]) >= min_dist:
+            result.append(pt)
+    result.append(coords[-1])
+    return result
 
 
 def transform_2d_to_3d(
@@ -392,10 +633,14 @@ def transform_2d_to_3d(
     """
     Преобразует 2D пиксельные координаты в 3D мировые координаты (Three.js).
 
-    Формула совпадает с mesh_generator.py (contours_to_polygons + rotation -pi/2 X):
+    mesh_builder.py строит меш без центрирования, затем применяет поворот
+    -90° вокруг X (Z-up → Y-up). После поворота координаты вершины пикселя
+    (x_pix, y_pix) оказываются в:
         x_3d = x_pix * S
-        y_3d = y_offset
-        z_3d = (y_pix - H) * S   (Y-flip без центрирования)
+        z_3d = (y_pix - H) * S   (Y-flip из contours_to_polygons + поворот)
+
+    MeshViewer не центрирует модель — CameraSetup только наводит камеру на
+    центр bounding box, сама модель остаётся на своих координатах.
     """
     coords_3d = []
     for (x_pix, y_pix) in coords_2d:

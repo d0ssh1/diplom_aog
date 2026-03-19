@@ -12,6 +12,7 @@ from app.processing.binarization import BinarizationService
 from app.processing.pipeline import (
     color_filter,
     normalize_brightness,
+    directional_morph_close,
     remove_colored_elements,
     text_detect,
     remove_text_regions,
@@ -69,22 +70,33 @@ class MaskService:
             ch = max(1, int(crop["height"] * h))
             img = img[y:y + ch, x:x + cw]
 
-        gray = self._binarization.to_grayscale(img)
+        # 1. CLAHE
+        img = normalize_brightness(img, clip_limit=2.0, tile_size=8)
+
+        # 2. Grayscale + blur
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
 
-        bs = max(3, block_size)
-        if bs % 2 == 0:
-            bs += 1
+        # 3. Global threshold (captures all dark pixels regardless of local contrast)
+        threshold_value = int(80 + (block_size - 7) * (160 - 80) / (51 - 7))
+        _, global_mask = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY_INV)
 
-        binary = cv2.adaptiveThreshold(
-            blurred, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            blockSize=bs,
-            C=threshold_c,
+        # 4. Single adaptive threshold (catches halftones and transition zones)
+        bs = max(3, block_size if block_size % 2 == 1 else block_size + 1)
+        adaptive_mask = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, bs, threshold_c
         )
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+        # 5. Combine: everything dark OR locally contrasted
+        binary = cv2.bitwise_or(global_mask, adaptive_mask)
+
+        # 6. Noise reduction
+        kernel_noise = np.ones((2, 2), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_noise, iterations=1)
+
+        # 7. Directional morph close
+        mask = directional_morph_close(binary, kernel_length=3, iterations=1)
 
         _, buffer = cv2.imencode('.png', mask)
         return buffer.tobytes()
@@ -96,7 +108,7 @@ class MaskService:
         rotation: int = 0,
         block_size: int = 15,
         threshold_c: int = 10,
-        enable_normalize: bool = False,
+        enable_normalize: bool = True,
         enable_color_filter: bool = False,
         enable_color_removal: bool = True,
         enable_text_removal: bool = True,
@@ -158,24 +170,20 @@ class MaskService:
         # Keep reference to cropped BGR for text_detect (OCR works on color image)
         cropped_bgr = img
 
-        # Step 4: Binarization
-        # Adaptive threshold preserves thin wall lines that global Otsu misses.
-        # GaussianBlur(3,3) removes noise without destroying thin lines.
-        gray = self._binarization.to_grayscale(img)
+        # Step 4: Binarization — CLAHE + global threshold + adaptive threshold + directional morph
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-        bs = max(3, block_size)
-        if bs % 2 == 0:
-            bs += 1
-        binary = cv2.adaptiveThreshold(
-            blurred, 255,
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-            cv2.THRESH_BINARY_INV,
-            blockSize=bs,
-            C=threshold_c,
+        threshold_value = int(80 + (block_size - 7) * (160 - 80) / (51 - 7))
+        _, global_mask = cv2.threshold(blurred, threshold_value, 255, cv2.THRESH_BINARY_INV)
+        bs = max(3, block_size if block_size % 2 == 1 else block_size + 1)
+        adaptive_mask = cv2.adaptiveThreshold(
+            blurred, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+            cv2.THRESH_BINARY_INV, bs, threshold_c
         )
-        # Only closing — fills small gaps in walls. No opening (it erases thin lines).
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
-        mask = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+        binary = cv2.bitwise_or(global_mask, adaptive_mask)
+        kernel_noise = np.ones((2, 2), np.uint8)
+        binary = cv2.morphologyEx(binary, cv2.MORPH_OPEN, kernel_noise, iterations=1)
+        mask = directional_morph_close(binary, kernel_length=3, iterations=1)
 
         # Step 5: Text detection + removal
         text_blocks = []

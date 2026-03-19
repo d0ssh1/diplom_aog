@@ -28,6 +28,8 @@ interface StepWallEditorProps {
   canvasRef: React.RefObject<WallEditorCanvasRef>;
   onBlockSizeChange: (v: number) => void;
   onThresholdCChange: (v: number) => void;
+  initialRooms?: import('../../types/wizard').RoomAnnotation[];
+  initialDoors?: import('../../types/wizard').DoorAnnotation[];
 }
 
 const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] = [
@@ -49,6 +51,8 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   canvasRef,
   onBlockSizeChange,
   onThresholdCChange,
+  initialRooms,
+  initialDoors,
 }) => {
   const [activeTool, setActiveTool] = useState<ActiveTool>('wall');
   const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
@@ -146,6 +150,8 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             planRotation={rotation}
             overlayEnabled={overlayEnabled}
             overlayOpacity={overlayOpacity}
+            initialRooms={initialRooms}
+            initialDoors={initialDoors}
           />
           {popupState && (
             <RoomPopup

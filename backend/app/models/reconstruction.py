@@ -150,7 +150,7 @@ class BuildNavGraphRequest(BaseModel):
     mask_file_id: str
     rooms: list[dict]
     doors: list[dict]
-    scale_factor: float = 0.05
+    scale_factor: float = 0.02
 
 
 class BuildNavGraphResponse(BaseModel):

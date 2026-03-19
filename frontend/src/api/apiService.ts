@@ -179,7 +179,7 @@ export const reconstructionApi = {
       mask_file_id: maskFileId,
       rooms,
       doors,
-      scale_factor: 0.05,
+      scale_factor: 0.02,
     });
     return response.data;
   },

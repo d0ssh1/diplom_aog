@@ -32,7 +32,6 @@ export const ToolPanelV2: React.FC<ToolPanelV2Props> = ({
   extraContent,
 }) => {
   const showSlider = brushSize !== undefined && onBrushSizeChange !== undefined;
-  const fillPct = showSlider ? ((brushSize! - 1) / (50 - 1)) * 100 : 0;
 
   return (
     <div className={styles.panel}>
@@ -70,9 +69,6 @@ export const ToolPanelV2: React.FC<ToolPanelV2Props> = ({
                 max={50}
                 value={brushSize}
                 onChange={(e) => onBrushSizeChange!(Number(e.target.value))}
-                style={{
-                  background: `linear-gradient(to right, #FF5722 ${fillPct}%, #27272a ${fillPct}%)`,
-                }}
               />
               <span className={styles.sliderValue}>{brushSize} px</span>
             </div>
