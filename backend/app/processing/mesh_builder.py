@@ -14,6 +14,62 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _create_floor(
+    width_m: float,
+    height_m: float,
+    color: list,
+) -> "trimesh.Trimesh | None":
+    """Плоский прямоугольный пол в плоскости XZ (Z-up), Y=0."""
+    if width_m <= 0 or height_m <= 0:
+        return None
+    try:
+        import trimesh as _trimesh
+    except ImportError:
+        return None
+    vertices = np.array([
+        [0.0,     0.0, 0.0],
+        [width_m, 0.0, 0.0],
+        [width_m, 0.0, height_m],
+        [0.0,     0.0, height_m],
+    ], dtype=np.float64)
+    faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
+    mesh = _trimesh.Trimesh(vertices=vertices, faces=faces)
+    colors = np.tile(color, (len(vertices), 1)).astype(np.uint8)
+    mesh.visual.vertex_colors = colors
+    return mesh
+
+
+def _create_wall_cap(
+    polygon: "ShapelyPolygon",
+    height: float,
+    color: list,
+) -> "trimesh.Trimesh | None":
+    """Плоская крышка полигона стены на заданной высоте (Z-up пространство).
+
+    Сдвигается вдоль Z на height. После rotation_matrix(-pi/2, [1,0,0])
+    ось Z становится Y, поэтому крышка окажется на Y=height в Three.js.
+    """
+    try:
+        import trimesh as _trimesh
+        from trimesh import creation as trimesh_creation
+    except ImportError:
+        return None
+    try:
+        if polygon.is_empty or not polygon.is_valid or polygon.area <= 0:
+            return None
+        cap = trimesh_creation.extrude_polygon(polygon, height=0.001)
+        if cap is None or len(cap.vertices) == 0:
+            return None
+        # Translate along Z (Z-up space, before -90° X rotation)
+        cap.apply_translation([0, 0, height + 0.001])
+        colors = np.tile(color, (len(cap.vertices), 1)).astype(np.uint8)
+        cap.visual.vertex_colors = colors
+        return cap
+    except Exception as exc:
+        logger.debug("_create_wall_cap failed: %s", exc)
+        return None
+
+
 def build_mesh_from_mask(
     mask: np.ndarray,
     floor_height: float = 3.0,
@@ -44,6 +100,9 @@ def build_mesh_from_mask(
     from app.processing.mesh_generator import (
         extrude_wall,
         WALL_COLOR,
+        WALL_SIDE_COLOR,
+        WALL_CAP_COLOR,
+        FLOOR_COLOR,
     )
     from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -125,13 +184,12 @@ def build_mesh_from_mask(
             "build_mesh_from_mask", "No valid polygons from contours",
         )
 
-    # Step 3: Extrude walls
+    # Step 3: Extrude walls (sides)
     meshes: list = []
     for poly in polygons:
         wall_mesh = extrude_wall(poly, height=floor_height)
         if wall_mesh is not None:
-            # Assign light colour to each wall mesh individually
-            colors = np.tile(WALL_COLOR, (len(wall_mesh.vertices), 1)).astype(np.uint8)
+            colors = np.tile(WALL_SIDE_COLOR, (len(wall_mesh.vertices), 1)).astype(np.uint8)
             wall_mesh.visual.vertex_colors = colors
             meshes.append(wall_mesh)
 
@@ -141,8 +199,6 @@ def build_mesh_from_mask(
         raise ImageProcessingError(
             "build_mesh_from_mask", "No wall meshes created",
         )
-
-    # NO floor, NO ceiling — clean wall-only view from above
 
     # Step 4: Combine
     combined = _trimesh.util.concatenate(meshes)

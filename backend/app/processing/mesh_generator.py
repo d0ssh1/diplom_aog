@@ -43,6 +43,11 @@ MIN_POLYGON_AREA: float = 0.01  # m² — skip tiny polygons
 WALL_COLOR: list = [230, 230, 230, 255]        # light grey #e6e6e6
 DEFAULT_FLOOR_COLOR: list = [245, 240, 232, 255]  # beige #f5f0e8
 
+# Diplom3D cyber-brutalism palette
+WALL_SIDE_COLOR: list = [74, 74, 74, 255]      # dark grey  #4A4A4A — wall sides
+WALL_CAP_COLOR: list  = [255, 69, 0, 255]      # orange     #FF4500 — wall tops
+FLOOR_COLOR: list     = [184, 181, 173, 255]   # warm grey  #B8B5AD — floor
+
 ROOM_COLORS: dict = {
     "classroom":  [245, 197, 66,  255],   # yellow  #f5c542
     "corridor":   [66,  135, 245, 255],   # blue    #4287f5

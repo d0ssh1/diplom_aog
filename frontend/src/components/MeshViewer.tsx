@@ -8,9 +8,8 @@ import * as THREE from 'three';
    2GIS / Яндекс Карты palette
    ──────────────────────────────────────────── */
 const COLORS = {
-  wall:       '#9E9E9E',  // стены — нейтральный серый
-  floor:      '#F5F0E8',  // пол — тёплый бежевый
-  background: '#ECEFF1',  // фон сцены — холодный светло-серый
+  wallFallback: '#9E9E9E',  // fallback для OBJ (без vertex colors)
+  background:   '#ECEFF1',  // светлый фон
 };
 
 /* ────────────────────────────────────────────
@@ -71,7 +70,7 @@ function FloorPlane({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> })
   return (
     <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[1, 1]} />
-      <meshLambertMaterial color={COLORS.floor} />
+      <meshLambertMaterial color="#F5F0E8" />
     </mesh>
   );
 }
@@ -79,20 +78,19 @@ function FloorPlane({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> })
 /* ────────────────────────────────────────────
    Apply 2GIS-style materials to loaded model
    ──────────────────────────────────────────── */
-function applyMapMaterials(root: THREE.Object3D) {
-  const wallMaterial = new THREE.MeshStandardMaterial({
-    color: COLORS.wall,
-    roughness: 0.85,
-    metalness: 0.0,
-    side: THREE.DoubleSide,
-  });
-
+function applyMapMaterials(root: THREE.Object3D, useVertexColors: boolean) {
   root.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      // КЛЮЧЕВОЕ: удаляем vertex colors из геометрии,
-      // иначе они перезаписывают цвет материала
-      child.geometry.deleteAttribute('color');
-      child.material = wallMaterial;
+      // Check if geometry actually has vertex colors
+      const hasColors = useVertexColors && child.geometry.hasAttribute('color');
+      const material = new THREE.MeshStandardMaterial({
+        vertexColors: hasColors,
+        color: hasColors ? 0xffffff : COLORS.wallFallback,
+        roughness: 0.8,
+        metalness: 0.0,
+        side: THREE.DoubleSide,
+      });
+      child.material = material;
       child.castShadow = true;
       child.receiveShadow = true;
     }
@@ -107,7 +105,7 @@ function ObjModel({ url }: { url: string }) {
   const ref = useRef<THREE.Object3D>(null);
 
   useEffect(() => {
-    if (ref.current) applyMapMaterials(ref.current);
+    if (ref.current) applyMapMaterials(ref.current, false);
   }, [obj]);
 
   return (
@@ -127,7 +125,7 @@ function GlbModel({ url }: { url: string }) {
   const ref = useRef<THREE.Object3D>(null);
 
   useEffect(() => {
-    if (ref.current) applyMapMaterials(ref.current);
+    if (ref.current) applyMapMaterials(ref.current, true);
   }, [scene]);
 
   return (
@@ -159,13 +157,13 @@ export default function MeshViewer({ url, format, children }: MeshViewerProps) {
       style={{ background: COLORS.background }}
       gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
     >
-      {/* Мягкий общий свет */}
-      <ambientLight intensity={0.7} />
+      {/* Мягкий ambient — снижен для контраста с тёмными стенами */}
+      <ambientLight intensity={0.5} color="#f0ede8" />
 
       {/* Основной направленный — сверху-слева, с тенями */}
       <directionalLight
         position={[30, 60, 30]}
-        intensity={1.2}
+        intensity={0.9}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
@@ -178,10 +176,10 @@ export default function MeshViewer({ url, format, children }: MeshViewerProps) {
       />
 
       {/* Заполняющий с другой стороны */}
-      <directionalLight position={[-20, 30, -20]} intensity={0.3} />
+      <directionalLight position={[-20, 30, -20]} intensity={0.2} />
 
-      {/* Hemisphere — тёплый сверху, холодный снизу */}
-      <hemisphereLight args={['#f5f5f0', '#d0d0d8', 0.5]} />
+      {/* Hemisphere — тёплый сверху, нейтральный снизу */}
+      <hemisphereLight args={['#e8e4dc', '#b0aaa0', 0.4]} />
 
       <Suspense fallback={null}>
         {modelFormat === 'glb'
