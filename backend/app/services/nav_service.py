@@ -56,7 +56,7 @@ class NavService:
         wall_thickness_px = compute_wall_thickness(wall_mask)
         scale_factor = 1.0 / compute_scale_factor(wall_thickness_px)
 
-        corridor_mask = extract_corridor_mask(wall_mask, rooms, w, h)
+        corridor_mask = extract_corridor_mask(wall_mask, rooms, w, h, wall_thickness_px)
         skeleton = build_skeleton(corridor_mask)
         G = build_topology_graph(skeleton)
         G = prune_dendrites(G, min_branch_length=20.0)
@@ -74,8 +74,9 @@ class NavService:
 
         cv2.imwrite(f'{debug_dir}/{prefix}_1_free.png', cv2.bitwise_not(wall_mask))
 
-        dilate_kernel = np.ones((7, 7), np.uint8)
-        dilated = cv2.dilate(wall_mask, dilate_kernel, iterations=2)
+        dilate_px = max(1, min(int(wall_thickness_px), 30))
+        dilate_kernel = np.ones((dilate_px, dilate_px), np.uint8)
+        dilated = cv2.dilate(wall_mask, dilate_kernel, iterations=1)
         cv2.imwrite(f'{debug_dir}/{prefix}_2_dilated_walls.png', dilated)
         cv2.imwrite(f'{debug_dir}/{prefix}_3_closed_free.png', cv2.bitwise_not(dilated))
         cv2.imwrite(f'{debug_dir}/{prefix}_4_corridor.png', corridor_mask)

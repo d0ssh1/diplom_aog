@@ -17,74 +17,77 @@ from app.processing.nav_graph import (
 
 
 class TestExtractCorridorMask:
-    def test_inverts_wall_mask(self):
-        """Стены → чёрные, свободное → белое."""
-        mask = np.zeros((100, 100), dtype=np.uint8)
-        mask[0:10, :] = 255  # стена сверху
-        result = extract_corridor_mask(mask, [], 100, 100)
-        assert result[50, 50] == 255  # свободное
-        assert result[5, 50] == 0     # стена
+    def _make_corridor_mask(self, wall_px: int = 5) -> np.ndarray:
+        """100x200 маска: стены сверху и снизу wall_px пикселей."""
+        mask = np.zeros((100, 200), dtype=np.uint8)
+        mask[:wall_px, :] = 255
+        mask[-wall_px:, :] = 255
+        return mask
 
-    def test_all_walls_returns_black(self):
-        """Полностью белая маска (всё стены) → результат чёрный."""
-        mask = np.full((100, 100), 255, dtype=np.uint8)
-        result = extract_corridor_mask(mask, [], 100, 100)
-        assert np.all(result == 0)
-
-    def test_no_walls_returns_white(self):
-        """Полностью чёрная маска (нет стен) → результат белый."""
-        mask = np.zeros((100, 100), dtype=np.uint8)
-        result = extract_corridor_mask(mask, [], 100, 100)
-        assert np.all(result == 255)
-
-    def test_output_shape_and_dtype(self):
-        """Форма и тип выходного массива совпадают с входным."""
-        mask = np.zeros((368, 863), dtype=np.uint8)
-        result = extract_corridor_mask(mask, [], 863, 368)
-        assert result.shape == (368, 863)
+    def test_extract_corridor_mask_wide_corridor_included(self):
+        """Широкий коридор (100x200, стены 5px) → коридорные пиксели присутствуют."""
+        mask = self._make_corridor_mask(wall_px=5)
+        result = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=5.0)
+        assert result.shape == (100, 200)
         assert result.dtype == np.uint8
+        assert np.sum(result > 0) > 0
 
-    def test_empty_rooms(self):
-        """Без комнат — всё стены → чёрный результат."""
-        mask = np.full((500, 800), 255, dtype=np.uint8)
-        result = extract_corridor_mask(mask, [], 800, 500)
+    def test_extract_corridor_mask_narrow_passage_excluded(self):
+        """3px зазор в вертикальной стене не проходит порог threshold=7.5px."""
+        mask = np.zeros((100, 200), dtype=np.uint8)
+        mask[:5, :] = 255   # стена сверху
+        mask[-5:, :] = 255  # стена снизу
+        # Вертикальная стена-разделитель в середине (cols 100-105)
+        mask[:, 100:105] = 255
+        # 3px зазор в разделителе (rows 48-51)
+        mask[48:51, 100:105] = 0
+        result = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=5.0, corridor_ratio=1.5)
+        # threshold = max(3.0, 1.5 * 5.0) = 7.5px — зазор 3px не пройдёт
+        gap_area = result[48:51, 100:105]
+        assert np.all(gap_area == 0), "3px gap should not appear as corridor"
+
+    def test_extract_corridor_mask_threshold_scales_with_wall_thickness(self):
+        """Больший wall_thickness_px → меньше или равно коридорных пикселей."""
+        mask = self._make_corridor_mask(wall_px=5)
+        result_thin = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=5.0)
+        result_thick = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=20.0)
+        assert np.sum(result_thick > 0) <= np.sum(result_thin > 0)
+
+    def test_extract_corridor_mask_zero_wall_thickness_uses_fallback(self):
+        """wall_thickness_px=0.0 не вызывает исключение, возвращает ndarray той же формы."""
+        mask = self._make_corridor_mask(wall_px=5)
+        result = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=0.0)
+        assert isinstance(result, np.ndarray)
+        assert result.shape == (100, 200)
+
+    def test_extract_corridor_mask_empty_mask_returns_zeros(self):
+        """Полностью белая маска (всё стены) → результат нулевой."""
+        mask = np.full((100, 200), 255, dtype=np.uint8)
+        result = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=5.0)
         assert np.all(result == 0)
 
+    def test_extract_corridor_mask_rooms_subtracted(self):
+        """Bbox комнаты вычитается из маски коридора."""
+        mask = self._make_corridor_mask(wall_px=5)
+        rooms = [{'id': 'r1', 'x': 0.3, 'y': 0.1, 'width': 0.2, 'height': 0.7, 'room_type': 'room'}]
+        result = extract_corridor_mask(mask, rooms, 200, 100, wall_thickness_px=5.0)
+        # Bbox комнаты в пикселях: x=60, y=10, w=40, h=70
+        room_area = result[10:80, 60:100]
+        assert np.all(room_area == 0), "Room bbox should be zeroed out"
 
-class TestExtractCorridorMaskDoorwayIsolation:
-    def test_isolates_rooms_via_doorways(self):
-        """Комнаты за дверными проёмами изолируются от коридора."""
-        # Коридор 40px (строки 130-170) — достаточно для kernel=7 iter=2 (~14px shrink)
-        # Стена 10px между комнатой и коридором (строки 120-130)
-        # Дверной проём 8px в стене — должен закрыться дилатацией
-        mask = np.ones((300, 400), dtype=np.uint8) * 255
-        mask[130:170, 10:390] = 0   # Коридор 40px
-        mask[10:120, 30:130] = 0    # Комната слева (110x100)
-        # Стена между комнатой и коридором: строки 120-130 остаются белыми (стена)
-        # Дверной проём 8px в стене (строки 120-130, cols 70-78)
-        mask[120:130, 70:78] = 0    # Дверной проём 8px
-        corridor = extract_corridor_mask(mask, [], 400, 300)
-        assert corridor[150, 200] == 255, "Corridor center should be white"
-        # Центр комнаты далеко от дверного проёма — должен быть изолирован
-        assert corridor[60, 60] == 0, "Left room center should be isolated"
+    def test_extract_corridor_mask_output_shape_matches_input(self):
+        """Форма результата совпадает с формой входной маски."""
+        mask = np.zeros((368, 863), dtype=np.uint8)
+        mask[:5, :] = 255
+        mask[-5:, :] = 255
+        result = extract_corridor_mask(mask, [], 863, 368, wall_thickness_px=5.0)
+        assert result.shape == (368, 863)
 
-    def test_corridor_stays_connected(self):
-        """Длинный коридор не фрагментируется."""
-        mask = np.ones((100, 500), dtype=np.uint8) * 255
-        mask[40:60, 10:490] = 0
-        corridor = extract_corridor_mask(mask, [], 500, 100)
-        num_labels, _ = cv2.connectedComponents(corridor)
-        assert num_labels <= 3, f"Fragmented into {num_labels - 1} parts"
-
-    def test_wide_opening_not_closed(self):
-        """Широкий проём (>14px) не закрывается — допустимо для MVP."""
-        mask = np.ones((200, 400), dtype=np.uint8) * 255
-        mask[90:110, 10:390] = 0
-        mask[30:90, 30:90] = 0
-        mask[80:110, 50:70] = 0   # Широкий проём 20px
-        corridor = extract_corridor_mask(mask, [], 400, 200)
-        # Главное что коридор не разорван — просто не падает
-        assert corridor is not None
+    def test_extract_corridor_mask_output_is_binary(self):
+        """Все значения результата — 0 или 255."""
+        mask = self._make_corridor_mask(wall_px=5)
+        result = extract_corridor_mask(mask, [], 200, 100, wall_thickness_px=5.0)
+        assert np.all((result == 0) | (result == 255))
 
 
 class TestBuildSkeleton:

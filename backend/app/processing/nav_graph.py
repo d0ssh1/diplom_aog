@@ -9,7 +9,12 @@ from networkx.readwrite import json_graph
 from shapely.geometry import LineString, Point
 from skimage.morphology import binary_closing, skeletonize, square
 
+from app.core.exceptions import ImageProcessingError
+
 logger = logging.getLogger(__name__)
+
+_MIN_CORRIDOR_PX: float = 3.0
+_MAX_DILATE_PX: int = 30
 
 
 def extract_corridor_mask(
@@ -17,88 +22,113 @@ def extract_corridor_mask(
     rooms: list[dict],
     mask_width: int,
     mask_height: int,
-    dilate_kernel_size: int = 7,
-    dilate_iterations: int = 2,
+    wall_thickness_px: float,
+    corridor_ratio: float = 1.5,
 ) -> np.ndarray:
     """
-    Извлекает маску коридоров через изоляцию дверных проёмов.
+    Извлекает маску коридоров через distance transform.
 
-    Дилатация стен «захлопывает» дверные проёмы → connectedComponents
-    разделяет свободное пространство на изолированные области →
-    самая большая = коридор.
+    Пиксели свободного пространства, у которых расстояние до ближайшей стены
+    >= corridor_threshold, считаются «широкими проходами» (коридорами).
+    Самый большой внутренний компонент расширяется обратно до исходных границ.
 
-    Параметры дилатации:
-        kernel=7, iterations=2 → расширение ~14px
-        Дверной проём 5-12px → закроется
-        Коридор 30-60px → сузится до 16-46px, не исчезнет
+    Args:
+        wall_mask: бинарная маска стен (uint8, стены=255, фон=0)
+        rooms: список комнат с полями x, y, width, height, room_type (нормализованные [0,1])
+        mask_width: ширина маски в пикселях
+        mask_height: высота маски в пикселях
+        wall_thickness_px: толщина стен в пикселях (из compute_wall_thickness)
+        corridor_ratio: множитель толщины стены для порога коридора
+
+    Returns:
+        Бинарная маска коридоров (uint8, коридор=255, остальное=0)
     """
     t0 = time.perf_counter()
 
-    # 1. Свободное пространство
+    # 1. Валидация входных данных
+    if wall_mask is None or wall_mask.size == 0:
+        raise ImageProcessingError("extract_corridor_mask", "Empty mask")
+    if wall_mask.dtype != np.uint8:
+        raise ImageProcessingError(
+            "extract_corridor_mask",
+            f"Expected uint8, got {wall_mask.dtype}",
+        )
+
+    # 2. Свободное пространство
     free_space = cv2.bitwise_not(wall_mask)
 
-    # 2. Дилатация стен — закрываем дверные проёмы
-    dilate_kernel = np.ones((dilate_kernel_size, dilate_kernel_size), np.uint8)
-    dilated_walls = cv2.dilate(wall_mask, dilate_kernel, iterations=dilate_iterations)
+    # 3. Distance transform — расстояние каждого пикселя до ближайшей стены
+    dist = cv2.distanceTransform(free_space, cv2.DIST_L2, 5)
 
-    # 3. Свободное пространство с закрытыми дверями
-    closed_free = cv2.bitwise_not(dilated_walls)
+    # 4. Порог коридора
+    if wall_thickness_px <= 0:
+        logger.warning(
+            "extract_corridor_mask: wall_thickness_px <= 0, using MIN_CORRIDOR_PX fallback"
+        )
+        corridor_threshold = _MIN_CORRIDOR_PX
+    else:
+        corridor_threshold = max(_MIN_CORRIDOR_PX, corridor_ratio * wall_thickness_px)
 
-    # 4. Связные компоненты
+    # 5. Маска «широких проходов»
+    wide_passage = (dist >= corridor_threshold).astype(np.uint8) * 255
+
+    # 6. Проверка наличия широких проходов
+    if np.sum(wide_passage > 0) == 0:
+        logger.warning("extract_corridor_mask: no wide passages found")
+        return np.zeros_like(wall_mask)
+
+    # 7. Связные компоненты широких проходов
+    h_mask, w_mask = wall_mask.shape[:2]
     num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
-        closed_free, connectivity=8
+        wide_passage, connectivity=8
     )
 
-    # 5. Определить компоненты, касающиеся границ изображения (= экстерьер)
-    h_mask, w_mask = closed_free.shape[:2]
-    border_labels = set()
-    border_labels.update(labels[0, :].flat)
-    border_labels.update(labels[h_mask - 1, :].flat)
-    border_labels.update(labels[:, 0].flat)
-    border_labels.update(labels[:, w_mask - 1].flat)
+    # Компоненты, касающиеся границ изображения (= экстерьер)
+    border_labels: set[int] = set()
+    border_labels.update(int(v) for v in labels[0, :].flat)
+    border_labels.update(int(v) for v in labels[h_mask - 1, :].flat)
+    border_labels.update(int(v) for v in labels[:, 0].flat)
+    border_labels.update(int(v) for v in labels[:, w_mask - 1].flat)
     border_labels.discard(0)
 
-    # 6. Самый большой ВНУТРЕННИЙ компонент = коридор
-    # Верхняя граница: реальный коридор не может занимать >50% изображения.
-    # Без этого ограничения закрытый внешний контур создаёт огромный
-    # «внутренний» компонент (экстерьер внутри рамки), который ошибочно
-    # выбирается как коридор и заливает весь этаж.
     max_corridor_area = h_mask * w_mask * 0.5
     biggest_label = -1
     biggest_area = 0
+
     for label_id in range(1, num_labels):
         if label_id in border_labels:
             continue
-        area = stats[label_id, cv2.CC_STAT_AREA]
+        area = int(stats[label_id, cv2.CC_STAT_AREA])
         if area > max_corridor_area:
             continue
         if area > biggest_area:
             biggest_area = area
             biggest_label = label_id
 
-    # 7. Фоллбэк: если все компоненты касаются границ —
-    #    берём самый большой НЕ-экстерьерный border-компонент.
-    #    Экстерьер = самый большой border-компонент (фон снаружи здания).
+    # Фоллбэк: все компоненты касаются границ — берём самый большой
+    # НЕ-экстерьерный border-компонент
     if biggest_label == -1:
-        logger.warning("extract_corridor_mask: all components touch border, using biggest non-exterior")
-        # Найти самый большой border-компонент (экстерьер) чтобы исключить его
+        logger.warning(
+            "extract_corridor_mask: all components touch border, using biggest non-exterior"
+        )
         exterior_label = -1
         exterior_area = 0
         for label_id in range(1, num_labels):
             if label_id in border_labels:
-                area = stats[label_id, cv2.CC_STAT_AREA]
+                area = int(stats[label_id, cv2.CC_STAT_AREA])
                 if area > exterior_area:
                     exterior_area = area
                     exterior_label = label_id
-        # Взять самый большой из оставшихся border-компонентов
+
         for label_id in range(1, num_labels):
             if label_id == exterior_label:
                 continue
-            area = stats[label_id, cv2.CC_STAT_AREA]
+            area = int(stats[label_id, cv2.CC_STAT_AREA])
             if area > biggest_area:
                 biggest_area = area
                 biggest_label = label_id
-        # Если ничего не нашли (только экстерьер) — взять экстерьер как последний resort
+
+        # Последний resort — взять экстерьер
         if biggest_label == -1:
             biggest_label = exterior_label
             biggest_area = exterior_area
@@ -107,15 +137,17 @@ def extract_corridor_mask(
         logger.warning("extract_corridor_mask: no free space found")
         return np.zeros_like(wall_mask)
 
-    # Грубая маска коридора
+    # 8. Грубая маска коридора
     corridor_rough = np.zeros_like(wall_mask)
     corridor_rough[labels == biggest_label] = 255
 
-    # 6. Расширяем обратно → пересекаем с оригиналом → точные границы
-    corridor_expanded = cv2.dilate(corridor_rough, dilate_kernel, iterations=dilate_iterations)
+    # 9. Расширяем обратно → пересекаем с оригиналом → точные границы
+    dilate_px = max(1, min(int(wall_thickness_px) if wall_thickness_px > 0 else 1, _MAX_DILATE_PX))
+    dilate_kernel = np.ones((dilate_px, dilate_px), np.uint8)
+    corridor_expanded = cv2.dilate(corridor_rough, dilate_kernel)
     corridor_mask = cv2.bitwise_and(free_space, corridor_expanded)
 
-    # 7. Вычитаем размеченные комнаты (страховка)
+    # 10. Вычитаем размеченные комнаты
     room_types_to_subtract = {'room', 'staircase', 'elevator'}
     manual_subtracted = 0
     for room in rooms:
@@ -127,11 +159,12 @@ def extract_corridor_mask(
             cv2.rectangle(corridor_mask, (x, y), (x + w, y + h), 0, -1)
             manual_subtracted += 1
 
+    # 11. Логирование
     logger.info(
-        "extract_corridor_mask: %dx%d, dilate=%dx iter=%d, "
+        "extract_corridor_mask: %dx%d, threshold=%.1f (ratio=%.1f * %.1fpx), "
         "components=%d, biggest=%.0f%%, manual_sub=%d, %.1fms",
         mask_width, mask_height,
-        dilate_kernel_size, dilate_iterations,
+        corridor_threshold, corridor_ratio, wall_thickness_px,
         num_labels - 1,
         biggest_area / max(1, np.sum(free_space > 0)) * 100,
         manual_subtracted,
