@@ -4,6 +4,7 @@ import logging
 import os
 
 import cv2
+import numpy as np
 
 from app.processing.nav_graph import (
     build_skeleton,
@@ -12,10 +13,12 @@ from app.processing.nav_graph import (
     extract_corridor_mask,
     find_route,
     integrate_semantics,
+    los_prune,
     prune_dendrites,
     serialize_nav_graph,
     transform_2d_to_3d,
 )
+from app.processing.pipeline import compute_scale_factor, compute_wall_thickness
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,10 @@ class NavService:
 
     def _find_mask_file(self, mask_file_id: str) -> str:
         pattern = os.path.join(self._masks_dir, f"{mask_file_id}.*")
-        files = [f for f in glob.glob(pattern) if not f.endswith('_nav.json') and not f.endswith('_skeleton.png')]
+        files = [
+            f for f in glob.glob(pattern)
+            if os.path.basename(f).startswith(mask_file_id + '.')
+        ]
         if not files:
             raise FileNotFoundError(f"Mask file not found: {mask_file_id}")
         return files[0]
@@ -37,7 +43,7 @@ class NavService:
         mask_file_id: str,
         rooms: list[dict],
         doors: list[dict],
-        scale_factor: float = 0.05,
+        scale_factor: float = 0.02,
     ) -> dict:
         """Полный пайплайн генерации навигационного графа."""
         mask_path = self._find_mask_file(mask_file_id)
@@ -45,6 +51,10 @@ class NavService:
         if wall_mask is None:
             raise ValueError(f"Cannot read mask: {mask_path}")
         h, w = wall_mask.shape[:2]
+
+        # Compute scale_factor from the mask itself so it matches mesh_builder.py
+        wall_thickness_px = compute_wall_thickness(wall_mask)
+        scale_factor = 1.0 / compute_scale_factor(wall_thickness_px)
 
         corridor_mask = extract_corridor_mask(wall_mask, rooms, w, h)
         skeleton = build_skeleton(corridor_mask)
@@ -58,10 +68,37 @@ class NavService:
         with open(nav_path, 'w') as f:
             json.dump(nav_data, f)
 
-        skeleton_path = os.path.splitext(mask_path)[0] + '_skeleton.png'
-        cv2.imwrite(skeleton_path, skeleton)
+        # Debug images (6 шт) — для визуальной проверки
+        debug_dir = os.path.dirname(mask_path)
+        prefix = mask_file_id
 
-        logger.info("NavService.build_graph: saved %s", nav_path)
+        cv2.imwrite(f'{debug_dir}/{prefix}_1_free.png', cv2.bitwise_not(wall_mask))
+
+        dilate_kernel = np.ones((7, 7), np.uint8)
+        dilated = cv2.dilate(wall_mask, dilate_kernel, iterations=2)
+        cv2.imwrite(f'{debug_dir}/{prefix}_2_dilated_walls.png', dilated)
+        cv2.imwrite(f'{debug_dir}/{prefix}_3_closed_free.png', cv2.bitwise_not(dilated))
+        cv2.imwrite(f'{debug_dir}/{prefix}_4_corridor.png', corridor_mask)
+        cv2.imwrite(f'{debug_dir}/{prefix}_5_skeleton.png', skeleton)
+
+        overlay = cv2.cvtColor(wall_mask, cv2.COLOR_GRAY2BGR)
+        overlay[corridor_mask > 0] = [180, 80, 0]
+        overlay[skeleton > 0] = [0, 255, 255]
+        for node_id, data in G.nodes(data=True):
+            pos = data.get('pos', (0, 0))
+            x, y = int(pos[0]), int(pos[1])
+            if 0 <= x < w and 0 <= y < h:
+                color = {
+                    'room': (0, 0, 255),
+                    'door': (0, 255, 0),
+                    'corridor_entry': (255, 128, 0),
+                    'corridor_node': (128, 128, 128),
+                }.get(data.get('type', ''), (200, 200, 200))
+                radius = 6 if data.get('type') in ('room', 'door') else 3
+                cv2.circle(overlay, (x, y), radius, color, -1)
+        cv2.imwrite(f'{debug_dir}/{prefix}_6_overlay.png', overlay)
+
+        logger.info("NavService.build_graph: saved %s, debug images → %s", nav_path, debug_dir)
         return nav_data["metadata"]
 
     def load_graph(self, mask_file_id: str) -> dict:
@@ -93,9 +130,18 @@ class NavService:
                 "message": f"No path from {from_room_id} to {to_room_id}",
             }
 
-        scale_factor = metadata.get('scale_factor', 0.05)
+        scale_factor = metadata.get('scale_factor', 0.02)
         mask_width = metadata.get('mask_width', 1000)
         mask_height = metadata.get('mask_height', 500)
+
+        # LOS pruning — remove zigzags where straight line is clear of walls
+        try:
+            mask_path = self._find_mask_file(graph_id)
+            wall_mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+            if wall_mask is not None:
+                route['path_coords_2d'] = los_prune(route['path_coords_2d'], wall_mask)
+        except Exception:
+            pass  # LOS is optional — fall back to simplified path
 
         coords_3d = transform_2d_to_3d(
             route['path_coords_2d'],

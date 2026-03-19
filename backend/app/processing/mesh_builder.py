@@ -49,13 +49,34 @@ def build_mesh_from_mask(
 
     h, w = mask.shape[:2]
 
+    # Sanity check: white should be walls (10-40%), not free space (>50%)
+    white_ratio = float(np.sum(mask > 127)) / (h * w)
+    logger.info("build_mesh_from_mask: white_ratio=%.1f%%", white_ratio * 100)
+    if white_ratio > 0.5:
+        logger.warning(
+            "build_mesh_from_mask: white_ratio=%.1f%% — mask may be inverted! "
+            "Expected white=walls (10-40%%)",
+            white_ratio * 100,
+        )
+
     # Step 1: Extract wall contours from mask
-    contours_raw, _ = cv2.findContours(
-        mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+    # RETR_CCOMP returns 2-level hierarchy: top-level (hierarchy[3]==-1) are outer
+    # contours, inner are holes. Using RETR_EXTERNAL on a closed floor outline would
+    # treat the entire interior as a filled polygon → solid black slab from above.
+    contours_raw, hierarchy = cv2.findContours(
+        mask.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE,
     )
 
+    # Keep only top-level contours (no parent → hierarchy[i][3] == -1)
     min_area = 50
-    contours = [c for c in contours_raw if cv2.contourArea(c) > min_area]
+    if hierarchy is not None:
+        hierarchy = hierarchy[0]
+        contours = [
+            c for i, c in enumerate(contours_raw)
+            if hierarchy[i][3] == -1 and cv2.contourArea(c) > min_area
+        ]
+    else:
+        contours = [c for c in contours_raw if cv2.contourArea(c) > min_area]
 
     logger.info(
         "build_mesh_from_mask: image=%dx%d, raw=%d, filtered=%d, ppm=%.2f",
