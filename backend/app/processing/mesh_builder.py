@@ -60,12 +60,26 @@ def build_mesh_from_mask(
         )
 
     # Step 1: Extract wall contours from mask
-    contours_raw, _ = cv2.findContours(
-        mask.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE,
+    # RETR_CCOMP gives 2-level hierarchy; we keep only top-level contours
+    # (hierarchy[i][3] == -1 means no parent) that are also smaller than
+    # 20% of the image area — the closed outer building boundary is a huge
+    # top-level contour (57%+ of image) that extrudes into a solid black slab.
+    contours_raw, hierarchy = cv2.findContours(
+        mask.copy(), cv2.RETR_CCOMP, cv2.CHAIN_APPROX_SIMPLE,
     )
 
     min_area = 50
-    contours = [c for c in contours_raw if cv2.contourArea(c) > min_area]
+    max_area = h * w * 0.20  # contours > 20% of image = building perimeter, not a wall
+    if hierarchy is not None:
+        hierarchy = hierarchy[0]
+        contours = [
+            c for i, c in enumerate(contours_raw)
+            if hierarchy[i][3] == -1
+            and cv2.contourArea(c) > min_area
+            and cv2.contourArea(c) < max_area
+        ]
+    else:
+        contours = [c for c in contours_raw if min_area < cv2.contourArea(c) < max_area]
 
     logger.info(
         "build_mesh_from_mask: image=%dx%d, raw=%d, filtered=%d, ppm=%.2f",
