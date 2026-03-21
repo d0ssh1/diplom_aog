@@ -1,7 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import MeshViewer from '../../components/MeshViewer';
 import { NavigationPath } from '../MeshViewer/NavigationPath';
-import { RoutePanel } from '../MeshViewer/RoutePanel';
+import { RouteBottomBar } from '../MeshViewer/RouteBottomBar';
 import { reconstructionApi } from '../../api/apiService';
 import type { RoomAnnotation } from '../../types/wizard';
 import styles from './StepView3D.module.css';
@@ -20,9 +20,12 @@ interface RouteResult {
 
 interface StepView3DProps {
   meshUrl: string | null;
-  reconstructionId: number | null;  // eslint-disable-line @typescript-eslint/no-unused-vars
+  reconstructionId: number | null;
   navGraphId: string | null;
   rooms: RoomAnnotation[];
+  onNext?: () => void;
+  onPrev?: () => void;
+  isNextDisabled?: boolean;
 }
 
 export const StepView3D: React.FC<StepView3DProps> = ({
@@ -30,18 +33,23 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   reconstructionId: _reconstructionId,
   navGraphId,
   rooms,
+  onNext,
+  onPrev,
+  isNextDisabled,
 }) => {
   const [routeCoords, setRouteCoords] = useState<number[][] | null>(null);
   const [routeResult, setRouteResult] = useState<RouteResult | null>(null);
   const [isRoutingLoading, setIsRoutingLoading] = useState(false);
+  const [fromRoom, setFromRoom] = useState<string>('');
+  const [toRoom, setToRoom] = useState<string>('');
 
-  const handleFindRoute = useCallback(async (fromId: string, toId: string) => {
-    if (!navGraphId) return;
+  const handleFindRoute = useCallback(async () => {
+    if (!navGraphId || !fromRoom || !toRoom || fromRoom === toRoom) return;
     setIsRoutingLoading(true);
     setRouteCoords(null);
     setRouteResult(null);
     try {
-      const result = await reconstructionApi.findRoute(navGraphId, fromId, toId);
+      const result = await reconstructionApi.findRoute(navGraphId, fromRoom, toRoom);
       setRouteResult(result);
       if (result.status === 'success' && result.coordinates) {
         setRouteCoords(result.coordinates);
@@ -51,7 +59,7 @@ export const StepView3D: React.FC<StepView3DProps> = ({
     } finally {
       setIsRoutingLoading(false);
     }
-  }, [navGraphId]);
+  }, [navGraphId, fromRoom, toRoom]);
 
   if (!meshUrl) {
     return <div className={styles.empty}>3D-модель не готова</div>;
@@ -60,7 +68,7 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   const format = meshUrl.endsWith('.glb') ? 'glb' : 'obj';
 
   return (
-    <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, position: 'relative' }}>
         <MeshViewer url={meshUrl} format={format}>
           <NavigationPath 
@@ -71,12 +79,26 @@ export const StepView3D: React.FC<StepView3DProps> = ({
             toRoomName={routeResult?.to_room}
           />
         </MeshViewer>
+
+
+        {routeResult?.status === 'no_path' && (
+          <div className={styles.errorHud}>
+            Маршрут не найден. Проверьте разметку дверей.
+          </div>
+        )}
       </div>
-      <RoutePanel
+      
+      <RouteBottomBar
         rooms={rooms}
+        fromRoom={fromRoom}
+        toRoom={toRoom}
+        onFromChange={setFromRoom}
+        onToChange={setToRoom}
         onFindRoute={handleFindRoute}
         isLoading={isRoutingLoading}
-        routeResult={routeResult}
+        onPrev={onPrev || (() => {})}
+        onNext={onNext || (() => {})}
+        isNextDisabled={!!isNextDisabled}
       />
     </div>
   );

@@ -117,6 +117,9 @@ export const WizardPage: React.FC = () => {
             reconstructionId={state.reconstructionId}
             navGraphId={state.navGraphId}
             rooms={state.rooms}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            isNextDisabled={isNextDisabled}
           />
         );
       case 6:
@@ -135,6 +138,7 @@ export const WizardPage: React.FC = () => {
       onClose={() => navigate('/admin')}
       nextDisabled={isNextDisabled}
       nextLabel={nextLabel}
+      hideFooter={state.step === 5}
     >
       {renderStep()}
     </WizardShell>

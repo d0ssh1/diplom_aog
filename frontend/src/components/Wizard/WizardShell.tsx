@@ -11,6 +11,7 @@ interface WizardShellProps {
   onClose: () => void;
   nextDisabled?: boolean;
   nextLabel?: string;
+  hideFooter?: boolean;
   children: React.ReactNode;
 }
 
@@ -22,6 +23,7 @@ export const WizardShell: React.FC<WizardShellProps> = ({
   onClose,
   nextDisabled = false,
   nextLabel,
+  hideFooter = false,
   children,
 }) => {
   const resolvedNextLabel = nextLabel ?? (currentStep === totalSteps ? 'Сохранить' : '> Далее');
@@ -37,14 +39,16 @@ export const WizardShell: React.FC<WizardShellProps> = ({
 
       <div className={styles.content}>{children}</div>
 
-      <footer className={styles.footer}>
-        <button type="button" className={styles.btnBack} onClick={onPrev} disabled={currentStep === 1}>
-          Назад
-        </button>
-        <button type="button" className={styles.btnNext} onClick={onNext} disabled={nextDisabled}>
-          {resolvedNextLabel}
-        </button>
-      </footer>
+      {!hideFooter && (
+        <footer className={styles.footer}>
+          <button type="button" className={styles.btnBack} onClick={onPrev} disabled={currentStep === 1}>
+            Назад
+          </button>
+          <button type="button" className={styles.btnNext} onClick={onNext} disabled={nextDisabled}>
+            {resolvedNextLabel}
+          </button>
+        </footer>
+      )}
     </div>
   );
 };
