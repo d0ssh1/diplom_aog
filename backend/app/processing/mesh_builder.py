@@ -161,6 +161,8 @@ def build_mesh_from_mask(
     scale = 1.0 / pixels_per_meter
     h_m = h * scale
     polygons = []
+    skipped_area = 0
+    failed_poly = 0
     for exterior_c, hole_cs in contours:
         ext_pts = exterior_c.reshape(-1, 2).astype(float) * scale
         ext_flipped = [(x, h_m - y) for x, y in ext_pts]
@@ -174,10 +176,22 @@ def build_mesh_from_mask(
             if not poly.is_valid:
                 poly = poly.buffer(0)
             if poly.is_valid and not poly.is_empty and poly.area > 0:
-                polygons.append(poly)
+                # buffer(0) can return MultiPolygon — unpack it
+                if poly.geom_type == "MultiPolygon":
+                    for sub_poly in poly.geoms:
+                        if sub_poly.is_valid and not sub_poly.is_empty and sub_poly.area > 0:
+                            polygons.append(sub_poly)
+                else:
+                    polygons.append(poly)
+            else:
+                skipped_area += 1
         except Exception as exc:
+            failed_poly += 1
             logger.debug("polygon build failed: %s", exc)
-    logger.info("Polygons: %d", len(polygons))
+    logger.info(
+        "Polygons: %d (skipped_invalid=%d, failed=%d)",
+        len(polygons), skipped_area, failed_poly,
+    )
 
     if not polygons:
         raise ImageProcessingError(
@@ -186,12 +200,19 @@ def build_mesh_from_mask(
 
     # Step 3: Extrude walls (sides)
     meshes: list = []
+    extrude_failed = 0
     for poly in polygons:
         wall_mesh = extrude_wall(poly, height=floor_height)
         if wall_mesh is not None:
             colors = np.tile(WALL_SIDE_COLOR, (len(wall_mesh.vertices), 1)).astype(np.uint8)
             wall_mesh.visual.vertex_colors = colors
             meshes.append(wall_mesh)
+        else:
+            extrude_failed += 1
+            logger.warning(
+                "extrude_wall failed for polygon area=%.4f, points=%d, holes=%d",
+                poly.area, len(poly.exterior.coords), len(list(poly.interiors)),
+            )
 
     logger.info("Wall meshes: %d", len(meshes))
 

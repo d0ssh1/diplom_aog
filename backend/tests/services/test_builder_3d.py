@@ -66,7 +66,7 @@ async def test_build_mesh_success_sets_status_3():
          patch("app.services.reconstruction_service.door_detect", return_value=[]), \
          patch("app.services.reconstruction_service.normalize_coords", return_value=([], [], [])), \
          patch("app.services.reconstruction_service.compute_scale_factor", return_value=50.0), \
-         patch("app.services.reconstruction_service.build_mesh_from_vectorization", return_value=fake_mesh):
+         patch("app.services.reconstruction_service.build_mesh_from_mask", return_value=fake_mesh):
 
         # Act
         result = await svc.build_mesh("plan_id", "mask_id", user_id=1)
@@ -123,9 +123,9 @@ async def test_build_mesh_processing_error_sets_status_4():
          patch("app.services.reconstruction_service.normalize_coords", return_value=([], [], [])), \
          patch("app.services.reconstruction_service.compute_scale_factor", return_value=50.0), \
          patch(
-             "app.services.reconstruction_service.build_mesh_from_vectorization",
+             "app.services.reconstruction_service.build_mesh_from_mask",
              side_effect=ImageProcessingError(
-                 "build_mesh_from_vectorization", "No walls in VectorizationResult"
+                 "build_mesh_from_mask", "No wall contours found in mask"
              ),
          ):
 
@@ -165,7 +165,7 @@ async def test_build_mesh_uses_default_floor_height_3m():
          patch("app.services.reconstruction_service.door_detect", return_value=[]), \
          patch("app.services.reconstruction_service.normalize_coords", return_value=([], [], [])), \
          patch("app.services.reconstruction_service.compute_scale_factor", return_value=50.0), \
-         patch("app.services.reconstruction_service.build_mesh_from_vectorization", mock_build):
+         patch("app.services.reconstruction_service.build_mesh_from_mask", mock_build):
 
         # Act
         await svc.build_mesh("plan_id", "mask_id", user_id=1)
