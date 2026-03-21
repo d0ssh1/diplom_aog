@@ -30,7 +30,8 @@ export const WizardPage: React.FC = () => {
     } else if (state.step === 3 && canvasRef.current) {
       const blob = await canvasRef.current.getBlob();
       const { rooms, doors } = canvasRef.current.getAnnotations();
-      const editedMaskId = await wizard.saveMaskAndAnnotations(blob, rooms, doors);
+      const canvasState = await canvasRef.current.getCanvasState?.();
+      const editedMaskId = await wizard.saveMaskAndAnnotations(blob, rooms, doors, canvasState);
       if (editedMaskId) {
         await wizard.buildNavGraph(editedMaskId, rooms, doors);
       }
@@ -101,6 +102,7 @@ export const WizardPage: React.FC = () => {
             onThresholdCChange={wizard.setThresholdC}
             initialRooms={state.rooms}
             initialDoors={state.doors}
+            initialCanvasState={state.canvasState}
           />
         );
       case 4:

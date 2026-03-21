@@ -8,7 +8,7 @@ import type { CropRect } from '../../types/wizard';
 import styles from './StepWallEditor.module.css';
 import panelStyles from '../Editor/ToolPanelV2.module.css';
 
-type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door';
+type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door' | 'erase_markup';
 
 interface PopupState {
   position: { x: number; y: number };
@@ -30,6 +30,7 @@ interface StepWallEditorProps {
   onThresholdCChange: (v: number) => void;
   initialRooms?: import('../../types/wizard').RoomAnnotation[];
   initialDoors?: import('../../types/wizard').DoorAnnotation[];
+  initialCanvasState?: any;
 }
 
 const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] = [
@@ -38,6 +39,7 @@ const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] =
   { id: 'elevator', label: 'Лифт', icon: <ArrowUp size={18} /> },
   { id: 'corridor', label: 'Коридор', icon: <StretchHorizontal size={18} /> },
   { id: 'door', label: 'Дверь', icon: <DoorOpen size={18} /> },
+  { id: 'erase_markup', label: 'Удалить', icon: <Eraser size={18} /> },
 ];
 
 export const StepWallEditor: React.FC<StepWallEditorProps> = ({
@@ -53,6 +55,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   onThresholdCChange,
   initialRooms,
   initialDoors,
+  initialCanvasState,
 }) => {
   const [activeTool, setActiveTool] = useState<ActiveTool>('wall');
   const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
@@ -152,6 +155,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             overlayOpacity={overlayOpacity}
             initialRooms={initialRooms}
             initialDoors={initialDoors}
+            initialCanvasState={initialCanvasState}
           />
           {popupState && (
             <RoomPopup

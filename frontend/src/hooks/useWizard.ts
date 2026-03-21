@@ -10,7 +10,7 @@ interface UseWizardReturn {
   setPlanFile: (id: string, url: string) => void;
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
-  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<string | null>;
+  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: any) => Promise<string | null>;
   buildNavGraph: (maskId: string, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
   buildMesh: (editedMaskId?: string) => Promise<void>;
   save: (name: string) => Promise<void>;
@@ -26,6 +26,7 @@ const initialState: WizardState = {
   planUrl: null,
   maskFileId: null,
   editedMaskFileId: null,
+  canvasState: null,
   reconstructionId: null,
   meshUrl: null,
   cropRect: null,
@@ -75,13 +76,13 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
 
-  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[]): Promise<string | null> => {
+  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: any): Promise<string | null> => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const file = new File([blob], 'mask.png', { type: 'image/png' });
       const data = await uploadApi.uploadUserMask(file);
       const editedId = String(data.id ?? data.file_id ?? '');
-      setState((s) => ({ ...s, editedMaskFileId: editedId, rooms, doors, isLoading: false }));
+      setState((s) => ({ ...s, editedMaskFileId: editedId, rooms, doors, canvasState: canvasState ?? null, isLoading: false }));
       return editedId;
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения маски' }));

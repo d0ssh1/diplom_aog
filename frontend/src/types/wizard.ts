@@ -38,6 +38,7 @@ export interface WizardState {
   planUrl: string | null;
   maskFileId: string | null;
   editedMaskFileId: string | null;
+  canvasState: any | null;
   reconstructionId: number | null;
   meshUrl: string | null;
   cropRect: CropRect | null;

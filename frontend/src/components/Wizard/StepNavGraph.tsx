@@ -27,7 +27,7 @@ interface NavGraphData {
   };
   graph: {
     nodes: NavNode[];
-    links: NavLink[];
+    edges: NavLink[];
   };
 }
 
@@ -72,18 +72,20 @@ export const StepNavGraph: React.FC<StepNavGraphProps> = ({ navGraphId, maskUrl 
 
     const img = new Image();
     img.onload = () => {
-      canvas.width = canvas.offsetWidth || mw;
-      canvas.height = canvas.offsetHeight || mh;
-      const scaleX = canvas.width / mw;
-      const scaleY = canvas.height / mh;
+      // Set canvas intrinsic size to image dimensions to prevent aspect ratio distortion
+      // CSS object-fit: contain will handle visual scaling correctly
+      canvas.width = mw;
+      canvas.height = mh;
+      const scaleX = 1;
+      const scaleY = 1;
 
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(img, 0, 0, mw, mh);
 
       const nodeMap = new Map<string | number, NavNode>();
       for (const node of graphData.graph.nodes) nodeMap.set(node.id, node);
 
       // Draw edges
-      for (const link of graphData.graph.links) {
+      for (const link of graphData.graph.edges) {
         const src = nodeMap.get(link.source);
         const tgt = nodeMap.get(link.target);
         if (!src || !tgt) continue;

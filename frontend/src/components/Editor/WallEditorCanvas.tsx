@@ -6,9 +6,10 @@ import styles from './WallEditorCanvas.module.css';
 export interface WallEditorCanvasRef {
   getBlob: () => Promise<Blob>;
   getAnnotations: () => { rooms: RoomAnnotation[]; doors: DoorAnnotation[] };
+  getCanvasState: () => any;
 }
 
-type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door';
+type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door' | 'erase_markup';
 
 interface WallEditorCanvasProps {
   maskUrl: string;
@@ -27,6 +28,7 @@ interface WallEditorCanvasProps {
   overlayOpacity?: number;
   initialRooms?: RoomAnnotation[];
   initialDoors?: DoorAnnotation[];
+  initialCanvasState?: any;
 }
 
 const ROOM_FILL: Record<string, string> = {
@@ -44,7 +46,7 @@ const ROOM_STROKE: Record<string, string> = {
 };
 
 const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
-  ({ maskUrl, activeTool, brushSize, eraserMode = 'brush', onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4, initialRooms, initialDoors }, ref) => {
+  ({ maskUrl, activeTool, brushSize, eraserMode = 'brush', onRoomPopupRequest, planUrl, planCropRect, planRotation, overlayEnabled, overlayOpacity = 0.4, initialRooms, initialDoors, initialCanvasState }, ref) => {
     const canvasElRef = useRef<HTMLCanvasElement>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const fabricRef = useRef<fabric.Canvas | null>(null);
@@ -112,27 +114,11 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       });
       fabricRef.current = canvas;
 
-      // Load mask as background — proportional fit, centered
-      fabric.Image.fromURL(
-        maskUrl,
-        (img) => {
-          if (!img || !fabricRef.current) return;
-          const c = fabricRef.current;
-          const scaleX = c.getWidth() / (img.width ?? 1);
-          const scaleY = c.getHeight() / (img.height ?? 1);
-          const scale = Math.min(scaleX, scaleY);
-          const scaledW = (img.width ?? 0) * scale;
-          const scaledH = (img.height ?? 0) * scale;
-          const offsetX = (c.getWidth() - scaledW) / 2;
-          const offsetY = (c.getHeight() - scaledH) / 2;
-          img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
-          c.setBackgroundImage(img, () => {
-            c.renderAll();
-            setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
-          });
-        },
-        { crossOrigin: 'anonymous' },
-      );
+      if (initialCanvasState) {
+        canvas.loadFromJSON(initialCanvasState, () => {
+          canvas.renderAll();
+        });
+      }
 
       // Delete key handler
       const handleKeyDown = (e: KeyboardEvent) => {
@@ -157,6 +143,31 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         fabricRef.current = null;
       };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Update mask background when maskUrl changes
+    useEffect(() => {
+      if (!maskUrl) return;
+      fabric.Image.fromURL(
+        maskUrl,
+        (img) => {
+          if (!img || !fabricRef.current) return;
+          const c = fabricRef.current;
+          const scaleX = c.getWidth() / (img.width ?? 1);
+          const scaleY = c.getHeight() / (img.height ?? 1);
+          const scale = Math.min(scaleX, scaleY);
+          const scaledW = (img.width ?? 0) * scale;
+          const scaledH = (img.height ?? 0) * scale;
+          const offsetX = (c.getWidth() - scaledW) / 2;
+          const offsetY = (c.getHeight() - scaledH) / 2;
+          img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
+          c.setBackgroundImage(img, () => {
+            c.renderAll();
+            setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
+          });
+        },
+        { crossOrigin: 'anonymous' },
+      );
     }, [maskUrl]);
 
     // Restore annotations when returning to this step
@@ -165,46 +176,54 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       if (!canvas) return;
 
       const restore = () => {
-        if (initialRooms && initialRooms.length > 0 && roomsRef.current.length === 0) {
-          roomsRef.current = [...initialRooms];
-          for (const room of initialRooms) {
-            const x = room.x * canvas.getWidth();
-            const y = room.y * canvas.getHeight();
-            const w = room.width * canvas.getWidth();
-            const h = room.height * canvas.getHeight();
-            const roomType = room.room_type || 'room';
-            const rect = new fabric.Rect({
-              width: w, height: h,
-              fill: ROOM_FILL[roomType] ?? 'rgba(255,255,255,0.1)',
-              stroke: ROOM_STROKE[roomType] ?? '#fff',
-              strokeWidth: 1,
-            });
-            const text = new fabric.Text(room.name || '', {
-              fontSize: 12,
-              fill: ROOM_STROKE[roomType] ?? '#fff',
-              fontFamily: 'Courier New',
-              left: 4, top: 4,
-            });
-            const group = new fabric.Group([rect, text], {
-              left: x, top: y, selectable: false, evented: false,
-            });
-            (group as unknown as { data: { id: string; type: string } }).data = { id: room.id, type: 'annotation' };
-            canvas.add(group);
+        if (initialCanvasState) {
+          if (initialRooms && initialRooms.length > 0 && roomsRef.current.length === 0) {
+            roomsRef.current = [...initialRooms];
           }
-        }
+          if (initialDoors && initialDoors.length > 0 && doorsRef.current.length === 0) {
+            doorsRef.current = [...initialDoors];
+          }
+        } else {
+          if (initialRooms && initialRooms.length > 0 && roomsRef.current.length === 0) {
+            roomsRef.current = [...initialRooms];
+            for (const room of initialRooms) {
+              const x = room.x * canvas.getWidth();
+              const y = room.y * canvas.getHeight();
+              const w = room.width * canvas.getWidth();
+              const h = room.height * canvas.getHeight();
+              const roomType = room.room_type || 'room';
+              const rect = new fabric.Rect({
+                width: w, height: h,
+                fill: ROOM_FILL[roomType] ?? 'rgba(255,255,255,0.1)',
+                stroke: ROOM_STROKE[roomType] ?? '#fff',
+                strokeWidth: 1,
+              });
+              const text = new fabric.Text(room.name || '', {
+                fontSize: 12,
+                fill: ROOM_STROKE[roomType] ?? '#fff',
+                fontFamily: 'Courier New',
+                left: 4, top: 4,
+              });
+              const group = new fabric.Group([rect, text], {
+                left: x, top: y, selectable: false, evented: false,
+              });
+              (group as unknown as { data: { id: string; type: string } }).data = { id: room.id, type: 'annotation' };
+              canvas.add(group);
+            }
+          }
 
-        if (initialDoors && initialDoors.length > 0 && doorsRef.current.length === 0) {
-          doorsRef.current = [...initialDoors];
-          for (const door of initialDoors) {
-            const x1 = door.x1 * canvas.getWidth();
-            const y1 = door.y1 * canvas.getHeight();
-            const x2 = door.x2 * canvas.getWidth();
-            const y2 = door.y2 * canvas.getHeight();
-            const line = new fabric.Line([x1, y1, x2, y2], {
-              stroke: '#4CAF50', strokeWidth: 3, selectable: false, evented: false,
-            });
-            (line as unknown as { data: { id: string; type: string } }).data = { id: door.id, type: 'door' };
-            canvas.add(line);
+          if (initialDoors && initialDoors.length > 0 && doorsRef.current.length === 0) {
+            doorsRef.current = [...initialDoors];
+            for (const door of initialDoors) {
+              const cx = (door.x1 + door.x2) / 2 * canvas.getWidth();
+              const cy = (door.y1 + door.y2) / 2 * canvas.getHeight();
+              const circle = new fabric.Circle({
+                left: cx, top: cy, radius: 3, fill: '#4CAF50',
+                originX: 'center', originY: 'center', selectable: false, evented: false,
+              });
+              (circle as unknown as { data: { id: string; type: string } }).data = { id: door.id, type: 'door' };
+              canvas.add(circle);
+            }
           }
         }
 
@@ -369,12 +388,91 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         return;
       }
 
+      if (tool === 'erase_markup') {
+        canvas.defaultCursor = 'crosshair';
+
+        const onMouseDown = (opt: fabric.IEvent<MouseEvent>) => {
+          if (!opt.target) return;
+          const obj = opt.target;
+          const data = (obj as unknown as { data?: { id?: string; type?: string } }).data;
+          
+          if (data && (data.type === 'annotation' || data.type === 'door')) {
+            if (data.id) {
+              roomsRef.current = roomsRef.current.filter((r) => r.id !== data.id);
+              doorsRef.current = doorsRef.current.filter((d) => d.id !== data.id);
+            }
+            canvas.remove(obj);
+            canvas.renderAll();
+          }
+        };
+
+        canvas.on('mouse:down', onMouseDown);
+
+        // Make markup objects clickable specifically for this tool
+        canvas.forEachObject((obj) => {
+          const data = (obj as unknown as { data?: { type?: string } }).data;
+          if (data && (data.type === 'annotation' || data.type === 'door')) {
+            obj.evented = true;
+            obj.hoverCursor = 'pointer';
+          }
+        });
+        return;
+      }
+
       if (tool === 'wall' || tool === 'door') {
         let startPoint: { x: number; y: number } | null = null;
         let previewLine: fabric.Line | null = null;
 
         const onMouseDown = (opt: fabric.IEvent<MouseEvent>) => {
           const pointer = canvas.getPointer(opt.e);
+
+          if (tool === 'door') {
+            // SINGLE CLICK FOR DOOR
+            const cx = pointer.x;
+            const cy = pointer.y;
+
+            const id = crypto.randomUUID();
+            const circle = new fabric.Circle({
+              left: cx,
+              top: cy,
+              radius: 3,
+              fill: '#4CAF50',
+              originX: 'center',
+              originY: 'center',
+              selectable: false,
+              evented: false,
+            });
+            (circle as unknown as { data: { id: string; type: string } }).data = {
+              id,
+              type: 'door',
+            };
+
+            const doorMidX = cx / canvas.getWidth();
+            const doorMidY = cy / canvas.getHeight();
+            let closestRoomId: string | null = null;
+            let minDist = Infinity;
+            for (const room of roomsRef.current) {
+              const roomCx = room.x + room.width / 2;
+              const roomCy = room.y + room.height / 2;
+              const dist = Math.hypot(roomCx - doorMidX, roomCy - doorMidY);
+              if (dist < minDist) {
+                minDist = dist;
+                closestRoomId = room.id;
+              }
+            }
+            doorsRef.current.push({
+              id,
+              x1: doorMidX,
+              y1: doorMidY,
+              x2: doorMidX,
+              y2: doorMidY,
+              room_id: closestRoomId,
+            });
+
+            canvas.add(circle);
+            canvas.renderAll();
+            return;
+          }
 
           if (!startPoint) {
             // First click — set start, add preview line
@@ -411,43 +509,18 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             }
 
             const id = crypto.randomUUID();
-            const color = tool === 'door' ? '#4CAF50' : 'white';
-            const width = tool === 'door' ? 3 : brushSizeRef.current;
+            const width = brushSizeRef.current;
 
             const line = new fabric.Line([startPoint.x, startPoint.y, endX, endY], {
-              stroke: color,
+              stroke: 'white',
               strokeWidth: width,
               selectable: false,
               evented: false,
             });
             (line as unknown as { data: { id: string; type: string } }).data = {
               id,
-              type: tool === 'door' ? 'door' : 'wall',
+              type: 'wall',
             };
-
-            if (tool === 'door') {
-              const doorMidX = ((startPoint.x + endX) / 2) / canvas.getWidth();
-              const doorMidY = ((startPoint.y + endY) / 2) / canvas.getHeight();
-              let closestRoomId: string | null = null;
-              let minDist = Infinity;
-              for (const room of roomsRef.current) {
-                const roomCx = room.x + room.width / 2;
-                const roomCy = room.y + room.height / 2;
-                const dist = Math.hypot(roomCx - doorMidX, roomCy - doorMidY);
-                if (dist < minDist) {
-                  minDist = dist;
-                  closestRoomId = room.id;
-                }
-              }
-              doorsRef.current.push({
-                id,
-                x1: startPoint.x / canvas.getWidth(),
-                y1: startPoint.y / canvas.getHeight(),
-                x2: endX / canvas.getWidth(),
-                y2: endY / canvas.getHeight(),
-                room_id: closestRoomId,
-              });
-            }
 
             canvas.add(line);
             canvas.renderAll();
@@ -664,6 +737,10 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
         rooms: roomsRef.current,
         doors: doorsRef.current,
       }),
+      getCanvasState: () => {
+        const canvas = fabricRef.current;
+        return canvas ? canvas.toJSON(['data']) : null;
+      },
     }));
 
     return (
@@ -688,7 +765,10 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
           <div
             className={styles.eraseButtons}
             style={{
-              left: eraseSelection.left + eraseSelection.width + 12,
+              left: Math.min(
+                eraseSelection.left + eraseSelection.width + 12,
+                (containerRef.current?.clientWidth ?? 800) - 90
+              ),
               top: Math.min(
                 eraseSelection.top + eraseSelection.height - 40,
                 (containerRef.current?.clientHeight ?? 400) - 50,
