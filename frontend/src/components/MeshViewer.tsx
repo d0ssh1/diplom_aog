@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useRef } from 'react';
+import { Suspense, useEffect, useMemo, useRef } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import { OBJLoader } from 'three-stdlib';
@@ -8,7 +8,7 @@ import * as THREE from 'three';
    2GIS / Яндекс Карты palette
    ──────────────────────────────────────────── */
 const COLORS = {
-  wallFallback: '#9E9E9E',  // fallback для OBJ (без vertex colors)
+  wallFallback: '#BDBDBD',  // light grey для стен
   background:   '#ECEFF1',  // светлый фон
 };
 
@@ -78,14 +78,11 @@ function FloorPlane({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> })
 /* ────────────────────────────────────────────
    Apply 2GIS-style materials to loaded model
    ──────────────────────────────────────────── */
-function applyMapMaterials(root: THREE.Object3D, useVertexColors: boolean) {
+function applyMapMaterials(root: THREE.Object3D, _useVertexColors: boolean) {
   root.traverse((child) => {
     if (child instanceof THREE.Mesh) {
-      // Check if geometry actually has vertex colors
-      const hasColors = useVertexColors && child.geometry.hasAttribute('color');
       const material = new THREE.MeshStandardMaterial({
-        vertexColors: hasColors,
-        color: hasColors ? 0xffffff : COLORS.wallFallback,
+        color: COLORS.wallFallback,
         roughness: 0.8,
         metalness: 0.0,
         side: THREE.DoubleSide,
@@ -119,18 +116,64 @@ function ObjModel({ url }: { url: string }) {
 
 /* ────────────────────────────────────────────
    GLB model loader
+
+   BUG FIX (2026-03-21): стены из trimesh GLB рендерились чёрными.
+   Причина — две проблемы в GLB, экспортируемом библиотекой trimesh (Python):
+
+   1) VERTEX COLORS: trimesh записывает vertex colors как RGBA [74,74,74,255]
+      в GLB. Three.js GLTFLoader видит их, создаёт MeshStandardMaterial с
+      vertexColors: true, и УМНОЖАЕТ vertex colors × material.color.
+      Тёмные vertex colors × любой цвет = почти чёрный результат.
+      → Решение: удалить атрибут 'color' из geometry (deleteAttribute).
+
+   2) NORMALS: trimesh экспортирует GLB с некорректными/отсутствующими
+      нормалями вершин. MeshStandardMaterial — PBR-материал, который
+      рассчитывает освещение на основе нормалей. Без корректных нормалей
+      все грани получают нулевое освещение → чёрный цвет.
+      → Решение: пересчитать нормали (geometry.computeVertexNormals()).
+
+   3) useMemo вместо useEffect: useGLTF из drei кэширует scene.
+      Материалы нужно заменить ДО первого рендера (useMemo + clone),
+      а не после (useEffect), иначе первый кадр мигнёт чёрным, и
+      при StrictMode useEffect может не сработать корректно.
+
+   Проверено: MeshBasicMaterial (игнорирует нормали и свет) показывал
+   цвет корректно → подтвердило что проблема именно в нормалях.
    ──────────────────────────────────────────── */
 function GlbModel({ url }: { url: string }) {
   const { scene } = useGLTF(url);
   const ref = useRef<THREE.Object3D>(null);
 
-  useEffect(() => {
-    if (ref.current) applyMapMaterials(ref.current, true);
+  // Process materials BEFORE render via useMemo (not useEffect which runs after)
+  const processedScene = useMemo(() => {
+    const cloned = scene.clone(true);
+    cloned.traverse((child) => {
+      if (child instanceof THREE.Mesh) {
+        // Clone geometry to avoid mutating useGLTF cached version
+        child.geometry = child.geometry.clone();
+        // Fix 1: remove vertex colors (see bug description above)
+        if (child.geometry.hasAttribute('color')) {
+          child.geometry.deleteAttribute('color');
+        }
+        // Fix 2: recompute normals (see bug description above)
+        child.geometry.computeVertexNormals();
+        // Apply clean material with desired wall color
+        child.material = new THREE.MeshStandardMaterial({
+          color: COLORS.wallFallback,
+          roughness: 1.0,   // fully matte — убирает блики, маскирует артефакты нормалей
+          metalness: 0.0,
+          side: THREE.DoubleSide,
+        });
+        child.castShadow = true;
+        child.receiveShadow = true;
+      }
+    });
+    return cloned;
   }, [scene]);
 
   return (
     <>
-      <primitive ref={ref} object={scene} />
+      <primitive ref={ref} object={processedScene} />
       <CameraSetup modelRef={ref} />
       <FloorPlane modelRef={ref} />
     </>
@@ -155,15 +198,15 @@ export default function MeshViewer({ url, format, children }: MeshViewerProps) {
       camera={{ position: [0, 50, 20], fov: 45, near: 0.1, far: 5000 }}
       shadows
       style={{ background: COLORS.background }}
-      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.1 }}
+      gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping, toneMappingExposure: 1.2 }}
     >
-      {/* Мягкий ambient — снижен для контраста с тёмными стенами */}
-      <ambientLight intensity={0.5} color="#f0ede8" />
+      {/* Мягкий ambient — доминирует, чтобы скрыть артефакты нормалей */}
+      <ambientLight intensity={0.9} color="#ffffff" />
 
-      {/* Основной направленный — сверху-слева, с тенями */}
+      {/* Основной направленный — ослаблен, только для теней */}
       <directionalLight
         position={[30, 60, 30]}
-        intensity={0.9}
+        intensity={0.7}
         castShadow
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}

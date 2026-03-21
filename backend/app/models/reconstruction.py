@@ -178,6 +178,8 @@ class FindRouteResponse(BaseModel):
     coordinates: Optional[List[List[float]]] = None
     path_nodes_count: Optional[int] = None
     message: Optional[str] = None
+    from_room_3d: Optional[dict] = None
+    to_room_3d: Optional[dict] = None
 
 
 class RouteRequest(BaseModel):

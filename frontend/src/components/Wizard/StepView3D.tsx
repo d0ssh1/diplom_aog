@@ -14,6 +14,8 @@ interface RouteResult {
   estimated_time_seconds?: number;
   coordinates?: number[][];
   message?: string;
+  from_room_3d?: { position: [number, number, number]; size: [number, number, number] };
+  to_room_3d?: { position: [number, number, number]; size: [number, number, number] };
 }
 
 interface StepView3DProps {
@@ -61,7 +63,13 @@ export const StepView3D: React.FC<StepView3DProps> = ({
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, position: 'relative' }}>
         <MeshViewer url={meshUrl} format={format}>
-          <NavigationPath coordinates={routeCoords} />
+          <NavigationPath 
+            coordinates={routeCoords} 
+            fromRoom3D={routeResult?.from_room_3d}
+            toRoom3D={routeResult?.to_room_3d}
+            fromRoomName={routeResult?.from_room}
+            toRoomName={routeResult?.to_room}
+          />
         </MeshViewer>
       </div>
       <RoutePanel

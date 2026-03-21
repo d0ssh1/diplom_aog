@@ -159,6 +159,34 @@ class NavService:
         from_name = G.nodes.get(from_node_key, {}).get('room_name', from_room_id)
         to_name = G.nodes.get(to_node_key, {}).get('room_name', to_room_id)
 
+        # Extract room bounding boxes and convert to 3D sizes and positions
+        from_room_3d = None
+        to_room_3d = None
+
+        def extract_room_3d(node_key):
+            node_data = G.nodes.get(node_key, {})
+            if 'bbox' in node_data:
+                rx, ry, rw, rh = node_data['bbox']
+                # 2D to 3D transformation logic (same as transform_2d_to_3d)
+                # Box size in 3D: width = rw * scale, depth (z) = rh * scale
+                width_3d = rw * scale_factor
+                depth_3d = rh * scale_factor
+                # Box center in 3D:
+                cx = rx + rw / 2.0
+                cy = ry + rh / 2.0
+                
+                # We need to map pixel coordinates exactly as transform_2d_to_3d does.
+                center_x_3d = cx * scale_factor
+                center_z_3d = (cy - mask_height) * scale_factor
+                return {
+                    "position": [round(center_x_3d, 4), 1.5, round(center_z_3d, 4)],
+                    "size": [round(width_3d, 4), 3.0, round(depth_3d, 4)]
+                }
+            return None
+
+        from_room_3d = extract_room_3d(from_node_key)
+        to_room_3d = extract_room_3d(to_node_key)
+
         return {
             "status": "success",
             "from_room": from_name or from_room_id,
@@ -168,4 +196,6 @@ class NavService:
             "estimated_time_seconds": round(estimated_time),
             "coordinates": coords_3d,
             "path_nodes_count": len(route['path_nodes']),
+            "from_room_3d": from_room_3d,
+            "to_room_3d": to_room_3d,
         }

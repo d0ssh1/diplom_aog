@@ -201,6 +201,8 @@ export const reconstructionApi = {
     estimated_time_seconds?: number;
     coordinates?: number[][];
     message?: string;
+    from_room_3d?: { position: [number, number, number]; size: [number, number, number] };
+    to_room_3d?: { position: [number, number, number]; size: [number, number, number] };
   }> => {
     const res = await apiClient.post('/reconstruction/route', {
       graph_id: graphId,
