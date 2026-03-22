@@ -8,6 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api import router as api_router
 from app.core.config import settings
+from app.core.logging_config import setup_logging
+
+# Setup logging at application startup
+setup_logging(log_level="INFO")
 
 app = FastAPI(
     title="Diplom3D API",

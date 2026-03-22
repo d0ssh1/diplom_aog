@@ -1,12 +1,7 @@
-import glob
 import json
 import logging
-import os
 from typing import List, Optional
 
-import cv2
-
-from app.core.exceptions import FileStorageError, ImageProcessingError
 from app.db.models.reconstruction import Reconstruction
 from app.db.repositories.reconstruction_repo import ReconstructionRepository
 from app.models.domain import (
@@ -15,7 +10,7 @@ from app.models.domain import (
     VectorizationResult,
     Wall,
 )
-from app.processing.contours import ContourService
+from app.processing.contours import extract_elements
 from app.processing.pipeline import (
     assign_room_numbers,
     classify_rooms,
@@ -27,6 +22,7 @@ from app.processing.pipeline import (
 )
 from app.core.config import settings
 from app.processing.mesh_builder import build_mesh_from_mask
+from app.services.file_storage import FileStorage
 
 logger = logging.getLogger(__name__)
 
@@ -43,13 +39,10 @@ class ReconstructionService:
     def __init__(
         self,
         repo: ReconstructionRepository,
-        upload_dir: str,
+        storage: FileStorage,
     ) -> None:
         self._repo = repo
-        self._upload_dir = upload_dir
-        self._models_dir = os.path.join(upload_dir, "models")
-        os.makedirs(self._models_dir, exist_ok=True)
-        self._contour_service = ContourService(os.path.join(upload_dir, "contours"))
+        self._storage = storage
 
     async def build_mesh(
         self,
@@ -62,7 +55,27 @@ class ReconstructionService:
         crop_applied: bool = False,
         rotation_angle: int = 0,
     ) -> Reconstruction:
-        """Full pipeline: create record → load mask → vectorize → build mesh → export → update DB.
+        """
+        Execute full 3D reconstruction pipeline.
+
+        Orchestrates the complete workflow: creates DB record, loads mask
+        image, extracts walls and rooms, builds 3D mesh, exports files,
+        and updates DB.
+
+        Args:
+            plan_file_id: Original plan image file ID
+            mask_file_id: Binary mask file ID
+            user_id: User ID who initiated the reconstruction
+            text_blocks: Optional pre-extracted text blocks from the plan
+            image_size_original: Original image size before cropping
+                (width, height)
+            crop_rect: Crop rectangle coordinates if cropping was applied
+            crop_applied: Whether cropping was applied
+            rotation_angle: Rotation angle applied to the image
+
+        Returns:
+            Reconstruction ORM model with status=3 (ready) or status=4
+            (error)
         """
         # 1. Create reconstruction record with status=2 (processing)
         reconstruction = await self._repo.create_reconstruction(
@@ -76,26 +89,16 @@ class ReconstructionService:
         )
 
         try:
-            # 2. Find mask on disk
-            mask_glob = os.path.join(self._upload_dir, "masks", f"{mask_file_id}.*")
-            mask_files = glob.glob(mask_glob)
-            if not mask_files:
-                raise FileStorageError(mask_file_id, mask_glob)
-            mask_path = mask_files[0]
-            logger.info("Mask file found: %s", mask_path)
-
-            # 3. Load mask as grayscale
-            mask_array = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
-            if mask_array is None:
-                raise ImageProcessingError("cv2.imread", f"Failed to load mask: {mask_path}")
-
+            # 2. Load mask from storage
+            mask_array = await self._storage.load_mask(mask_file_id)
             h, w = mask_array.shape
             image_size = (w, h)
 
-            # Step 7a: Extract walls via ContourService
-            # Use all non-noise elements as wall contours for mesh building
-            elements = self._contour_service.extract_elements(mask_array)
-            wall_elements = [e for e in elements if e.element_type not in ("noise",)]
+            # 3. Extract walls via extract_elements pure function
+            elements = extract_elements(mask_array)
+            wall_elements = [
+                e for e in elements if e.element_type not in ("noise",)
+            ]
 
             walls: List[Wall] = []
             for i, elem in enumerate(wall_elements):
@@ -107,47 +110,39 @@ class ReconstructionService:
                     for pt in elem.contour
                 ]
                 if len(points) >= 3:
-                    walls.append(Wall(id=f"wall_{i}", points=points, thickness=0.2))
+                    walls.append(
+                        Wall(id=f"wall_{i}", points=points, thickness=0.2)
+                    )
 
-            # Step 7b: Compute wall thickness
+            # 4. Compute wall thickness
             wall_thickness_px = compute_wall_thickness(mask_array)
 
-            # Step 7c: Detect rooms
+            # 5. Detect rooms
             rooms = room_detect(mask_array)
-
-            # Step 7d: Classify rooms
             rooms = classify_rooms(rooms)
 
-            # Step 7e: Detect doors
+            # 6. Detect doors
             doors = door_detect(mask_array, rooms)
 
-            # Load text blocks from mask pipeline if not provided
+            # 7. Load text blocks from storage if not provided
             if not text_blocks:
-                text_json_path = os.path.join(
-                    self._upload_dir, "masks", f"{mask_file_id}_text.json"
+                text_blocks = await self._storage.load_text_blocks(
+                    mask_file_id
                 )
-                if os.path.exists(text_json_path):
-                    try:
-                        with open(text_json_path, "r", encoding="utf-8") as f:
-                            text_data = json.load(f)
-                        text_blocks = [TextBlock(**tb) for tb in text_data]
-                        logger.info(
-                            "Loaded %d text blocks from %s", len(text_blocks), text_json_path
-                        )
-                    except Exception as e:
-                        logger.warning("Failed to load text blocks: %s", e)
 
-            # Step 7f: Assign room numbers
+            # 8. Assign room numbers
             if text_blocks:
                 rooms = assign_room_numbers(rooms, text_blocks)
 
-            # Step 8: Normalize coordinates
-            walls, rooms, doors = normalize_coords(walls, rooms, doors, image_size)
+            # 9. Normalize coordinates
+            walls, rooms, doors = normalize_coords(
+                walls, rooms, doors, image_size
+            )
 
-            # Step 8: Compute scale factor
+            # 10. Compute scale factor
             pixels_per_meter = compute_scale_factor(wall_thickness_px)
 
-            # Assemble VectorizationResult
+            # 11. Assemble VectorizationResult
             orig_size = image_size_original or image_size
             vectorization_result = VectorizationResult(
                 walls=walls,
@@ -162,17 +157,21 @@ class ReconstructionService:
                 wall_thickness_px=wall_thickness_px,
                 estimated_pixels_per_meter=pixels_per_meter,
                 rooms_with_names=sum(1 for r in rooms if r.name),
-                corridors_count=sum(1 for r in rooms if r.room_type == "corridor"),
+                corridors_count=sum(
+                    1 for r in rooms if r.room_type == "corridor"
+                ),
                 doors_count=len(doors),
             )
 
-            # Save VectorizationResult to DB
+            # 12. Save VectorizationResult to DB
             await self._repo.update_vectorization_data(
                 reconstruction.id,
-                json.dumps(vectorization_result.model_dump(), ensure_ascii=False),
+                json.dumps(
+                    vectorization_result.model_dump(), ensure_ascii=False
+                ),
             )
 
-            # Build 3D mesh from binary mask (raw contours → correct 3D)
+            # 13. Build 3D mesh from binary mask
             mesh = build_mesh_from_mask(
                 mask_array,
                 floor_height=settings.DEFAULT_FLOOR_HEIGHT,
@@ -180,17 +179,13 @@ class ReconstructionService:
                 vr=vectorization_result,
             )
 
-            obj_path = os.path.join(
-                self._models_dir, f"reconstruction_{reconstruction.id}.obj"
+            # 14. Export mesh
+            obj_path, glb_path = await self._storage.save_mesh_files(
+                reconstruction.id, mesh
             )
-            glb_path = os.path.join(
-                self._models_dir, f"reconstruction_{reconstruction.id}.glb"
-            )
-
-            mesh.export(obj_path)
-            mesh.export(glb_path)
             logger.info("Mesh exported: obj=%s, glb=%s", obj_path, glb_path)
 
+            # 15. Update DB with mesh paths
             reconstruction = await self._repo.update_mesh(
                 reconstruction.id, obj_path, glb_path, status=3
             )
@@ -200,6 +195,7 @@ class ReconstructionService:
                 "Error building mesh for reconstruction %d: %s",
                 reconstruction.id,
                 e,
+                exc_info=True,
             )
             safe_msg = "Ошибка построения модели"
             reconstruction = await self._repo.update_mesh(
@@ -211,7 +207,15 @@ class ReconstructionService:
     async def get_vectorization_data(
         self, reconstruction_id: int
     ) -> Optional[VectorizationResult]:
-        """Retrieve vectorization data from DB."""
+        """
+        Retrieve vectorization data from database.
+
+        Args:
+            reconstruction_id: Reconstruction ID
+
+        Returns:
+            VectorizationResult object or None if not found or invalid
+        """
         reconstruction = await self._repo.get_by_id(reconstruction_id)
         if not reconstruction or not reconstruction.vectorization_data:
             return None
@@ -219,42 +223,108 @@ class ReconstructionService:
             data = json.loads(reconstruction.vectorization_data)
             return VectorizationResult(**data)
         except (json.JSONDecodeError, Exception) as e:
-            logger.error("Failed to parse vectorization data for %d: %s", reconstruction_id, e)
+            logger.error(
+                "Failed to parse vectorization data for %d: %s",
+                reconstruction_id,
+                e,
+                exc_info=True,
+            )
             return None
 
     async def update_vectorization_data(
         self, reconstruction_id: int, data: VectorizationResult
-    ) -> Optional[Reconstruction]:
-        """Update vectorization data in DB."""
-        json_str = json.dumps(data.model_dump(), ensure_ascii=False)
-        return await self._repo.update_vectorization_data(reconstruction_id, json_str)
+    ) -> bool:
+        """
+        Update vectorization data in database.
 
-    async def get_reconstruction(self, reconstruction_id: int) -> Optional[Reconstruction]:
-        """Get by ID. Returns None if not found."""
+        Args:
+            reconstruction_id: Reconstruction ID
+            data: VectorizationResult object to save
+
+        Returns:
+            True if successful, False if reconstruction not found
+        """
+        json_str = json.dumps(data.model_dump(), ensure_ascii=False)
+        result = await self._repo.update_vectorization_data(
+            reconstruction_id, json_str
+        )
+        return result is not None
+
+    async def get_reconstruction(
+        self, reconstruction_id: int
+    ) -> Optional[Reconstruction]:
+        """
+        Get reconstruction by ID.
+
+        Args:
+            reconstruction_id: Reconstruction ID
+
+        Returns:
+            Reconstruction ORM model or None if not found
+        """
         return await self._repo.get_by_id(reconstruction_id)
 
     async def get_saved_reconstructions(self) -> list[Reconstruction]:
-        """List saved (name IS NOT NULL)."""
+        """
+        List all saved reconstructions.
+
+        Returns:
+            List of Reconstruction ORM models where name is not NULL
+        """
         return await self._repo.get_saved()
 
     async def save_reconstruction(
         self, reconstruction_id: int, name: str
     ) -> Optional[Reconstruction]:
-        """Save name. Returns None if not found."""
+        """
+        Save reconstruction with a name.
+
+        Args:
+            reconstruction_id: Reconstruction ID
+            name: Name to assign to the reconstruction
+
+        Returns:
+            Updated Reconstruction ORM model or None if not found
+        """
         return await self._repo.update_name(reconstruction_id, name)
 
     async def delete_reconstruction(self, reconstruction_id: int) -> bool:
-        """Delete. Returns False if not found."""
+        """
+        Delete reconstruction by ID.
+
+        Args:
+            reconstruction_id: Reconstruction ID
+
+        Returns:
+            True if deleted, False if not found
+        """
         return await self._repo.delete(reconstruction_id)
 
     @staticmethod
     def get_status_display(status: int) -> str:
-        """Returns human-readable status from STATUS_DISPLAY."""
+        """
+        Get human-readable status text.
+
+        Args:
+            status: Status code (1=created, 2=processing, 3=ready, 4=error)
+
+        Returns:
+            Human-readable status string in Russian
+        """
         return STATUS_DISPLAY.get(status, "Неизвестно")
 
     @staticmethod
     def get_room_labels(vr: Optional[VectorizationResult]) -> list[dict]:
-        """Формирует список меток комнат для API ответа."""
+        """
+        Format room labels for API response.
+
+        Args:
+            vr: VectorizationResult containing room data
+
+        Returns:
+            List of room label dictionaries with id, name, type, center,
+            and color
+        """
         if not vr or not vr.rooms:
             return []
         colors = {
@@ -275,7 +345,16 @@ class ReconstructionService:
         ]
 
     def build_mesh_url(self, reconstruction: Reconstruction) -> Optional[str]:
-        """Forms URL for GLB file."""
+        """
+        Build URL for GLB mesh file.
+
+        Args:
+            reconstruction: Reconstruction ORM model
+
+        Returns:
+            URL string or None if mesh file doesn't exist
+        """
         if reconstruction.mesh_file_id_glb:
-            return f"/api/v1/uploads/models/reconstruction_{reconstruction.id}.glb"
+            model_id = reconstruction.id
+            return f"/api/v1/uploads/models/reconstruction_{model_id}.glb"
         return None

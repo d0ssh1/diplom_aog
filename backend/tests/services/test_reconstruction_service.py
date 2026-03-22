@@ -10,10 +10,11 @@ from app.models.domain import VectorizationResult
 
 def _make_svc() -> ReconstructionService:
     repo = AsyncMock()
-    with patch("app.services.reconstruction_service.os.makedirs"):
-        with patch("app.services.reconstruction_service.ContourService"):
-            svc = ReconstructionService(repo=repo, upload_dir="/tmp/fake")
-    svc._repo = repo
+    storage = AsyncMock()
+    svc = ReconstructionService(
+        repo=repo,
+        storage=storage,
+    )
     return svc
 
 
@@ -84,7 +85,7 @@ async def test_update_vectorization_data_success():
     vr = VectorizationResult(**_minimal_vectorization_dict())
     result = await svc.update_vectorization_data(1, vr)
 
-    assert result is mock_rec
+    assert result is True
     call_args = svc._repo.update_vectorization_data.call_args
     # first arg is reconstruction_id, second is the JSON string
     assert call_args[0][0] == 1
@@ -100,7 +101,7 @@ async def test_update_vectorization_data_not_found():
     vr = VectorizationResult(**_minimal_vectorization_dict())
     result = await svc.update_vectorization_data(99, vr)
 
-    assert result is None
+    assert result is False
 
 
 # --- get_status_display ---

@@ -1,16 +1,19 @@
 """
-API routes for reconstruction operations
+API routes for reconstruction operations.
+Thin router layer: validate → call service → return response.
 """
 import logging
-from datetime import datetime
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-
-from app.api.deps import get_reconstruction_service, get_mask_service
 from fastapi.responses import Response
 
+from app.api.deps import (
+    get_reconstruction_service,
+    get_mask_service,
+    get_nav_service,
+)
 from app.models import (
     CalculateMaskRequest,
     CalculateMaskResponse,
@@ -32,7 +35,6 @@ from app.services.reconstruction_service import ReconstructionService
 from app.services.mask_service import MaskService
 from app.services.nav_service import NavService
 from app.models.domain import VectorizationResult
-from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reconstruction", tags=["Reconstruction"])
@@ -47,61 +49,28 @@ async def calculate_initial_mask(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: MaskService = Depends(get_mask_service),
 ):
-    crop_dict = None
-    if request.crop:
-        crop_dict = {
-            'x': request.crop.x,
-            'y': request.crop.y,
-            'width': request.crop.width,
-            'height': request.crop.height,
-        }
+    """Calculate initial mask from uploaded plan photo."""
     try:
-        filename = await svc.calculate_mask(
-            request.file_id,
-            crop=crop_dict,
-            rotation=request.rotation,
-            block_size=request.block_size,
-            threshold_c=request.threshold_c,
-        )
+        response = await svc.calculate_mask_endpoint(request)
+        return response
     except Exception as e:
-        logger.error("calculate_mask failed: %s", e)
+        logger.error("calculate_mask failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка обработки изображения")
-    return CalculateMaskResponse(
-        id=request.file_id,
-        source_upload_file_id=request.file_id,
-        created_at=datetime.utcnow(),
-        created_by=1,
-        url=f"/api/v1/uploads/masks/{filename}",
-    )
 
 
-@router.post("/mask-preview")
+@router.post("/mask-preview", response_model=None)
 async def mask_preview(
     request: MaskPreviewRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: MaskService = Depends(get_mask_service),
 ):
-    """Генерирует превью маски с заданными параметрами. Не сохраняет на диск."""
-    crop_dict = None
-    if request.crop:
-        crop_dict = {
-            'x': request.crop.x,
-            'y': request.crop.y,
-            'width': request.crop.width,
-            'height': request.crop.height,
-        }
+    """Generate mask preview without saving to disk."""
     try:
-        mask_bytes = await svc.preview_mask(
-            file_id=request.file_id,
-            crop=crop_dict,
-            rotation=request.rotation,
-            block_size=request.block_size,
-            threshold_c=request.threshold_c,
-        )
+        mask_bytes = await svc.preview_mask_endpoint(request)
+        return Response(content=mask_bytes, media_type="image/png")
     except Exception as e:
-        logger.error("mask_preview failed: %s", e)
+        logger.error("mask_preview failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка генерации превью")
-    return Response(content=mask_bytes, media_type="image/png")
 
 
 # === Hough Transform ===
@@ -110,15 +79,10 @@ async def mask_preview(
 async def calculate_hough_lines(
     request: CalculateHoughRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    return CalculateHoughResponse(
-        id="hough-placeholder-id",
-        plan_upload_file_id=request.plan_file_id,
-        user_mask_upload_file_id=request.user_mask_file_id,
-        created_at=datetime.utcnow(),
-        created_by=1,
-        url="/uploads/hough/placeholder.png",
-    )
+    """Calculate Hough lines (placeholder)."""
+    return await svc.calculate_hough_placeholder(request)
 
 
 # === 3D Reconstruction ===
@@ -129,25 +93,13 @@ async def calculate_mesh(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
+    """Build 3D mesh from plan and mask."""
     try:
-        reconstruction = await svc.build_mesh(
-            plan_file_id=request.plan_file_id,
-            mask_file_id=request.user_mask_file_id,
-            user_id=1,
-        )
+        response = await svc.build_mesh_endpoint(request, user_id=1)
+        return response
     except Exception as e:
-        logger.error("build_mesh failed: %s", e)
+        logger.error("build_mesh failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка построения 3D модели")
-    return CalculateMeshResponse(
-        id=reconstruction.id,
-        name=reconstruction.name or "",
-        status=reconstruction.status,
-        status_display=svc.get_status_display(reconstruction.status),
-        created_at=reconstruction.created_at,
-        created_by=reconstruction.created_by or 1,
-        url=svc.build_mesh_url(reconstruction),
-        error_message=reconstruction.error_message,
-    )
 
 
 @router.get("/reconstructions", response_model=List[ReconstructionListItem])
@@ -156,6 +108,7 @@ async def get_reconstructions(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
+    """List saved reconstructions."""
     reconstructions = await svc.get_saved_reconstructions()
     return [
         ReconstructionListItem(
@@ -174,18 +127,11 @@ async def get_reconstruction_by_id(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    reconstruction = await svc.get_reconstruction(id)
-    if not reconstruction:
+    """Get reconstruction by ID."""
+    response = await svc.get_reconstruction_response(id)
+    if not response:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
-    return CalculateMeshResponse(
-        id=reconstruction.id,
-        name=reconstruction.name or "",
-        status=reconstruction.status,
-        status_display=svc.get_status_display(reconstruction.status),
-        created_at=reconstruction.created_at,
-        created_by=reconstruction.created_by or 1,
-        url=svc.build_mesh_url(reconstruction),
-    )
+    return response
 
 
 @router.put("/reconstructions/{id}/save", response_model=CalculateMeshResponse)
@@ -195,18 +141,11 @@ async def save_reconstruction(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    reconstruction = await svc.save_reconstruction(id, request.name)
-    if not reconstruction:
+    """Save reconstruction with name."""
+    response = await svc.save_reconstruction_endpoint(id, request.name)
+    if not response:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
-    return CalculateMeshResponse(
-        id=reconstruction.id,
-        name=reconstruction.name or "",
-        status=reconstruction.status,
-        status_display=svc.get_status_display(reconstruction.status),
-        created_at=reconstruction.created_at,
-        created_by=reconstruction.created_by or 1,
-        url=svc.build_mesh_url(reconstruction),
-    )
+    return response
 
 
 @router.patch("/reconstructions/{id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -215,6 +154,7 @@ async def patch_reconstruction(
     request: PatchReconstructionRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """Patch reconstruction (not implemented)."""
     pass
 
 
@@ -224,6 +164,7 @@ async def delete_reconstruction(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
+    """Delete reconstruction."""
     deleted = await svc.delete_reconstruction(id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
@@ -252,8 +193,8 @@ async def update_vectorization_data(
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
     """Update vectorization data (from floor-editor)."""
-    result = await svc.update_vectorization_data(id, data)
-    if result is None:
+    success = await svc.update_vectorization_data(id, data)
+    if not success:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
     return {"message": "Vectorization data updated"}
 
@@ -265,6 +206,7 @@ async def get_rooms(
     id: int,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """Get rooms for reconstruction."""
     return RoomsRequest(rooms=[])
 
 
@@ -274,6 +216,7 @@ async def save_rooms(
     request: RoomsRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ):
+    """Save rooms for reconstruction."""
     pass
 
 
@@ -283,45 +226,40 @@ async def save_rooms(
 async def build_nav_graph(
     request: BuildNavGraphRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
 ):
-    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    """Build navigation graph from mask and rooms."""
     try:
-        metadata = await svc.build_graph(
-            mask_file_id=request.mask_file_id,
-            rooms=request.rooms,
-            doors=request.doors,
-            scale_factor=request.scale_factor,
-        )
+        response = await svc.build_graph_endpoint(request)
+        return response
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        logger.error("build_nav_graph failed: %s", e)
+        logger.error("build_nav_graph failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка построения навигационного графа")
-    return BuildNavGraphResponse(
-        graph_id=request.mask_file_id,
-        **metadata,
-    )
 
 
-@router.get("/nav-graph/{graph_id}")
+@router.get("/nav-graph/{graph_id}", response_model=dict)
 async def get_nav_graph(
     graph_id: str,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
 ):
-    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    """Get navigation graph data."""
     try:
         nav_data = svc.load_graph(graph_id)
+        return nav_data
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    return nav_data
 
 
 @router.post("/route", response_model=FindRouteResponse)
 async def find_route_endpoint(
     request: FindRouteRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
 ):
-    svc = NavService(upload_dir=str(settings.UPLOAD_DIR))
+    """Find route between two rooms."""
     result = await svc.find_route(
         graph_id=request.graph_id,
         from_room_id=request.from_room_id,

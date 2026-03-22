@@ -49,12 +49,12 @@ async def test_upload_plan_photo_invalid_extension_returns_400(client, auth_head
 @pytest.mark.asyncio
 async def test_upload_plan_photo_with_auth_and_valid_image_returns_200(client, auth_headers, tmp_path, monkeypatch):
     """Upload with valid JPEG — override save path to avoid disk writes."""
-    import app.api.upload as upload_module
+    from app.services.file_storage import FileStorage
 
-    async def mock_save(file, subfolder=""):
+    async def mock_save_uploaded_file(self, file_content, filename, subfolder=""):
         return "mock-file-id"
 
-    monkeypatch.setattr(upload_module, "save_upload_file", mock_save)
+    monkeypatch.setattr(FileStorage, "save_uploaded_file", mock_save_uploaded_file)
 
     from app.db.repositories.reconstruction_repo import ReconstructionRepository
 

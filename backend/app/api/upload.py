@@ -2,10 +2,7 @@
 API routes for file uploads
 """
 
-import os
-import uuid
 from datetime import datetime
-from typing import Optional
 
 from fastapi import APIRouter, UploadFile, File, HTTPException, Depends, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -13,8 +10,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.models import UploadPhotoResponse
 from app.core.config import settings
 from app.core.security import decode_token
-from app.api.deps import get_repo
+from app.api.deps import get_reconstruction_repo, get_file_storage
 from app.db.repositories.reconstruction_repo import ReconstructionRepository
+from app.services.file_storage import FileStorage
 
 router = APIRouter(prefix="/upload", tags=["Upload"])
 security = HTTPBearer()
@@ -28,23 +26,6 @@ def validate_file(file: UploadFile) -> None:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Недопустимый формат файла. Разрешены: {settings.ALLOWED_EXTENSIONS}"
         )
-
-
-async def save_upload_file(file: UploadFile, subfolder: str = "") -> str:
-    """Сохранение загруженного файла"""
-    file_id = str(uuid.uuid4())
-    ext = file.filename.split(".")[-1].lower() if file.filename else "jpg"
-
-    upload_dir = os.path.join(settings.UPLOAD_DIR, subfolder)
-    os.makedirs(upload_dir, exist_ok=True)
-
-    file_path = os.path.join(upload_dir, f"{file_id}.{ext}")
-
-    content = await file.read()
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    return file_id
 
 
 def get_user_id(credentials: HTTPAuthorizationCredentials) -> int:
@@ -61,7 +42,8 @@ def get_user_id(credentials: HTTPAuthorizationCredentials) -> int:
 async def upload_plan_photo(
     file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    repo: ReconstructionRepository = Depends(get_repo),
+    repo: ReconstructionRepository = Depends(get_reconstruction_repo),
+    storage: FileStorage = Depends(get_file_storage),
 ):
     """
     Загрузка изображения плана эвакуации
@@ -69,7 +51,8 @@ async def upload_plan_photo(
     user_id = get_user_id(credentials)
     validate_file(file)
 
-    file_id = await save_upload_file(file, "plans")
+    content = await file.read()
+    file_id = await storage.save_uploaded_file(content, file.filename or "plan.jpg", "plans")
     ext = file.filename.split('.')[-1] if file.filename else "jpg"
     url = f"/api/v1/uploads/plans/{file_id}.{ext}"
 
@@ -96,7 +79,8 @@ async def upload_plan_photo(
 async def upload_user_mask(
     file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    repo: ReconstructionRepository = Depends(get_repo),
+    repo: ReconstructionRepository = Depends(get_reconstruction_repo),
+    storage: FileStorage = Depends(get_file_storage),
 ):
     """
     Загрузка пользовательской маски
@@ -104,7 +88,8 @@ async def upload_user_mask(
     user_id = get_user_id(credentials)
     validate_file(file)
 
-    file_id = await save_upload_file(file, "masks")
+    content = await file.read()
+    file_id = await storage.save_uploaded_file(content, file.filename or "mask.jpg", "masks")
     ext = file.filename.split('.')[-1] if file.filename else "jpg"
     url = f"/api/v1/uploads/masks/{file_id}.{ext}"
 
@@ -131,7 +116,8 @@ async def upload_user_mask(
 async def upload_environment_photo(
     file: UploadFile = File(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
-    repo: ReconstructionRepository = Depends(get_repo),
+    repo: ReconstructionRepository = Depends(get_reconstruction_repo),
+    storage: FileStorage = Depends(get_file_storage),
 ):
     """
     Загрузка фото окружения для идентификации позиции
@@ -139,7 +125,8 @@ async def upload_environment_photo(
     user_id = get_user_id(credentials)
     validate_file(file)
 
-    file_id = await save_upload_file(file, "environment")
+    content = await file.read()
+    file_id = await storage.save_uploaded_file(content, file.filename or "env.jpg", "environment")
     ext = file.filename.split('.')[-1] if file.filename else "jpg"
     url = f"/api/v1/uploads/environment/{file_id}.{ext}"
 

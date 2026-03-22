@@ -174,7 +174,7 @@ class NavService:
                 # Box center in 3D:
                 cx = rx + rw / 2.0
                 cy = ry + rh / 2.0
-                
+
                 # We need to map pixel coordinates exactly as transform_2d_to_3d does.
                 center_x_3d = cx * scale_factor
                 center_z_3d = (cy - mask_height) * scale_factor
@@ -199,3 +199,17 @@ class NavService:
             "from_room_3d": from_room_3d,
             "to_room_3d": to_room_3d,
         }
+
+    async def build_graph_endpoint(self, request) -> dict:
+        """Endpoint wrapper for build_graph. Returns BuildNavGraphResponse."""
+        metadata = await self.build_graph(
+            mask_file_id=request.mask_file_id,
+            rooms=request.rooms,
+            doors=request.doors,
+            scale_factor=request.scale_factor,
+        )
+        from app.models.reconstruction import BuildNavGraphResponse
+        return BuildNavGraphResponse(
+            graph_id=request.mask_file_id,
+            **metadata,
+        )

@@ -45,13 +45,18 @@ async def test_get_reconstructions_with_auth_returns_200(client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_get_reconstruction_by_id_existing_returns_200(client, auth_headers):
-    from unittest.mock import patch, MagicMock
-    mock_rec = _make_mock_reconstruction(id=42)
+    from app.models.reconstruction import CalculateMeshResponse
+    mock_response = CalculateMeshResponse(
+        id=42,
+        name="Test",
+        status=3,
+        status_display="Готово",
+        created_at=datetime.utcnow(),
+        created_by=1,
+        url=None,
+    )
     mock_svc = AsyncMock()
-    mock_svc.get_reconstruction.return_value = mock_rec
-    # get_status_display and build_mesh_url are synchronous — must not be coroutines
-    mock_svc.get_status_display = MagicMock(return_value="Готово")
-    mock_svc.build_mesh_url = MagicMock(return_value=None)
+    mock_svc.get_reconstruction_response.return_value = mock_response
 
     app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
     try:
@@ -68,7 +73,7 @@ async def test_get_reconstruction_by_id_existing_returns_200(client, auth_header
 @pytest.mark.asyncio
 async def test_get_reconstruction_by_id_missing_returns_404(client, auth_headers):
     mock_svc = AsyncMock()
-    mock_svc.get_reconstruction.return_value = None
+    mock_svc.get_reconstruction_response.return_value = None
 
     app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
     try:
@@ -92,8 +97,16 @@ async def test_post_initial_masks_without_auth_returns_403(client):
 
 @pytest.mark.asyncio
 async def test_post_initial_masks_with_auth_returns_200(client, auth_headers):
+    from app.models.reconstruction import CalculateMaskResponse
+    mock_response = CalculateMaskResponse(
+        id="some-id",
+        source_upload_file_id="some-id",
+        created_at=datetime.utcnow(),
+        created_by=1,
+        url="/api/v1/uploads/masks/some-id.png",
+    )
     mock_svc = AsyncMock()
-    mock_svc.calculate_mask.return_value = "some-id.png"
+    mock_svc.calculate_mask_endpoint.return_value = mock_response
 
     app.dependency_overrides[get_mask_service] = lambda: mock_svc
     try:

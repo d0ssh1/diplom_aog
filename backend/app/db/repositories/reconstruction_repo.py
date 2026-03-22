@@ -6,13 +6,14 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.reconstruction import Reconstruction, UploadedFile
+from app.db.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
 
 
-class ReconstructionRepository:
+class ReconstructionRepository(BaseRepository):
     def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+        super().__init__(session)
 
     async def create_uploaded_file(
         self,

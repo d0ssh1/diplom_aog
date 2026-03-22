@@ -10,6 +10,7 @@ from app.models.domain import VectorizationResult
 
 if TYPE_CHECKING:
     import trimesh
+    from shapely.geometry import Polygon as ShapelyPolygon
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ def _create_floor(
     if width_m <= 0 or height_m <= 0:
         return None
     try:
-        import trimesh as _trimesh
+        import trimesh
     except ImportError:
         return None
     vertices = np.array([
@@ -33,7 +34,7 @@ def _create_floor(
         [0.0,     0.0, height_m],
     ], dtype=np.float64)
     faces = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int64)
-    mesh = _trimesh.Trimesh(vertices=vertices, faces=faces)
+    mesh = trimesh.Trimesh(vertices=vertices, faces=faces)
     colors = np.tile(color, (len(vertices), 1)).astype(np.uint8)
     mesh.visual.vertex_colors = colors
     return mesh
@@ -50,7 +51,6 @@ def _create_wall_cap(
     ось Z становится Y, поэтому крышка окажется на Y=height в Three.js.
     """
     try:
-        import trimesh as _trimesh
         from trimesh import creation as trimesh_creation
     except ImportError:
         return None
@@ -93,16 +93,13 @@ def build_mesh_from_mask(
         trimesh.Trimesh — объединённый меш. НЕ сохранён на диск.
     """
     try:
-        import trimesh as _trimesh
+        import trimesh
     except ImportError:
         raise ImageProcessingError("build_mesh_from_mask", "trimesh not installed")
 
     from app.processing.mesh_generator import (
         extrude_wall,
-        WALL_COLOR,
         WALL_SIDE_COLOR,
-        WALL_CAP_COLOR,
-        FLOOR_COLOR,
     )
     from shapely.geometry import Polygon as ShapelyPolygon
 
@@ -222,10 +219,13 @@ def build_mesh_from_mask(
         )
 
     # Step 4: Combine
-    combined = _trimesh.util.concatenate(meshes)
+    if not meshes:
+        return trimesh.Trimesh()
+
+    combined = trimesh.util.concatenate(meshes)
 
     # Step 5: Z-up → Y-up (Three.js convention)
-    matrix = _trimesh.transformations.rotation_matrix(
+    matrix = trimesh.transformations.rotation_matrix(
         -math.pi / 2, [1, 0, 0],
     )
     combined.apply_transform(matrix)

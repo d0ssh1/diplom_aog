@@ -1,10 +1,10 @@
 """
 API routes for authentication
 """
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials, OAuth2PasswordRequestForm
-from sqlalchemy import select
 
 from app.models import (
     TokenResponse,
@@ -20,34 +20,36 @@ from app.core.security import (
     create_access_token,
     decode_token,
 )
-from app.core.database import async_session_maker
-from app.db.models.user import User
+from app.db.repositories.user_repository import UserRepository
+from app.api.deps import get_user_repo
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/token", tags=["Authentication"])
 security = HTTPBearer()
 
 
 @router.post("/login/", response_model=TokenResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    repo: UserRepository = Depends(get_user_repo),
+):
     """
     Авторизация пользователя (OAuth2 standard)
     """
-    async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.username == form_data.username))
-        user = result.scalar_one_or_none()
+    user = await repo.get_by_username(form_data.username)
 
-        if not user or not verify_password(form_data.password, user.hashed_password):
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Неверный логин или пароль",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
+    if not user or not verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Неверный логин или пароль",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
-        if not user.is_active:
-            raise HTTPException(status_code=400, detail="Пользователь неактивен")
+    if not user.is_active:
+        raise HTTPException(status_code=400, detail="Пользователь неактивен")
 
-        token = create_access_token(data={"sub": user.username})
-        return TokenResponse(auth_token=token)
+    token = create_access_token(data={"sub": user.username})
+    return TokenResponse(auth_token=token)
 
 
 @router.post("/logout/", status_code=status.HTTP_204_NO_CONTENT)
@@ -64,7 +66,10 @@ async def logout(
 
 
 @router.post("/forgot-password/")
-async def forgot_password(request: ForgotPasswordRequest):
+async def forgot_password(
+    request: ForgotPasswordRequest,
+    repo: UserRepository = Depends(get_user_repo),
+):
     """
     Запрос на сброс пароля.
 
@@ -72,16 +77,12 @@ async def forgot_password(request: ForgotPasswordRequest):
     Всегда возвращает успех (чтобы не раскрывать существование аккаунтов).
     В production: здесь отправка email со ссылкой для сброса.
     """
-    async with async_session_maker() as session:
-        result = await session.execute(
-            select(User).where(User.email == request.email)
-        )
-        user = result.scalar_one_or_none()
+    user = await repo.get_by_email(request.email)
 
-        # Логируем для отладки, но клиенту всегда возвращаем одинаковый ответ
-        if user:
-            # TODO: Отправка email с токеном сброса пароля
-            pass
+    # Логируем для отладки, но клиенту всегда возвращаем одинаковый ответ
+    if user:
+        # TODO: Отправка email с токеном сброса пароля
+        pass
 
     msg = "Если аккаунт с указанным email существует, инструкции отправлены на почту"
     return {"detail": msg}
@@ -93,7 +94,10 @@ users_router = APIRouter(prefix="/users", tags=["Users"])
 
 
 @users_router.post("/", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest):
+async def register(
+    request: RegisterRequest,
+    repo: UserRepository = Depends(get_user_repo),
+):
     """
     Регистрация нового пользователя
     """
@@ -103,43 +107,40 @@ async def register(request: RegisterRequest):
             detail="Пароли не совпадают"
         )
 
-    async with async_session_maker() as session:
-        # 1. Проверяем существование пользователя
-        result = await session.execute(select(User).where(User.username == request.username))
-        if result.scalar_one_or_none():
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Пользователь с таким именем уже существует"
-            )
+    # 1. Проверяем существование пользователя
+    existing_user = await repo.get_by_username(request.username)
+    if existing_user:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Пользователь с таким именем уже существует"
+        )
 
-        # 2. Создаём пользователя
-        hashed_password = get_password_hash(request.password)
-        new_user = User(
+    # 2. Создаём пользователя
+    hashed_password = get_password_hash(request.password)
+    try:
+        new_user = await repo.create(
             username=request.username,
             email=request.email,
             full_name=request.full_name,
             hashed_password=hashed_password,
             is_active=False,
             is_staff=False,
-            is_superuser=False
+            is_superuser=False,
         )
-        session.add(new_user)
-        try:
-            await session.commit()
-            await session.refresh(new_user)
-        except Exception as e:
-            await session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Ошибка создания пользователя: {str(e)}"
-            )
+    except Exception as e:
+        logger.error("User registration failed: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Ошибка создания пользователя: {str(e)}"
+        )
 
-        return new_user
+    return new_user
 
 
 @users_router.get("/me/", response_model=UserResponse)
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    repo: UserRepository = Depends(get_user_repo),
 ):
     """
     Получить данные текущего пользователя
@@ -152,17 +153,15 @@ async def get_current_user(
         )
 
     username = payload.get("sub")
-    async with async_session_maker() as session:
-        result = await session.execute(select(User).where(User.username == username))
-        user = result.scalar_one_or_none()
+    user = await repo.get_by_username(username)
 
-        if not user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Пользователь не найден"
-            )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Пользователь не найден"
+        )
 
-        return user
+    return user
 
 
 @users_router.put("/me/", response_model=UserResponse)
@@ -197,7 +196,8 @@ async def set_password(
 
 @users_router.get("/pending/", response_model=list[UserResponse])
 async def get_pending_users(
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    repo: UserRepository = Depends(get_user_repo),
 ):
     """
     Получить список пользователей, ожидающих подтверждения (is_active=False)
@@ -211,31 +211,25 @@ async def get_pending_users(
         )
 
     username = payload.get("sub")
-    async with async_session_maker() as session:
-        # Проверяем права администратора или can_approve_users
-        result = await session.execute(select(User).where(User.username == username))
-        current_user = result.scalar_one_or_none()
+    current_user = await repo.get_by_username(username)
 
-        if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Недостаточно прав"
-            )
-
-        # Получаем неактивных пользователей
-        result = await session.execute(
-            select(User).where(User.is_active.is_(False)).order_by(User.date_joined.desc())
+    if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав"
         )
-        pending_users = result.scalars().all()
 
-        return pending_users
+    # Получаем неактивных пользователей
+    pending_users = await repo.get_pending_users()
+    return pending_users
 
 
 @users_router.post("/{user_id}/approve/", response_model=UserResponse)
 async def approve_user(
     user_id: int,
     can_approve_users: bool = False,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    repo: UserRepository = Depends(get_user_repo),
 ):
     """
     Подтвердить регистрацию пользователя (установить is_active=True)
@@ -250,48 +244,35 @@ async def approve_user(
         )
 
     username = payload.get("sub")
-    async with async_session_maker() as session:
-        # Проверяем права администратора или can_approve_users
-        result = await session.execute(select(User).where(User.username == username))
-        current_user = result.scalar_one_or_none()
+    current_user = await repo.get_by_username(username)
 
-        if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Недостаточно прав"
-            )
+    if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав"
+        )
 
-        # Находим пользователя для подтверждения
-        result = await session.execute(select(User).where(User.id == user_id))
-        user_to_approve = result.scalar_one_or_none()
+    # Активируем пользователя
+    user_to_approve = await repo.update_activation(
+        user_id=user_id,
+        is_active=True,
+        can_approve_users=can_approve_users,
+    )
 
-        if not user_to_approve:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Пользователь не найден"
-            )
+    if not user_to_approve:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
 
-        # Активируем пользователя
-        user_to_approve.is_active = True
-        user_to_approve.can_approve_users = can_approve_users
-
-        try:
-            await session.commit()
-            await session.refresh(user_to_approve)
-        except Exception as e:
-            await session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Ошибка подтверждения пользователя: {str(e)}"
-            )
-
-        return user_to_approve
+    return user_to_approve
 
 
 @users_router.post("/{user_id}/reject/", status_code=status.HTTP_200_OK)
 async def reject_user(
     user_id: int,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    repo: UserRepository = Depends(get_user_repo),
 ):
     """
     Отклонить заявку пользователя (удалить из БД)
@@ -305,37 +286,21 @@ async def reject_user(
         )
 
     username = payload.get("sub")
-    async with async_session_maker() as session:
-        # Проверяем права администратора или can_approve_users
-        result = await session.execute(select(User).where(User.username == username))
-        current_user = result.scalar_one_or_none()
+    current_user = await repo.get_by_username(username)
 
-        if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Недостаточно прав"
-            )
+    if not current_user or not (current_user.is_superuser or current_user.can_approve_users):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Недостаточно прав"
+        )
 
-        # Находим пользователя для отклонения
-        result = await session.execute(select(User).where(User.id == user_id))
-        user_to_reject = result.scalar_one_or_none()
+    # Удаляем пользователя
+    deleted = await repo.delete(user_id)
 
-        if not user_to_reject:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Пользователь не найден"
-            )
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Пользователь не найден"
+        )
 
-        # Удаляем пользователя
-        await session.delete(user_to_reject)
-
-        try:
-            await session.commit()
-        except Exception as e:
-            await session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Ошибка отклонения заявки: {str(e)}"
-            )
-
-        return {"status": "rejected", "user_id": user_id}
+    return {"status": "rejected", "user_id": user_id}

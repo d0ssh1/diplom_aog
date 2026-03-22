@@ -2,13 +2,12 @@ import glob
 import json
 import logging
 import os
-from typing import Tuple
+from datetime import datetime
 
 import cv2
 import numpy as np
 
 from app.core.exceptions import FileStorageError, ImageProcessingError
-from app.processing.binarization import BinarizationService
 from app.processing.pipeline import (
     color_filter,
     normalize_brightness,
@@ -27,7 +26,6 @@ class MaskService:
         self._plans_dir = os.path.join(upload_dir, "plans")
         self._masks_dir = os.path.join(upload_dir, "masks")
         os.makedirs(self._masks_dir, exist_ok=True)
-        self._binarization = BinarizationService(os.path.join(upload_dir, "processed"))
 
     def _find_file(self, file_id: str, subfolder: str) -> str:
         """Finds file with any extension. Raises FileStorageError if not found."""
@@ -217,3 +215,47 @@ class MaskService:
             logger.info("Text blocks saved: %s (%d blocks)", text_json_path, len(text_blocks))
 
         return os.path.basename(output_path)
+
+    async def calculate_mask_endpoint(self, request) -> dict:
+        """Endpoint wrapper for calculate_mask. Returns CalculateMaskResponse dict."""
+        crop_dict = None
+        if request.crop:
+            crop_dict = {
+                'x': request.crop.x,
+                'y': request.crop.y,
+                'width': request.crop.width,
+                'height': request.crop.height,
+            }
+        filename = await self.calculate_mask(
+            request.file_id,
+            crop=crop_dict,
+            rotation=request.rotation,
+            block_size=request.block_size,
+            threshold_c=request.threshold_c,
+        )
+        from app.models.reconstruction import CalculateMaskResponse
+        return CalculateMaskResponse(
+            id=request.file_id,
+            source_upload_file_id=request.file_id,
+            created_at=datetime.utcnow(),
+            created_by=1,
+            url=f"/api/v1/uploads/masks/{filename}",
+        )
+
+    async def preview_mask_endpoint(self, request) -> bytes:
+        """Endpoint wrapper for preview_mask."""
+        crop_dict = None
+        if request.crop:
+            crop_dict = {
+                'x': request.crop.x,
+                'y': request.crop.y,
+                'width': request.crop.width,
+                'height': request.crop.height,
+            }
+        return await self.preview_mask(
+            file_id=request.file_id,
+            crop=crop_dict,
+            rotation=request.rotation,
+            block_size=request.block_size,
+            threshold_c=request.threshold_c,
+        )
