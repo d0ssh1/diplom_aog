@@ -41,7 +41,7 @@ export const WizardShell: React.FC<WizardShellProps> = ({
 
       {!hideFooter && (
         <footer className={styles.footer}>
-          <button type="button" className={styles.btnBack} onClick={onPrev} disabled={currentStep === 1}>
+          <button type="button" className={styles.btnBack} onClick={onPrev}>
             Назад
           </button>
           <button type="button" className={styles.btnNext} onClick={onNext} disabled={nextDisabled}>

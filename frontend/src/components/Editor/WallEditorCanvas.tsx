@@ -116,7 +116,14 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
 
       if (initialCanvasState) {
         canvas.loadFromJSON(initialCanvasState, () => {
+          canvas.forEachObject((obj) => {
+            obj.selectable = false;
+            obj.evented = false;
+          });
           canvas.renderAll();
+          
+          // Re-trigger active tool handlers so they can selectively enable evented if needed
+          canvas.fire('canvas:restored');
         });
       }
 
@@ -220,6 +227,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               const circle = new fabric.Circle({
                 left: cx, top: cy, radius: 3, fill: '#4CAF50',
                 originX: 'center', originY: 'center', selectable: false, evented: false,
+                padding: 15,
               });
               (circle as unknown as { data: { id: string; type: string } }).data = { id: door.id, type: 'door' };
               canvas.add(circle);
@@ -253,6 +261,18 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
 
     // Fix 4: ref to track pending erase confirmation (avoids stale closure issues)
     const pendingEraseRef = useRef(false);
+
+    const bringAnnotationsToFront = useCallback(() => {
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+      canvas.getObjects().forEach(o => {
+        const data = (o as unknown as { data?: { type?: string } }).data;
+        if (data && (data.type === 'annotation' || data.type === 'door')) {
+          canvas.bringToFront(o);
+        }
+      });
+      canvas.renderAll();
+    }, []);
 
     const attachToolHandlers = useCallback(() => {
       const canvas = fabricRef.current;
@@ -296,6 +316,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             path.selectable = false;
             path.evented = false;
             (path as unknown as { data: { type: string } }).data = { type: 'eraser-stroke' };
+            bringAnnotationsToFront();
           });
 
           // Custom cursor — orange dashed circle sized to brush
@@ -441,6 +462,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
               originY: 'center',
               selectable: false,
               evented: false,
+              padding: 15,
             });
             (circle as unknown as { data: { id: string; type: string } }).data = {
               id,
@@ -523,6 +545,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
             };
 
             canvas.add(line);
+            bringAnnotationsToFront();
             canvas.renderAll();
             startPoint = null;
           }
@@ -671,6 +694,15 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
     // A4: add eraserMode to dependencies so handlers re-attach on mode change
     useEffect(() => {
       attachToolHandlers();
+
+      const canvas = fabricRef.current;
+      if (!canvas) return;
+
+      const handleRestored = () => attachToolHandlers();
+      canvas.on('canvas:restored', handleRestored);
+      return () => {
+        canvas.off('canvas:restored', handleRestored);
+      };
     }, [activeTool, brushSize, eraserMode, attachToolHandlers]);
 
     // A5: confirm erase — draw black rect, clear selection state
@@ -685,6 +717,7 @@ const WallEditorCanvas = forwardRef<WallEditorCanvasRef, WallEditorCanvasProps>(
       canvas.remove(fabricRect);
       tempObjectsRef.current = tempObjectsRef.current.filter((o) => o !== fabricRect);
       canvas.add(eraseRect);
+      bringAnnotationsToFront();
       canvas.renderAll();
       pendingEraseRef.current = false;
       setEraseSelection(null);

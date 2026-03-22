@@ -83,6 +83,23 @@ export const LoginPage: React.FC = () => {
           <button type="submit" className={styles.submitBtn} disabled={isLoading}>
             {isLoading ? 'Загрузка...' : 'Войти'}
           </button>
+
+          <div className={styles.links}>
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => navigate('/register')}
+            >
+              Зарегистрироваться
+            </button>
+            <button
+              type="button"
+              className={styles.link}
+              onClick={() => navigate('/forgot-password')}
+            >
+              Забыли пароль?
+            </button>
+          </div>
         </form>
       </div>
     </div>

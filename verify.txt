@@ -1,0 +1,120 @@
+// ==========================================
+// ЭКРАН: Подтверждение учетной записи
+// ==========================================
+const AccountConfirmationView = ({ navigate }) => {
+    // Моковые данные заявок
+    const [requests, setRequests] = useState([
+        { id: 'REQ-8892', name: 'Иванов Алексей Петрович', email: 'ivanov.ap@uni.edu', role: 'Редактор карт', date: '22.03.2026', time: '14:32', status: 'pending' },
+        { id: 'REQ-8895', name: 'Смирнова Елена В.', email: 'smirnova@uni.edu', role: 'Администратор', date: '22.03.2026', time: '16:05', status: 'pending' },
+        { id: 'REQ-8896', name: 'Тех. Аккаунт (Auto)', email: 'system_bot_2@uni.edu', role: 'API Доступ', date: '21.03.2026', time: '09:12', status: 'pending' }
+    ]);
+    const [toastMessage, setToastMessage] = useState(null);
+
+    // Функция для показа уведомлений
+    const showToast = (message) => {
+        setToastMessage(message);
+        setTimeout(() => setToastMessage(null), 3000);
+    };
+
+    // Логика кнопок "Подтвердить" / "Отклонить"
+    const handleAction = (id, action) => {
+        setRequests(prev => prev.map(req => req.id === id ? { ...req, status: action } : req));
+        showToast(action === 'approved' ? `Пользователь ${id} успешно подтвержден` : `Заявка ${id} отклонена`);
+        
+        // Удаляем из списка через 500мс для красивой анимации скрытия
+        setTimeout(() => {
+            setRequests(prev => prev.filter(req => req.id !== id));
+        }, 500);
+    };
+
+    const pendingCount = requests.filter(r => r.status === 'pending').length;
+
+    return (
+        <LayoutWithSidebar navigate={navigate} activeRoute="confirm_account">
+            <div className="p-6 md:p-10 max-w-6xl mx-auto">
+                
+                {/* 1. ЗАГОЛОВОК И СЧЕТЧИК */}
+                <div className="flex flex-wrap justify-between items-start md:items-end mb-10 border-b-2 border-black pb-6 gap-4">
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-bold tracking-tight uppercase mb-2">Запросы на регистрацию</h1>
+                        <p className="font-mono text-gray-500 text-sm flex items-center">
+                            <ShieldAlert size={16} className="mr-2 text-[#FF4500]" />
+                            Требуется проверка администратором
+                        </p>
+                    </div>
+                    {/* Плашка счетчика */}
+                    <div className="bg-black text-white px-4 py-2 font-mono text-sm border-2 border-black shadow-[4px_4px_0px_0px_#FF4500] shrink-0 whitespace-nowrap">
+                        ОЖИДАЮТ: {pendingCount}
+                    </div>
+                </div>
+
+                {/* 2. СПИСОК КАРТОЧЕК */}
+                <div className="space-y-6 pb-10">
+                    {requests.length === 0 ? (
+                        <div className="border-2 border-dashed border-gray-400 p-16 flex flex-col items-center justify-center text-gray-500 mt-10">
+                            <CheckCircle2 size={64} className="mb-4 text-gray-300" strokeWidth={1} />
+                            <h3 className="text-xl font-bold text-black">Все заявки обработаны</h3>
+                            <p className="font-mono text-sm mt-2">Новых запросов на регистрацию нет.</p>
+                        </div>
+                    ) : (
+                        requests.map((req) => (
+                            <div 
+                                key={req.id} 
+                                className={`bg-white border-2 border-black p-6 flex flex-col lg:flex-row lg:items-center justify-between transition-all duration-300 transform 
+                                    ${req.status === 'approved' ? 'opacity-0 translate-x-10' : ''}
+                                    ${req.status === 'rejected' ? 'opacity-0 -translate-x-10 scale-95' : ''}
+                                    hover:shadow-[6px_6px_0px_0px_rgba(255,69,0,1)] hover:-translate-y-1 relative group gap-6
+                                `}
+                            >
+                                {/* Декоративная линия слева при наведении */}
+                                <div className="absolute left-0 top-0 bottom-0 w-2 bg-[#FF4500] opacity-0 group-hover:opacity-100 transition-opacity"></div>
+
+                                {/* Информация о пользователе */}
+                                <div className="flex-1 pl-4 md:pl-2 min-w-0">
+                                    <div className="flex items-center space-x-3 mb-2">
+                                        <span className="font-mono text-xs bg-gray-200 px-2 py-1 text-black font-bold shrink-0">{req.id}</span>
+                                        <span className="font-mono text-xs text-gray-500 flex items-center shrink-0"><Clock size={12} className="mr-1"/> {req.date} {req.time}</span>
+                                    </div>
+                                    <h3 className="text-xl font-bold flex items-center truncate">
+                                        <User size={20} className="mr-2 text-gray-400 shrink-0" />
+                                        <span className="truncate">{req.name}</span>
+                                    </h3>
+                                    <div className="flex flex-col sm:flex-row sm:space-x-6 mt-3 font-mono text-sm">
+                                        <p className="text-gray-600 truncate"><span className="text-gray-400">EMAIL:</span> {req.email}</p>
+                                        <p className="text-gray-600 mt-1 sm:mt-0 shrink-0"><span className="text-gray-400">РОЛЬ:</span> <span className="text-[#FF4500] font-bold">{req.role}</span></p>
+                                    </div>
+                                </div>
+
+                                {/* Кнопки действий */}
+                                <div className="flex shrink-0 w-full lg:w-auto space-x-3 pt-4 lg:pt-0 border-t lg:border-t-0 border-dashed border-gray-300">
+                                    <button 
+                                        onClick={() => handleAction(req.id, 'rejected')}
+                                        className="flex-1 lg:flex-none flex items-center justify-center px-4 py-3 bg-white border-2 border-black text-black hover:bg-black hover:text-white transition-colors font-mono text-sm font-bold uppercase whitespace-nowrap"
+                                    >
+                                        <Ban size={16} className="mr-2 shrink-0" />
+                                        Отклонить
+                                    </button>
+                                    <button 
+                                        onClick={() => handleAction(req.id, 'approved')}
+                                        className="flex-1 lg:flex-none flex items-center justify-center px-6 py-3 bg-[#FF4500] border-2 border-[#FF4500] text-black hover:bg-black hover:border-black hover:text-white transition-colors font-mono text-sm font-bold uppercase whitespace-nowrap"
+                                    >
+                                        <Check size={18} className="mr-2 shrink-0" />
+                                        Подтвердить
+                                    </button>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* Всплывающее уведомление (Toast) о результате действия */}
+            {toastMessage && (
+                <div className="fixed bottom-10 right-10 bg-black border-2 border-[#FF4500] text-white p-4 font-mono text-sm shadow-[6px_6px_0px_0px_rgba(255,69,0,0.5)] flex items-center animate-fade-in z-50">
+                    <div className="w-2 h-2 bg-[#FF4500] mr-3 rounded-full animate-pulse"></div>
+                    SYS.MSG // {toastMessage}
+                </div>
+            )}
+        </LayoutWithSidebar>
+    );
+};

@@ -1,0 +1,153 @@
+
+// ==========================================
+// ЭКРАН: Подтверждение учетной записи (НОВЫЙ)
+// ==========================================
+const AccountConfirmationView = ({ navigate }) => {
+    // Моковые данные заявок (убрана роль, добавлено поле canConfirm)
+    const [requests, setRequests] = useState([
+        { id: 'REQ-8892', name: 'Иванов Алексей Петрович', email: 'ivanov.ap@uni.edu', date: '22.03.2026', time: '14:32', status: 'pending', canConfirm: false },
+        { id: 'REQ-8895', name: 'Смирнова Елена В.', email: 'smirnova@uni.edu', date: '22.03.2026', time: '16:05', status: 'pending', canConfirm: false },
+        { id: 'REQ-8896', name: 'Тех. Аккаунт (Auto)', email: 'system_bot_2@uni.edu', date: '21.03.2026', time: '09:12', status: 'pending', canConfirm: false }
+    ]);
+    const [toastMessage, setToastMessage] = useState(null);
+
+    const showToast = (message) => {
+        setToastMessage(message);
+        setTimeout(() => setToastMessage(null), 3000);
+    };
+
+    const handleAction = (id, action) => {
+        setRequests(prev => prev.map(req => req.id === id ? { ...req, status: action } : req));
+        showToast(action === 'approved' ? `Пользователь ${id} успешно подтвержден` : `Заявка ${id} отклонена`);
+        
+        setTimeout(() => {
+            setRequests(prev => prev.filter(req => req.id !== id));
+        }, 500);
+    };
+
+    // Функция для переключения чекбокса прав
+    const toggleCanConfirm = (id) => {
+        setRequests(prev => prev.map(req => req.id === id ? { ...req, canConfirm: !req.canConfirm } : req));
+    };
+
+    const pendingCount = requests.filter(r => r.status === 'pending').length;
+
+    return (
+        <LayoutWithSidebar navigate={navigate} activeRoute="confirm_account">
+            {/* Убрали жесткие ограничения высоты, позволили контенту тянуться */}
+            <div className="p-6 md:p-10 max-w-6xl mx-auto">
+                
+                {/* Заголовок страницы - добавлен flex-wrap для адаптивности */}
+                <div className="flex flex-wrap justify-between items-start md:items-end mb-10 border-b-2 border-black pb-6 gap-4">
+                    <div>
+                        <h1 className="text-3xl md:text-4xl font-bold tracking-tight uppercase mb-2">Запросы на регистрацию</h1>
+                        <p className="font-mono text-gray-500 text-sm flex items-center">
+                            <ShieldAlert size={16} className="mr-2 text-[#FF4500]" />
+                            Требуется проверка администратором
+                        </p>
+                    </div>
+                    <div className="bg-black text-white px-4 py-2 font-mono text-sm border-2 border-black shadow-[4px_4px_0px_0px_#FF4500] shrink-0 whitespace-nowrap">
+                        ОЖИДАЮТ: {pendingCount}
+                    </div>
+                </div>
+
+                {/* Список заявок - Убрали overflow-y-auto, теперь скроллится вся страница */}
+                <div className="space-y-6 pb-10">
+                    {requests.length === 0 ? (
+                        <div className="border-2 border-dashed border-gray-400 p-16 flex flex-col items-center justify-center text-gray-500 mt-10">
+                            <CheckCircle2 size={64} className="mb-4 text-gray-300" strokeWidth={1} />
+                            <h3 className="text-xl font-bold text-black">Все заявки обработаны</h3>
+                            <p className="font-mono text-sm mt-2">Новых запросов на регистрацию нет.</p>
+                        </div>
+                    ) : (
+                        requests.map((req) => (
+                            <div 
+                                key={req.id} 
+                                className={`bg-white border-2 border-black p-6 md:p-8 flex flex-col 2xl:flex-row 2xl:items-center justify-between transition-all duration-300 transform 
+                                    ${req.status === 'approved' ? 'opacity-0 translate-x-10' : ''}
+                                    ${req.status === 'rejected' ? 'opacity-0 -translate-x-10 scale-95' : ''}
+                                    hover:shadow-[8px_8px_0px_0px_rgba(255,69,0,1)] hover:-translate-y-1 group gap-8
+                                `}
+                            >
+                                {/* Информация о пользователе (Слева) */}
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex items-center space-x-4 mb-5">
+                                        <span className="font-mono text-xs bg-gray-200 px-3 py-1.5 text-black font-bold shrink-0">{req.id}</span>
+                                        <span className="font-mono text-xs text-gray-500 flex items-center shrink-0">
+                                            <Clock size={14} className="mr-1.5"/> {req.date}, {req.time}
+                                        </span>
+                                    </div>
+                                    <h3 className="text-2xl font-bold flex items-center truncate mb-6">
+                                        <User size={24} className="mr-3 text-gray-400 shrink-0" strokeWidth={1.5} />
+                                        <span className="truncate">{req.name}</span>
+                                    </h3>
+                                    
+                                    <div className="flex flex-wrap gap-8 font-mono text-xs uppercase tracking-widest text-gray-400">
+                                        <div>
+                                            <div className="mb-1.5">Email</div>
+                                            <div className="text-gray-600 font-bold tracking-normal lowercase">{req.email}</div>
+                                        </div>
+                                        <div>
+                                            <div className="mb-1.5">Дата запроса</div>
+                                            <div className="text-gray-600 font-bold tracking-normal">{req.date}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Кнопки и чекбокс (Справа) */}
+                                <div className="flex flex-col lg:flex-row items-start lg:items-center gap-6 shrink-0">
+                                    
+                                    {/* Кнопки */}
+                                    <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+                                        <button 
+                                            onClick={() => handleAction(req.id, 'rejected')}
+                                            className="flex-1 sm:flex-none flex items-center justify-center px-6 py-4 bg-white border-2 border-black text-black hover:bg-black hover:text-white transition-colors font-mono text-sm font-bold uppercase whitespace-nowrap"
+                                        >
+                                            <Ban size={18} className="mr-2 shrink-0" />
+                                            Отклонить
+                                        </button>
+                                        <button 
+                                            onClick={() => handleAction(req.id, 'approved')}
+                                            className="flex-1 sm:flex-none flex items-center justify-center px-8 py-4 bg-[#FF4500] border-2 border-[#FF4500] text-black hover:bg-black hover:border-black hover:text-white transition-colors font-mono text-sm font-bold uppercase whitespace-nowrap"
+                                        >
+                                            <Check size={18} className="mr-2 shrink-0" />
+                                            Подтвердить
+                                        </button>
+                                    </div>
+
+                                    {/* Чекбокс */}
+                                    <div className="lg:w-48 xl:w-56 flex shrink-0 border-t-2 border-dashed border-gray-200 lg:border-none pt-4 lg:pt-0 w-full lg:w-auto">
+                                        <label className="flex items-start cursor-pointer group w-full">
+                                            <div className="relative mt-0.5 shrink-0">
+                                                <input 
+                                                    type="checkbox" 
+                                                    className="sr-only" 
+                                                    checked={req.canConfirm || false}
+                                                    onChange={() => toggleCanConfirm(req.id)}
+                                                />
+                                                <div className={`w-5 h-5 border-2 flex items-center justify-center transition-colors ${req.canConfirm ? 'bg-[#FF4500] border-[#FF4500]' : 'bg-transparent border-gray-400 group-hover:border-black'}`}>
+                                                    {req.canConfirm && <Check size={14} className="text-black font-bold" strokeWidth={3} />}
+                                                </div>
+                                            </div>
+                                            <span className="ml-3 font-mono text-[11px] sm:text-xs text-gray-400 group-hover:text-black transition-colors uppercase tracking-widest leading-relaxed">
+                                                Дать право подтверждать учётные записи
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* Всплывающее уведомление (Toast) */}
+            {toastMessage && (
+                <div className="fixed bottom-10 right-10 bg-black border-2 border-[#FF4500] text-white p-4 font-mono text-sm shadow-[6px_6px_0px_0px_rgba(255,69,0,0.5)] flex items-center animate-fade-in z-50">
+                    <div className="w-2 h-2 bg-[#FF4500] mr-3 rounded-full animate-pulse"></div>
+                    SYS.MSG // {toastMessage}
+                </div>
+            )}
+        </LayoutWithSidebar>
+    );
+};

@@ -27,11 +27,10 @@ apiClient.interceptors.request.use(
 );
 
 // Interceptor для обработки ошибок
-// Interceptor для обработки ошибок
 apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    if (error.response?.status === 401) {
       localStorage.removeItem('auth_token');
       window.location.href = '/login';
     }
@@ -60,6 +59,11 @@ export const authApi = {
       return response.data;
   },
   
+  forgotPassword: async (email: string) => {
+    const response = await apiClient.post('/token/forgot-password/', { email });
+    return response.data;
+  },
+
   logout: async () => {
     await apiClient.post('/token/logout/');
     localStorage.removeItem('auth_token');
@@ -67,6 +71,23 @@ export const authApi = {
   
   getMe: async () => {
     const response = await apiClient.get('/users/me/');
+    return response.data;
+  },
+
+  getPendingUsers: async () => {
+    const response = await apiClient.get('/users/pending/');
+    return response.data;
+  },
+
+  approveUser: async (userId: number, canApproveUsers = false) => {
+    const response = await apiClient.post(`/users/${userId}/approve/`, null, {
+      params: { can_approve_users: canApproveUsers }
+    });
+    return response.data;
+  },
+
+  rejectUser: async (userId: number) => {
+    const response = await apiClient.post(`/users/${userId}/reject/`);
     return response.data;
   },
 };

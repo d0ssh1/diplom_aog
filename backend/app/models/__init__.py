@@ -13,6 +13,7 @@ try:
         UserUpdate,
         SetPasswordRequest,
         ChangePasswordRequest,
+        ForgotPasswordRequest,
         UpdateFlagRequest,
     )
 
@@ -61,6 +62,7 @@ try:
         "UserUpdate",
         "SetPasswordRequest",
         "ChangePasswordRequest",
+        "ForgotPasswordRequest",
         "UpdateFlagRequest",
         # Reconstruction
         "UploadPhotoResponse",

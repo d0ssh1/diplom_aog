@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, StretchHorizontal, DoorOpen } from 'lucide-react';
+import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, StretchHorizontal, DoorOpen, Trash2 } from 'lucide-react';
 import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
 import { RoomPopup } from '../Editor/RoomPopup';
@@ -39,7 +39,7 @@ const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] =
   { id: 'elevator', label: 'Лифт', icon: <ArrowUp size={18} /> },
   { id: 'corridor', label: 'Коридор', icon: <StretchHorizontal size={18} /> },
   { id: 'door', label: 'Дверь', icon: <DoorOpen size={18} /> },
-  { id: 'erase_markup', label: 'Удалить', icon: <Eraser size={18} /> },
+  { id: 'erase_markup', label: 'Удалить разметку', icon: <Trash2 size={18} /> },
 ];
 
 export const StepWallEditor: React.FC<StepWallEditorProps> = ({

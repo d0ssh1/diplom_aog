@@ -162,7 +162,23 @@
       "Bash(ls -lt /c/DIPLOM/diplom_aog/backend/uploads/masks/*_nav.json)",
       "Bash(python3:*)",
       "Bash(ls:*)",
-      "Bash(grep -v \"^$\")"
+      "Bash(grep -v \"^$\")",
+      "Bash(git rm:*)",
+      "Bash(xargs grep:*)",
+      "Bash(grep:*)",
+      "Bash(done)",
+      "Bash(sqlite3 diplom3d.db \"SELECT id, status, mask_file_id, mesh_file_id_glb, error_message FROM reconstructions ORDER BY id DESC LIMIT 5;\")",
+      "Bash(cd:*)",
+      "Bash(alembic revision:*)",
+      "Bash(sqlite3 backend/diplom3d.db \"SELECT id, username, is_superuser, is_active FROM users LIMIT 5;\")",
+      "Bash(curl -s http://localhost:8000/health)",
+      "Bash(curl -s http://localhost:5173/)",
+      "Bash(curl -s http://localhost:3000/)",
+      "Bash(netstat -ano)",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/token/login/ -H \"Content-Type: application/x-www-form-urlencoded\" -d \"username=admin&password=admin\")",
+      "Bash(curl -s -X GET http://localhost:8000/api/v1/users/pending/ -H \"Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsImV4cCI6MTc3NDIyNzc0MH0.Zlo-3Q9DdylVk_oxYrqjdh6XVU2xCIul0CpHuqT_0p8\")",
+      "Bash(sqlite3 diplom.db \"ALTER TABLE users ADD COLUMN full_name VARCHAR\\(255\\) NOT NULL DEFAULT ''''; ALTER TABLE users ADD COLUMN birth_date DATE NOT NULL DEFAULT ''2000-01-01'';\")",
+      "Bash(sqlite3 diplom.db \".schema users\")"
     ]
   }
 }

@@ -22,10 +22,11 @@ class TokenResponse(BaseModel):
 
 class RegisterRequest(BaseModel):
     """Запрос на регистрацию"""
-    username: str = Field(..., min_length=4, max_length=15, pattern=r"^[a-zA-Z0-9_-]+$")
+    username: str = Field(..., min_length=4, max_length=50, pattern=r"^[a-zA-Z0-9_.@-]+$")
     password: str = Field(..., min_length=8, max_length=20)
     re_password: str = Field(..., min_length=8, max_length=20)
     email: Optional[EmailStr] = None
+    full_name: str = Field(..., min_length=2, max_length=255)
 
 
 # === User ===
@@ -46,9 +47,11 @@ class UserCreate(UserBase):
 class UserResponse(UserBase):
     """Ответ с данными пользователя"""
     id: int
+    full_name: str
     is_staff: bool = False
     is_superuser: bool = False
     is_active: bool = True
+    can_approve_users: bool = False
     display_name: str = ""
     date_joined: datetime
 
@@ -73,6 +76,11 @@ class ChangePasswordRequest(BaseModel):
     """Административная смена пароля"""
     new_password: str = Field(..., min_length=8, max_length=20)
     re_new_password: str
+
+
+class ForgotPasswordRequest(BaseModel):
+    """Запрос на сброс пароля"""
+    email: EmailStr
 
 
 class UpdateFlagRequest(BaseModel):

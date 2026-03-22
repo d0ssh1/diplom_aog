@@ -1,7 +1,7 @@
 {
 "env": {
-"ANTHROPIC_BASE_URL": "https://api-kiro.filips-site.online/",
-"ANTHROPIC_API_KEY": "sk-kiro-t9u4esz8T4QbqLXrqsRpdoiyjcGa0KkC",
+"ANTHROPIC_BASE_URL": "https://claude-api.filips-site.online",
+"ANTHROPIC_API_KEY": "sk-kp-OlHNFNlzc3jgZGWhAQlDokGGaKEnHJEtyI4ONGoIdzo",
 "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
 "DISABLE_TELEMETRY": "1",
 "DISABLE_ERROR_REPORTING": "1",
