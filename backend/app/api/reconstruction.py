@@ -107,7 +107,7 @@ async def calculate_mesh(
             status_display=svc.get_status_display(reconstruction.status),
             created_at=reconstruction.created_at,
             created_by=reconstruction.created_by,
-            saved_at=reconstruction.saved_at,
+            saved_at=None,  # Field doesn't exist in DB model
             url=svc.build_mesh_url(reconstruction),
             error_message=reconstruction.error_message,
         )
@@ -152,7 +152,7 @@ async def get_reconstruction_by_id(
         status_display=svc.get_status_display(reconstruction.status),
         created_at=reconstruction.created_at,
         created_by=reconstruction.created_by,
-        saved_at=reconstruction.saved_at,
+        saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
         error_message=reconstruction.error_message,
     )
@@ -176,7 +176,7 @@ async def save_reconstruction(
         status_display=svc.get_status_display(reconstruction.status),
         created_at=reconstruction.created_at,
         created_by=reconstruction.created_by,
-        saved_at=reconstruction.saved_at,
+        saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
         error_message=reconstruction.error_message,
     )
