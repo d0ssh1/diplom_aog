@@ -40,6 +40,13 @@ export const Sidebar: React.FC = () => {
         >
           <span className={styles.arrow}>&gt;</span> Загрузить изображение
         </button>
+        <button
+          className={`${styles.item} ${isActive('/admin/stitching') ? styles.active : ''}`}
+          onClick={() => navigate('/admin/stitching')}
+          type="button"
+        >
+          <span className={styles.arrow}>&gt;</span> Сшивание планов
+        </button>
         {canApproveUsers && (
           <button
             className={`${styles.item} ${isActive('/admin/pending-users') ? styles.active : ''}`}

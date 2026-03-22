@@ -3,7 +3,7 @@ API routes for reconstruction operations.
 Thin router layer: validate → call service → return response.
 """
 import logging
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Path
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -119,16 +119,32 @@ async def calculate_mesh(
 @router.get("/reconstructions", response_model=List[ReconstructionListItem])
 async def get_reconstructions(
     is_saved: int = Query(1),
+    building_id: Optional[str] = Query(None),
+    floor_number: Optional[int] = Query(None),
+    status: Optional[int] = Query(None),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    """List saved reconstructions."""
+    """List saved reconstructions with optional filters."""
     reconstructions = await svc.get_saved_reconstructions()
+
+    # Apply filters
+    if building_id:
+        reconstructions = [r for r in reconstructions if r.building_id == building_id]
+    if floor_number is not None:
+        reconstructions = [r for r in reconstructions if r.floor_number == floor_number]
+    if status is not None:
+        reconstructions = [r for r in reconstructions if r.status == status]
+
     return [
         ReconstructionListItem(
             id=r.id,
             name=r.name or f"Реконструкция #{r.id}",
-            mesh_url=svc.build_mesh_url(r),
+            building_id=r.building_id,
+            floor_number=r.floor_number,
+            preview_url=svc.build_mesh_url(r),
+            rooms_count=0,  # TODO: count from vectorization_data
+            walls_count=0,  # TODO: count from vectorization_data
             created_at=r.created_at,
         )
         for r in reconstructions
@@ -165,8 +181,10 @@ async def save_reconstruction(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    """Save reconstruction with name."""
-    reconstruction = await svc.save_reconstruction(id, request.name)
+    """Save reconstruction with name, building_id, and floor_number."""
+    reconstruction = await svc.save_reconstruction(
+        id, request.name, request.building_id, request.floor_number
+    )
     if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
     return CalculateMeshResponse(

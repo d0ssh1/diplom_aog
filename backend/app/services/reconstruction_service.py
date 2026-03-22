@@ -274,19 +274,21 @@ class ReconstructionService:
         return await self._repo.get_saved()
 
     async def save_reconstruction(
-        self, reconstruction_id: int, name: str
+        self, reconstruction_id: int, name: str, building_id: Optional[str] = None, floor_number: Optional[int] = None
     ) -> Optional[Reconstruction]:
         """
-        Save reconstruction with a name.
+        Save reconstruction with a name, building_id, and floor_number.
 
         Args:
             reconstruction_id: Reconstruction ID
             name: Name to assign to the reconstruction
+            building_id: Building identifier (e.g., "A", "B", "C")
+            floor_number: Floor number
 
         Returns:
             Updated Reconstruction ORM model or None if not found
         """
-        return await self._repo.update_name(reconstruction_id, name)
+        return await self._repo.update_reconstruction(reconstruction_id, name, building_id, floor_number)
 
     async def delete_reconstruction(self, reconstruction_id: int) -> bool:
         """

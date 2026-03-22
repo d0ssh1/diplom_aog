@@ -34,12 +34,15 @@ class Reconstruction(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=True)
-    
+
     plan_file_id: Mapped[str] = mapped_column(String(36), ForeignKey("uploaded_files.id"), nullable=False)
     mask_file_id: Mapped[Optional[str]] = mapped_column(String(36), ForeignKey("uploaded_files.id"), nullable=True)
     mesh_file_id_obj: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     mesh_file_id_glb: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-    
+
+    building_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+    floor_number: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+
     status: Mapped[int] = mapped_column(Integer, default=1)  # 1=Created, 2=Processing, 3=Done, 4=Error
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     vectorization_data: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON VectorizationResult

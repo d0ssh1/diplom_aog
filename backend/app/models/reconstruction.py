@@ -117,12 +117,20 @@ class CalculateMeshResponse(BaseModel):
 class SaveReconstructionRequest(BaseModel):
     """Запрос на сохранение реконструкции"""
     name: str = Field(..., min_length=1, max_length=100)
+    building_id: Optional[str] = None
+    floor_number: Optional[int] = None
 
 
 class ReconstructionListItem(BaseModel):
     """Элемент списка реконструкций"""
     id: int
     name: str
+    building_id: Optional[str] = None
+    floor_number: Optional[int] = None
+    preview_url: Optional[str] = None
+    rooms_count: int = 0
+    walls_count: int = 0
+    created_at: datetime
 
 
 class PatchReconstructionRequest(BaseModel):

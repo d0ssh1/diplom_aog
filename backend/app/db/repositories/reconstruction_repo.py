@@ -119,6 +119,30 @@ class ReconstructionRepository(BaseRepository):
         await self._session.refresh(reconstruction)
         return reconstruction
 
+    async def update_reconstruction(
+        self,
+        reconstruction_id: int,
+        name: str,
+        building_id: Optional[str] = None,
+        floor_number: Optional[int] = None,
+    ) -> Optional[Reconstruction]:
+        """UPDATE name, building_id, floor_number. Returns None if not found."""
+        logger.debug(
+            "update_reconstruction: reconstruction_id=%d, name=%s, building_id=%s, floor_number=%s",
+            reconstruction_id, name, building_id, floor_number
+        )
+        reconstruction = await self._session.get(Reconstruction, reconstruction_id)
+        if not reconstruction:
+            return None
+        reconstruction.name = name
+        if building_id is not None:
+            reconstruction.building_id = building_id
+        if floor_number is not None:
+            reconstruction.floor_number = floor_number
+        await self._session.commit()
+        await self._session.refresh(reconstruction)
+        return reconstruction
+
     async def get_saved(
         self,
         user_id: Optional[int] = None,

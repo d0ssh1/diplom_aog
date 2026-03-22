@@ -13,7 +13,7 @@ interface UseWizardReturn {
   saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: any) => Promise<string | null>;
   buildNavGraph: (maskId: string, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
   buildMesh: (editedMaskId?: string) => Promise<void>;
-  save: (name: string) => Promise<void>;
+  save: (name: string, buildingId: string, floorNumber: number) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
   setRotation: (deg: 0 | 90 | 180 | 270) => void;
   setBlockSize: (v: number) => void;
@@ -144,11 +144,11 @@ export const useWizard = (): UseWizardReturn => {
   }, [state.planFileId, state.editedMaskFileId, state.maskFileId]);
 
   const save = useCallback(
-    async (name: string) => {
+    async (name: string, buildingId: string, floorNumber: number) => {
       if (!state.reconstructionId) return;
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        await reconstructionApi.saveReconstruction(state.reconstructionId, name);
+        await reconstructionApi.saveReconstruction(state.reconstructionId, name, buildingId, floorNumber);
         navigate('/');
       } catch {
         setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения' }));

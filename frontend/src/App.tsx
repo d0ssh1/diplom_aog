@@ -8,6 +8,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { WizardPage } from './pages/WizardPage';
 import { ViewMeshPage } from './pages/ViewMeshPage';
 import { PendingUsersPage } from './pages/PendingUsersPage';
+import { StitchingPage } from './pages/StitchingPage';
 
 function App() {
   return (
@@ -20,6 +21,7 @@ function App() {
         <Route index element={<DashboardPage />} />
         <Route path="mesh/:id" element={<ViewMeshPage />} />
         <Route path="pending-users" element={<PendingUsersPage />} />
+        <Route path="stitching" element={<StitchingPage />} />
       </Route>
       <Route path="/upload" element={<WizardPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />

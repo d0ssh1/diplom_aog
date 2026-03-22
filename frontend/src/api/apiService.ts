@@ -182,8 +182,12 @@ export const reconstructionApi = {
     return response.data;
   },
   
-  saveReconstruction: async (id: number, name: string) => {
-    const response = await apiClient.put(`/reconstruction/reconstructions/${id}/save`, { name });
+  saveReconstruction: async (id: number, name: string, buildingId?: string, floorNumber?: number) => {
+    const response = await apiClient.put(`/reconstruction/reconstructions/${id}/save`, {
+      name,
+      building_id: buildingId,
+      floor_number: floorNumber,
+    });
     return response.data;
   },
   
@@ -231,6 +235,24 @@ export const reconstructionApi = {
       to_room_id: toRoomId,
     });
     return res.data;
+  },
+
+  getReadyReconstructions: async (
+    buildingId?: string,
+    floorNumber?: number
+  ) => {
+    const params = new URLSearchParams();
+    params.append('status', 'ready_for_stitching');
+    if (buildingId) params.append('building_id', buildingId);
+    if (floorNumber !== undefined) params.append('floor_number', String(floorNumber));
+
+    const response = await apiClient.get(`/reconstruction/reconstructions?${params.toString()}`);
+    return response.data;
+  },
+
+  postStitching: async (request: unknown) => {
+    const response = await apiClient.post('/stitching/', request);
+    return response.data;
   },
 };
 
