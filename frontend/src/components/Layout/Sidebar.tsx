@@ -16,10 +16,10 @@ export const Sidebar: React.FC = () => {
           <span className={styles.arrow}>&gt;</span> Редактировать план помещения
         </button>
         <button className={styles.item} type="button" disabled>
-          <span className={styles.arrow}>&gt;</span> Редактировать узловые точки
-        </button>
-        <button className={styles.item} type="button" disabled>
           <span className={styles.arrow}>&gt;</span> Удалить план помещения
+        </button>
+        <button className={styles.item} onClick={() => navigate('/admin/pending-users')} type="button">
+          <span className={styles.arrow}>&gt;</span> Подтверждение учетной записи
         </button>
       </nav>
     </aside>

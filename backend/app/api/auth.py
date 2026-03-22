@@ -12,6 +12,7 @@ from app.models import (
     UserResponse,
     UserUpdate,
     SetPasswordRequest,
+    ForgotPasswordRequest,
 )
 from app.core.security import (
     verify_password,
@@ -66,6 +67,29 @@ async def logout(
     return None
 
 
+@router.post("/forgot-password/")
+async def forgot_password(request: ForgotPasswordRequest):
+    """
+    Запрос на сброс пароля.
+    
+    Принимает email, проверяет существование пользователя.
+    Всегда возвращает успех (чтобы не раскрывать существование аккаунтов).
+    В production: здесь отправка email со ссылкой для сброса.
+    """
+    async with async_session_maker() as session:
+        result = await session.execute(
+            select(User).where(User.email == request.email)
+        )
+        user = result.scalar_one_or_none()
+        
+        # Логируем для отладки, но клиенту всегда возвращаем одинаковый ответ
+        if user:
+            # TODO: Отправка email с токеном сброса пароля
+            pass
+    
+    return {"detail": "Если аккаунт с указанным email существует, инструкции отправлены на почту"}
+
+
 # === Users API ===
 
 users_router = APIRouter(prefix="/users", tags=["Users"])
@@ -97,7 +121,7 @@ async def register(request: RegisterRequest):
             username=request.username,
             email=request.email,
             hashed_password=hashed_password,
-            is_active=True,
+            is_active=False,
             is_staff=False,
             is_superuser=False
         )
@@ -171,3 +195,93 @@ async def set_password(
         status_code=status.HTTP_501_NOT_IMPLEMENTED,
         detail="Будет реализовано после настройки БД"
     )
+
+
+@users_router.get("/pending/", response_model=list[UserResponse])
+async def get_pending_users(
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Получить список пользователей, ожидающих подтверждения (is_active=False)
+    Доступно только администраторам
+    """
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный токен"
+        )
+
+    username = payload.get("sub")
+    async with async_session_maker() as session:
+        # Проверяем права администратора
+        result = await session.execute(select(User).where(User.username == username))
+        current_user = result.scalar_one_or_none()
+
+        if not current_user or not current_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав"
+            )
+
+        # Получаем неактивных пользователей
+        result = await session.execute(
+            select(User).where(User.is_active == False).order_by(User.date_joined.desc())
+        )
+        pending_users = result.scalars().all()
+
+        return pending_users
+
+
+@users_router.post("/{user_id}/approve/", response_model=UserResponse)
+async def approve_user(
+    user_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security)
+):
+    """
+    Подтвердить регистрацию пользователя (установить is_active=True)
+    Доступно только администраторам
+    """
+    payload = decode_token(credentials.credentials)
+    if not payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Недействительный токен"
+        )
+
+    username = payload.get("sub")
+    async with async_session_maker() as session:
+        # Проверяем права администратора
+        result = await session.execute(select(User).where(User.username == username))
+        current_user = result.scalar_one_or_none()
+
+        if not current_user or not current_user.is_superuser:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Недостаточно прав"
+            )
+
+        # Находим пользователя для подтверждения
+        result = await session.execute(select(User).where(User.id == user_id))
+        user_to_approve = result.scalar_one_or_none()
+
+        if not user_to_approve:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Пользователь не найден"
+            )
+
+        # Активируем пользователя
+        user_to_approve.is_active = True
+
+        try:
+            await session.commit()
+            await session.refresh(user_to_approve)
+        except Exception as e:
+            await session.rollback()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Ошибка подтверждения пользователя: {str(e)}"
+            )
+
+        return user_to_approve
