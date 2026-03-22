@@ -23,7 +23,10 @@ export const PendingUsersPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const navigate = useNavigate();
+
+  const ITEMS_PER_PAGE = 5;
 
   useEffect(() => {
     fetchPendingUsers();
@@ -81,6 +84,20 @@ export const PendingUsersPage: React.FC = () => {
 
   const pendingCount = users.filter(u => u.status === 'pending').length;
 
+  // Pagination
+  const totalPages = Math.ceil(users.length / ITEMS_PER_PAGE);
+  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+  const endIndex = startIndex + ITEMS_PER_PAGE;
+  const currentUsers = users.slice(startIndex, endIndex);
+  const showPagination = users.length > ITEMS_PER_PAGE;
+
+  // Reset to page 1 when users list changes
+  React.useEffect(() => {
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(totalPages);
+    }
+  }, [users.length, currentPage, totalPages]);
+
   if (loading) {
     return (
       <div className={styles.container}>
@@ -125,7 +142,7 @@ export const PendingUsersPage: React.FC = () => {
             <p className={styles.emptyText}>Новых запросов на регистрацию нет.</p>
           </div>
         ) : (
-          users.map((user) => (
+          currentUsers.map((user) => (
             <div
               key={user.id}
               className={`${styles.card} ${
@@ -196,6 +213,29 @@ export const PendingUsersPage: React.FC = () => {
           ))
         )}
       </div>
+
+      {/* Pagination */}
+      {showPagination && (
+        <div className={styles.pagination}>
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+            className={styles.paginationBtn}
+          >
+            ← Назад
+          </button>
+          <span className={styles.paginationInfo}>
+            Страница {currentPage} из {totalPages}
+          </span>
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+            className={styles.paginationBtn}
+          >
+            Вперёд →
+          </button>
+        </div>
+      )}
 
       {/* Toast notification */}
       {toastMessage && (
