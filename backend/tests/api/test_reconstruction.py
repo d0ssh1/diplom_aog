@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, MagicMock
 from datetime import datetime
 
 from main import app
@@ -45,18 +45,21 @@ async def test_get_reconstructions_with_auth_returns_200(client, auth_headers):
 
 @pytest.mark.asyncio
 async def test_get_reconstruction_by_id_existing_returns_200(client, auth_headers):
-    from app.models.reconstruction import CalculateMeshResponse
-    mock_response = CalculateMeshResponse(
-        id=42,
-        name="Test",
-        status=3,
-        status_display="Готово",
-        created_at=datetime.utcnow(),
-        created_by=1,
-        url=None,
-    )
+    from app.db.models.reconstruction import Reconstruction
+    mock_reconstruction = MagicMock(spec=Reconstruction)
+    mock_reconstruction.id = 42
+    mock_reconstruction.name = "Test"
+    mock_reconstruction.status = 3
+    mock_reconstruction.created_at = datetime.utcnow()
+    mock_reconstruction.created_by = 1
+    mock_reconstruction.saved_at = None
+    mock_reconstruction.error_message = None
+
     mock_svc = AsyncMock()
-    mock_svc.get_reconstruction_response.return_value = mock_response
+    mock_svc.get_reconstruction.return_value = mock_reconstruction
+    # These are synchronous methods, not async
+    mock_svc.get_status_display = MagicMock(return_value="Готово")
+    mock_svc.build_mesh_url = MagicMock(return_value=None)
 
     app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
     try:
@@ -73,7 +76,7 @@ async def test_get_reconstruction_by_id_existing_returns_200(client, auth_header
 @pytest.mark.asyncio
 async def test_get_reconstruction_by_id_missing_returns_404(client, auth_headers):
     mock_svc = AsyncMock()
-    mock_svc.get_reconstruction_response.return_value = None
+    mock_svc.get_reconstruction.return_value = None
 
     app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
     try:

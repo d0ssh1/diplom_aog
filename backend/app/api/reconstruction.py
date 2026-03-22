@@ -95,8 +95,22 @@ async def calculate_mesh(
 ):
     """Build 3D mesh from plan and mask."""
     try:
-        response = await svc.build_mesh_endpoint(request, user_id=1)
-        return response
+        reconstruction = await svc.build_mesh(
+            plan_file_id=request.plan_file_id,
+            mask_file_id=request.user_mask_file_id,
+            user_id=1,
+        )
+        return CalculateMeshResponse(
+            id=reconstruction.id,
+            name=reconstruction.name or "",
+            status=reconstruction.status,
+            status_display=svc.get_status_display(reconstruction.status),
+            created_at=reconstruction.created_at,
+            created_by=reconstruction.created_by,
+            saved_at=reconstruction.saved_at,
+            url=svc.build_mesh_url(reconstruction),
+            error_message=reconstruction.error_message,
+        )
     except Exception as e:
         logger.error("build_mesh failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка построения 3D модели")
@@ -128,10 +142,20 @@ async def get_reconstruction_by_id(
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
     """Get reconstruction by ID."""
-    response = await svc.get_reconstruction_response(id)
-    if not response:
+    reconstruction = await svc.get_reconstruction(id)
+    if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
-    return response
+    return CalculateMeshResponse(
+        id=reconstruction.id,
+        name=reconstruction.name or "",
+        status=reconstruction.status,
+        status_display=svc.get_status_display(reconstruction.status),
+        created_at=reconstruction.created_at,
+        created_by=reconstruction.created_by,
+        saved_at=reconstruction.saved_at,
+        url=svc.build_mesh_url(reconstruction),
+        error_message=reconstruction.error_message,
+    )
 
 
 @router.put("/reconstructions/{id}/save", response_model=CalculateMeshResponse)
@@ -142,10 +166,20 @@ async def save_reconstruction(
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
     """Save reconstruction with name."""
-    response = await svc.save_reconstruction_endpoint(id, request.name)
-    if not response:
+    reconstruction = await svc.save_reconstruction(id, request.name)
+    if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
-    return response
+    return CalculateMeshResponse(
+        id=reconstruction.id,
+        name=reconstruction.name or "",
+        status=reconstruction.status,
+        status_display=svc.get_status_display(reconstruction.status),
+        created_at=reconstruction.created_at,
+        created_by=reconstruction.created_by,
+        saved_at=reconstruction.saved_at,
+        url=svc.build_mesh_url(reconstruction),
+        error_message=reconstruction.error_message,
+    )
 
 
 @router.patch("/reconstructions/{id}", status_code=status.HTTP_204_NO_CONTENT)
