@@ -5,15 +5,16 @@ import { useStitchingHistory } from '../hooks/useStitchingHistory';
 import { PlanSelectionStep } from '../components/Stitching/PlanSelectionStep';
 import { StitchingCanvas } from '../components/Stitching/StitchingCanvas';
 import { StitchingSidebar } from '../components/Stitching/StitchingSidebar';
-import { WizardShell } from '../components/Wizard/WizardShell';
 import type { StitchingSnapshot } from '../types/stitching';
-
+import styles from './StitchingPage.module.css';
 export const StitchingPage: React.FC = () => {
   const navigate = useNavigate();
   const stitching = useStitching();
   const history = useStitchingHistory();
 
   const { state } = stitching;
+
+  const restoreCanvasFromSnapshot = stitching.restoreCanvasFromSnapshot;
 
   const handleNext = () => {
     if (state.step === 1) {
@@ -48,6 +49,7 @@ export const StitchingPage: React.FC = () => {
           zIndex: layerSnapshot.zIndex,
         });
       });
+      restoreCanvasFromSnapshot(snapshot);
     }
   };
 
@@ -63,44 +65,21 @@ export const StitchingPage: React.FC = () => {
           zIndex: layerSnapshot.zIndex,
         });
       });
+      restoreCanvasFromSnapshot(snapshot);
     }
   };
 
-  const isNextDisabled =
-    (state.step === 1 && state.selectedReconstructionIds.length < 2) ||
-    state.isLoading;
-
-  const nextLabel = state.step === 2 ? '> СШИТЬ' : undefined;
-
-  return (
-    <WizardShell
-      currentStep={state.step}
-      totalSteps={2}
-      onNext={handleNext}
-      onPrev={handlePrev}
-      onClose={() => navigate('/admin')}
-      nextDisabled={isNextDisabled}
-      nextLabel={nextLabel}
-      hideFooter={state.step === 2}
-    >
-      {state.step === 1 && (
-        <PlanSelectionStep
-          onNext={(ids, buildingId, floorNumber) => {
-            stitching.selectPlans(ids, buildingId, floorNumber);
-            stitching.nextStep();
-          }}
-          onCancel={() => navigate('/admin')}
-        />
-      )}
-
-      {state.step === 2 && (
-        <div className="stitching-editor">
-          <div className="stitching-canvas-area">
-            <div className="stitching-toolbar">
-              <button onClick={handleUndo} disabled={!history.canUndo}>
+  // Step 2 renders fullscreen editor without WizardShell
+  if (state.step === 2) {
+    return (
+      <div className={styles.stitchingEditor}>
+        <div className={styles.editorMain}>
+          <div className={styles.stitchingCanvasArea}>
+            <div className={styles.undoRedoBar}>
+              <button className={styles.undoRedoBtn} onClick={handleUndo} disabled={!history.canUndo}>
                 ↶ Отменить
               </button>
-              <button onClick={handleRedo} disabled={!history.canRedo}>
+              <button className={styles.undoRedoBtn} onClick={handleRedo} disabled={!history.canRedo}>
                 ↷ Повторить
               </button>
             </div>
@@ -153,16 +132,27 @@ export const StitchingPage: React.FC = () => {
               }
             }}
           />
-          <div className="stitching-footer">
-            <button onClick={handlePrev} className="btn-secondary">
-              Назад
-            </button>
-            <button onClick={handleNext} className="btn-primary" disabled={state.isLoading}>
-              &gt; СШИТЬ
-            </button>
-          </div>
         </div>
-      )}
-    </WizardShell>
+        <div className={styles.stitchingFooter}>
+          <button onClick={handlePrev} className={styles.btnSecondary}>
+            Назад
+          </button>
+          <button onClick={handleNext} className={styles.btnPrimary} disabled={state.isLoading}>
+            &gt; СШИТЬ
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Step 1 renders inside WizardShell (with AppLayout menu)
+  return (
+    <PlanSelectionStep
+      onNext={async (ids, buildingId, floorNumber) => {
+        await stitching.selectPlans(ids, buildingId, floorNumber);
+        stitching.nextStep();
+      }}
+      onCancel={() => navigate('/admin')}
+    />
   );
 };

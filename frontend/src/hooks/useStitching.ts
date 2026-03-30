@@ -6,12 +6,13 @@ import { reconstructionApi } from '../api/apiService';
 interface UseStitchingReturn {
   state: StitchingState;
   loadReconstructions: (buildingId: string, floorNumber: number) => Promise<void>;
-  selectPlans: (ids: string[], buildingId: string, floorNumber: number) => void;
+  selectPlans: (ids: string[], buildingId: string, floorNumber: number) => Promise<void>;
   nextStep: () => void;
   prevStep: () => void;
   updateLayer: (layerId: string, updates: Partial<LayerData>) => void;
   setActiveTool: (tool: 'move' | 'rotate' | 'rect_crop' | 'polygon_clip') => void;
   setSelectedLayerId: (id: string | null) => void;
+  restoreCanvasFromSnapshot: (snapshot: unknown) => void;
   submitStitching: (name: string) => Promise<void>;
 }
 
@@ -41,13 +42,69 @@ export const useStitching = (): UseStitchingReturn => {
     }
   }, []);
 
-  const selectPlans = useCallback((ids: string[], buildingId: string, floorNumber: number) => {
+  const selectPlans = useCallback(async (ids: string[], buildingId: string, floorNumber: number) => {
     setState((prev) => ({
       ...prev,
       selectedReconstructionIds: ids,
       buildingId,
       floorNumber,
+      isLoading: true,
+      error: null,
     }));
+
+    try {
+      // Fetch full reconstruction data for each selected ID
+      const reconstructions = await Promise.all(
+        ids.map(async (id) => {
+          const numId = Number(id);
+          const rec = await reconstructionApi.getReconstructionById(numId);
+          try {
+            const vectors = await reconstructionApi.getReconstructionVectors(numId);
+            return { ...rec, vector_model: vectors };
+          } catch (error) {
+            console.error(`Failed to load vectors for reconstruction ${id}:`, error);
+            return { ...rec, vector_model: { walls: [], rooms: [], doors: [] } };
+          }
+        })
+      );
+
+      // Convert to LayerData format
+      const colors = ['#FF4500', '#00CED1', '#FFD700', '#FF69B4', '#32CD32'];
+      const layers: LayerData[] = reconstructions.map((rec, index) => ({
+        reconstructionId: String(rec.id),
+        name: rec.name || `План ${index + 1}`,
+        imageUrl: rec.preview_url || rec.original_image_url,
+        vectorModel: rec.vector_model || { walls: [], rooms: [], doors: [] },
+        transform: {
+          translate_x: index * 50,
+          translate_y: index * 50,
+          scale_x: 1,
+          scale_y: 1,
+          rotation_deg: rec.vector_model?.rotation_angle ?? 0,
+        },
+        clipPolygons: [],
+        rectCrop: null,
+        imageWidth: rec.image_width || 1000,
+        imageHeight: rec.image_height || 1000,
+        zIndex: index,
+        color: colors[index % colors.length],
+        maskOpacity: 0.7,
+        showMask: true,
+      }));
+
+      setState((prev) => ({
+        ...prev,
+        layers,
+        isLoading: false,
+      }));
+    } catch (error) {
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: String(error),
+      }));
+      throw error;
+    }
   }, []);
 
   const nextStep = useCallback(() => {
@@ -73,6 +130,10 @@ export const useStitching = (): UseStitchingReturn => {
 
   const setSelectedLayerId = useCallback((id: string | null) => {
     setState((prev) => ({ ...prev, selectedLayerId: id }));
+  }, []);
+
+  const restoreCanvasFromSnapshot = useCallback((_snapshot: unknown) => {
+    return;
   }, []);
 
   const submitStitching = useCallback(async (name: string) => {
@@ -112,6 +173,7 @@ export const useStitching = (): UseStitchingReturn => {
     updateLayer,
     setActiveTool,
     setSelectedLayerId,
+    restoreCanvasFromSnapshot,
     submitStitching,
   };
 };
