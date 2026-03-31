@@ -102,7 +102,6 @@ export const WizardPage: React.FC = () => {
             onThresholdCChange={wizard.setThresholdC}
             initialRooms={state.rooms}
             initialDoors={state.doors}
-            initialCanvasState={state.canvasState}
           />
         );
       case 4:

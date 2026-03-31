@@ -17,7 +17,6 @@ interface PlanData {
   meshUrl: string | null;
   initialRooms: RoomAnnotation[];
   initialDoors: DoorAnnotation[];
-  initialCanvasState: unknown;
   rawVectors: unknown;
 }
 
@@ -79,7 +78,6 @@ export const EditPlanPage: React.FC = () => {
           meshUrl: rec.url ?? null,
           initialRooms: rooms,
           initialDoors: doors,
-          initialCanvasState: vectors ?? null,
           rawVectors: vectors,
         });
         setCurrentRooms(rooms);
@@ -258,7 +256,6 @@ export const EditPlanPage: React.FC = () => {
           onThresholdCChange={() => {}}
           initialRooms={data.initialRooms}
           initialDoors={data.initialDoors}
-          initialCanvasState={data.initialCanvasState}
           hideMaskParams={true}
         />
       ) : step === 2 ? (

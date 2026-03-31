@@ -30,7 +30,7 @@ interface StepWallEditorProps {
   onThresholdCChange: (v: number) => void;
   initialRooms?: import('../../types/wizard').RoomAnnotation[];
   initialDoors?: import('../../types/wizard').DoorAnnotation[];
-  initialCanvasState?: any;
+  hideMaskParams?: boolean;
 }
 
 const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] = [
@@ -55,7 +55,7 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   onThresholdCChange,
   initialRooms,
   initialDoors,
-  initialCanvasState,
+  hideMaskParams = false,
 }) => {
   const [activeTool, setActiveTool] = useState<ActiveTool>('wall');
   const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
@@ -155,7 +155,6 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
             overlayOpacity={overlayOpacity}
             initialRooms={initialRooms}
             initialDoors={initialDoors}
-            initialCanvasState={initialCanvasState}
           />
           {popupState && (
             <RoomPopup
@@ -270,9 +269,11 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
 
           <div className={panelStyles.sectionDivider} />
 
-          {/* // ПАРАМЕТРЫ МАСКИ */}
-          <div>
-            <div className={panelStyles.sectionTitle}>// ПАРАМЕТРЫ МАСКИ</div>
+          {/* // ПАРАМЕТРЫ МАСКИ (скрыты в режиме редактора) */}
+          {!hideMaskParams && (
+            <>
+              <div>
+                <div className={panelStyles.sectionTitle}>// ПАРАМЕТРЫ МАСКИ</div>
             <div className={styles.paramSection}>
               <div className={styles.paramRow}>
                 <span className={styles.paramLabel}>Чувствительность</span>
@@ -300,11 +301,13 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
                   <span className={styles.sliderValue}>{thresholdC}</span>
                 </div>
               </div>
-              {isPreviewLoading && <div className={styles.previewSpinner}>Обновление...</div>}
+                {isPreviewLoading && <div className={styles.previewSpinner}>Обновление...</div>}
+              </div>
             </div>
-          </div>
 
-          <div className={panelStyles.sectionDivider} />
+            <div className={panelStyles.sectionDivider} />
+          </>
+          )}
 
           {/* // НАЛОЖЕНИЕ */}
           <div>

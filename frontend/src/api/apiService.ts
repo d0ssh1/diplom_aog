@@ -123,6 +123,17 @@ interface CropRect {
   height: number;
 }
 
+export interface ReconstructionListItem {
+  id: number;
+  name: string;
+  status: string;
+  preview_url: string | null;
+  rooms_count: number;
+  walls_count: number;
+  created_at: string;
+  rotation_angle: number;
+}
+
 interface CalculateMaskResponse {
   file_id: string;
 }
@@ -164,10 +175,12 @@ export const reconstructionApi = {
     return response.data;
   },
   
-  calculateMesh: async (planFileId: string, maskFileId: string) => {
+  calculateMesh: async (planFileId: string, maskFileId: string, rotationAngle: number = 0, cropRect: any = null) => {
     const response = await apiClient.post('/reconstruction/reconstructions', {
       plan_file_id: planFileId,
       user_mask_file_id: maskFileId,
+      rotation_angle: rotationAngle,
+      crop_rect: cropRect,
     });
     return response.data;
   },
@@ -177,8 +190,18 @@ export const reconstructionApi = {
     return response.data;
   },
   
-  getReconstructions: async () => {
-    const response = await apiClient.get('/reconstruction/reconstructions');
+  getReconstructionVectors: async (id: number) => {
+    const response = await apiClient.get(`/reconstruction/reconstructions/${id}/vectors`);
+    return response.data;
+  },
+  
+  updateVectorizationData: async (id: number, data: any) => {
+    const response = await apiClient.put(`/reconstruction/reconstructions/${id}/vectors`, data);
+    return response.data;
+  },
+  
+  getReconstructions: async (): Promise<ReconstructionListItem[]> => {
+    const response = await apiClient.get<ReconstructionListItem[]>('/reconstruction/reconstructions');
     return response.data;
   },
   
@@ -240,13 +263,13 @@ export const reconstructionApi = {
   getReadyReconstructions: async (
     buildingId?: string,
     floorNumber?: number
-  ) => {
+  ): Promise<ReconstructionListItem[]> => {
     const params = new URLSearchParams();
     params.append('status', 'ready_for_stitching');
     if (buildingId) params.append('building_id', buildingId);
     if (floorNumber !== undefined) params.append('floor_number', String(floorNumber));
 
-    const response = await apiClient.get(`/reconstruction/reconstructions?${params.toString()}`);
+    const response = await apiClient.get<ReconstructionListItem[]>(`/reconstruction/reconstructions?${params.toString()}`);
     return response.data;
   },
 

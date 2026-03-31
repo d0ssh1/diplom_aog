@@ -28,7 +28,6 @@ interface WallEditorCanvasProps {
   overlayOpacity?: number;
   initialRooms?: RoomAnnotation[];
   initialDoors?: DoorAnnotation[];
-  initialCanvasState?: any;
 }
 
 const ROOM_FILL: Record<string, string> = {
@@ -59,7 +58,6 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
     overlayOpacity = 0.4,
     initialRooms,
     initialDoors,
-    initialCanvasState,
   } = props;
 
   const canvasElRef = useRef<HTMLCanvasElement>(null);
@@ -71,14 +69,18 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
   const [displayPlanUrl, setDisplayPlanUrl] = useState<string | null>(null);
   const [bgDims, setBgDims] = useState({ left: 0, top: 0, width: 0, height: 0 });
 
-  // A5: state for HTML erase selection buttons
   const [eraseSelection, setEraseSelection] = useState<{
     left: number; top: number; width: number; height: number;
     fabricRect: fabric.Rect;
   } | null>(null);
 
+  const [maskAspect, setMaskAspect] = useState<number | null>(null);
+
   useEffect(() => {
-    if (!planUrl) { setDisplayPlanUrl(null); return; }
+    if (!planUrl) {
+      setDisplayPlanUrl(null);
+      return;
+    }
 
     const img = new Image();
     img.crossOrigin = 'anonymous';
@@ -88,7 +90,8 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       const rCanvas = document.createElement('canvas');
       rCanvas.width = swap ? img.height : img.width;
       rCanvas.height = swap ? img.width : img.height;
-      const rCtx = rCanvas.getContext('2d')!;
+      const rCtx = rCanvas.getContext('2d');
+      if (!rCtx) return;
       rCtx.translate(rCanvas.width / 2, rCanvas.height / 2);
       rCtx.rotate((rot * Math.PI) / 180);
       rCtx.drawImage(img, -img.width / 2, -img.height / 2);
@@ -98,25 +101,26 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         const cy = Math.round(planCropRect.y * rCanvas.height);
         const cw = Math.round(planCropRect.width * rCanvas.width);
         const ch = Math.round(planCropRect.height * rCanvas.height);
+
         const cropCanvas = document.createElement('canvas');
         cropCanvas.width = cw;
         cropCanvas.height = ch;
-        cropCanvas.getContext('2d')!.drawImage(rCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+        const cropCtx = cropCanvas.getContext('2d');
+        if (!cropCtx) return;
+        cropCtx.drawImage(rCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
         setDisplayPlanUrl(cropCanvas.toDataURL());
       } else {
         setDisplayPlanUrl(rCanvas.toDataURL());
       }
     };
     img.src = planUrl;
-  }, [planUrl, planCropRect, planRotation]);
+  }, [planUrl, planCropRect, planRotation, maskAspect]);
 
-  // Stable ref for onRoomPopupRequest to avoid stale closures
   const popupRequestRef = useRef(onRoomPopupRequest);
   useEffect(() => {
     popupRequestRef.current = onRoomPopupRequest;
   }, [onRoomPopupRequest]);
 
-  // Init canvas on mount
   useEffect(() => {
     if (!canvasElRef.current || !containerRef.current) return;
 
@@ -128,22 +132,6 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       backgroundColor: 'transparent',
     });
     fabricRef.current = canvas;
-
-    if (initialCanvasState) {
-      canvas.loadFromJSON(initialCanvasState, () => {
-        canvas.forEachObject((obj) => {
-          obj.selectable = false;
-          obj.evented = false;
-        });
-        canvas.renderAll();
-        canvas.fire('canvas:restored');
-      });
-    }
-
-    if (initialRooms?.length || initialDoors?.length) {
-      roomsRef.current = initialRooms ? [...initialRooms] : [];
-      doorsRef.current = initialDoors ? [...initialDoors] : [];
-    }
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Delete' && e.key !== 'Backspace') return;
@@ -166,52 +154,36 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       canvas.dispose();
       fabricRef.current = null;
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const restoreAnnotations = useCallback(() => {
     const canvas = fabricRef.current;
     if (!canvas || !canvas.backgroundImage) return;
 
+    // Remove any previously restored annotation/door objects
+    const existingAnnotations = canvas.getObjects().filter((o) => {
+      const d = (o as unknown as { data?: { type?: string } }).data;
+      return d && (d.type === 'annotation' || d.type === 'door');
+    });
+    existingAnnotations.forEach((o) => canvas.remove(o));
+
     const bgImg = canvas.backgroundImage as fabric.Image;
     const leftOffset = bgImg.left ?? 0;
     const topOffset = bgImg.top ?? 0;
     const scaledW = bgImg.getScaledWidth() ?? canvas.getWidth();
     const scaledH = bgImg.getScaledHeight() ?? canvas.getHeight();
-    const sourceW = bgImg.width ?? scaledW;
-    const sourceH = bgImg.height ?? scaledH;
-    const scaleX = scaledW / sourceW;
-    const scaleY = scaledH / sourceH;
 
-    if (canvas.getObjects().length > 0) {
-      return;
-    }
-
-    if (initialCanvasState) {
-      canvas.loadFromJSON(initialCanvasState, () => {
-        canvas.forEachObject((obj) => {
-          obj.selectable = false;
-          obj.evented = false;
-        });
-        canvas.renderAll();
-        canvas.fire('canvas:restored');
-      });
-    }
-
-    if (canvas.getObjects().length > 0) {
-      return;
-    }
-
-    if (initialRooms && initialRooms.length > 0 && roomsRef.current.length === 0) {
+    if (initialRooms?.length) {
       roomsRef.current = [...initialRooms];
       for (const room of initialRooms) {
-        const x = leftOffset + room.x * scaleX;
-        const y = topOffset + room.y * scaleY;
-        const w = room.width * scaleX;
-        const h = room.height * scaleY;
+        const x = leftOffset + room.x * scaledW;
+        const y = topOffset + room.y * scaledH;
+        const w = room.width * scaledW;
+        const h = room.height * scaledH;
         const roomType = room.room_type || 'room';
         const rect = new fabric.Rect({
-          width: w, height: h,
+          width: w,
+          height: h,
           fill: ROOM_FILL[roomType] ?? 'rgba(255,255,255,0.1)',
           stroke: ROOM_STROKE[roomType] ?? '#fff',
           strokeWidth: 1,
@@ -220,33 +192,53 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
           fontSize: 12,
           fill: ROOM_STROKE[roomType] ?? '#fff',
           fontFamily: 'Courier New',
-          left: 4, top: 4,
+          left: 4,
+          top: 4,
         });
         const group = new fabric.Group([rect, text], {
-          left: x, top: y, selectable: false, evented: false,
+          left: x,
+          top: y,
+          selectable: false,
+          evented: false,
         });
-        (group as unknown as { data: { id: string; type: string } }).data = { id: room.id, type: 'annotation' };
+        (group as unknown as { data: { id: string; type: string } }).data = {
+          id: room.id,
+          type: 'annotation',
+        };
         canvas.add(group);
       }
+    } else {
+      roomsRef.current = [];
     }
 
-    if (initialDoors && initialDoors.length > 0 && doorsRef.current.length === 0) {
+    if (initialDoors?.length) {
       doorsRef.current = [...initialDoors];
       for (const door of initialDoors) {
-        const cx = leftOffset + ((door.x1 + door.x2) / 2) * scaleX;
-        const cy = topOffset + ((door.y1 + door.y2) / 2) * scaleY;
+        const cx = leftOffset + ((door.x1 + door.x2) / 2) * scaledW;
+        const cy = topOffset + ((door.y1 + door.y2) / 2) * scaledH;
         const circle = new fabric.Circle({
-          left: cx, top: cy, radius: 3, fill: '#4CAF50',
-          originX: 'center', originY: 'center', selectable: false, evented: false,
+          left: cx,
+          top: cy,
+          radius: 3,
+          fill: '#4CAF50',
+          originX: 'center',
+          originY: 'center',
+          selectable: false,
+          evented: false,
           padding: 15,
         });
-        (circle as unknown as { data: { id: string; type: string } }).data = { id: door.id, type: 'door' };
+        (circle as unknown as { data: { id: string; type: string } }).data = {
+          id: door.id,
+          type: 'door',
+        };
         canvas.add(circle);
       }
+    } else {
+      doorsRef.current = [];
     }
 
     canvas.renderAll();
-  }, [initialRooms, initialDoors, initialCanvasState]);
+  }, [initialRooms, initialDoors]);
 
   useEffect(() => {
     if (!maskUrl) return;
@@ -255,23 +247,31 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       (img) => {
         if (!img || !fabricRef.current) return;
         const c = fabricRef.current;
-        const scaleX = c.getWidth() / (img.width ?? 1);
-        const scaleY = c.getHeight() / (img.height ?? 1);
+        const imgW = img.width ?? 1;
+        const imgH = img.height ?? 1;
+        const scaleX = c.getWidth() / imgW;
+        const scaleY = c.getHeight() / imgH;
         const scale = Math.min(scaleX, scaleY);
-        const scaledW = (img.width ?? 0) * scale;
-        const scaledH = (img.height ?? 0) * scale;
+        const scaledW = imgW * scale;
+        const scaledH = imgH * scale;
         const offsetX = (c.getWidth() - scaledW) / 2;
         const offsetY = (c.getHeight() - scaledH) / 2;
         img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
         c.setBackgroundImage(img, () => {
           setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
-          restoreAnnotations();
+          setMaskAspect(imgW / imgH);
           c.renderAll();
         });
       },
       { crossOrigin: 'anonymous' },
     );
-  }, [maskUrl, restoreAnnotations]);
+  }, [maskUrl]);
+
+  // Restore annotations whenever bgDims or initial data change
+  useEffect(() => {
+    if (bgDims.width === 0 || bgDims.height === 0) return;
+    restoreAnnotations();
+  }, [bgDims, restoreAnnotations]);
 
   const activeToolRef = useRef(activeTool);
   const brushSizeRef = useRef(brushSize);
@@ -350,10 +350,16 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
           startX = pointer.x;
           startY = pointer.y;
           selRect = new fabric.Rect({
-            left: startX, top: startY, width: 0, height: 0,
+            left: startX,
+            top: startY,
+            width: 0,
+            height: 0,
             fill: 'rgba(255,0,0,0.2)',
-            stroke: '#FF5722', strokeWidth: 1, strokeDashArray: [4, 4],
-            selectable: false, evented: false,
+            stroke: '#FF5722',
+            strokeWidth: 1,
+            strokeDashArray: [4, 4],
+            selectable: false,
+            evented: false,
           });
           canvas.add(selRect);
           tempObjectsRef.current.push(selRect);
@@ -458,8 +464,14 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
             type: 'door',
           };
 
-          const doorMidX = cx / canvas.getWidth();
-          const doorMidY = cy / canvas.getHeight();
+          // Normalize door position relative to background image bounds, not canvas
+          const bgImg = canvas.backgroundImage as fabric.Image | null;
+          const bgLeft = bgImg?.left ?? 0;
+          const bgTop = bgImg?.top ?? 0;
+          const bgW = bgImg?.getScaledWidth() ?? canvas.getWidth();
+          const bgH = bgImg?.getScaledHeight() ?? canvas.getHeight();
+          const doorMidX = (cx - bgLeft) / bgW;
+          const doorMidY = (cy - bgTop) / bgH;
           let closestRoomId: string | null = null;
           let minDist = Infinity;
           for (const room of roomsRef.current) {
@@ -609,11 +621,17 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         }
 
         const capturedRect = selectionRect;
+        // Normalize coordinates relative to background image bounds, not canvas
+        const bgImg = canvas.backgroundImage as fabric.Image | null;
+        const bgLeft = bgImg?.left ?? 0;
+        const bgTop = bgImg?.top ?? 0;
+        const bgW = bgImg?.getScaledWidth() ?? canvas.getWidth();
+        const bgH = bgImg?.getScaledHeight() ?? canvas.getHeight();
         const normalizedRect = {
-          x: rectLeft / canvas.getWidth(),
-          y: rectTop / canvas.getHeight(),
-          w: rectW / canvas.getWidth(),
-          h: rectH / canvas.getHeight(),
+          x: (rectLeft - bgLeft) / bgW,
+          y: (rectTop - bgTop) / bgH,
+          w: rectW / bgW,
+          h: rectH / bgH,
         };
 
         const currentTool = activeToolRef.current as 'room' | 'staircase' | 'elevator' | 'corridor';
@@ -781,7 +799,7 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
           style={{
             left: Math.min(
               eraseSelection.left + eraseSelection.width + 12,
-              (containerRef.current?.clientWidth ?? 800) - 90
+              (containerRef.current?.clientWidth ?? 800) - 90,
             ),
             top: Math.min(
               eraseSelection.top + eraseSelection.height - 40,
