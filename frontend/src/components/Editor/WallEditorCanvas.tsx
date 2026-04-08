@@ -6,7 +6,7 @@ import styles from './WallEditorCanvas.module.css';
 export interface WallEditorCanvasRef {
   getBlob: () => Promise<Blob>;
   getAnnotations: () => { rooms: RoomAnnotation[]; doors: DoorAnnotation[] };
-  getCanvasState: () => any;
+  getCanvasState: () => unknown;
 }
 
 type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corridor' | 'door' | 'erase_markup';
@@ -68,13 +68,12 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
   const tempObjectsRef = useRef<fabric.Object[]>([]);
   const [displayPlanUrl, setDisplayPlanUrl] = useState<string | null>(null);
   const [bgDims, setBgDims] = useState({ left: 0, top: 0, width: 0, height: 0 });
+  const bgDimsRef = useRef({ left: 0, top: 0, width: 0, height: 0 });
 
   const [eraseSelection, setEraseSelection] = useState<{
     left: number; top: number; width: number; height: number;
     fabricRect: fabric.Rect;
   } | null>(null);
-
-  const [maskAspect, setMaskAspect] = useState<number | null>(null);
 
   useEffect(() => {
     if (!planUrl) {
@@ -101,7 +100,6 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         const cy = Math.round(planCropRect.y * rCanvas.height);
         const cw = Math.round(planCropRect.width * rCanvas.width);
         const ch = Math.round(planCropRect.height * rCanvas.height);
-
         const cropCanvas = document.createElement('canvas');
         cropCanvas.width = cw;
         cropCanvas.height = ch;
@@ -114,12 +112,16 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       }
     };
     img.src = planUrl;
-  }, [planUrl, planCropRect, planRotation, maskAspect]);
+  }, [planUrl, planCropRect, planRotation]);
 
   const popupRequestRef = useRef(onRoomPopupRequest);
   useEffect(() => {
     popupRequestRef.current = onRoomPopupRequest;
   }, [onRoomPopupRequest]);
+
+  useEffect(() => {
+    bgDimsRef.current = bgDims;
+  }, [bgDims]);
 
   useEffect(() => {
     if (!canvasElRef.current || !containerRef.current) return;
@@ -159,27 +161,26 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
   const restoreAnnotations = useCallback(() => {
     const canvas = fabricRef.current;
     if (!canvas || !canvas.backgroundImage) return;
+    if (canvas.getObjects().some((o) => {
+      const data = (o as unknown as { data?: { type?: string } }).data;
+      return data?.type === 'annotation' || data?.type === 'door';
+    })) return;
 
-    // Remove any previously restored annotation/door objects
-    const existingAnnotations = canvas.getObjects().filter((o) => {
-      const d = (o as unknown as { data?: { type?: string } }).data;
-      return d && (d.type === 'annotation' || d.type === 'door');
-    });
-    existingAnnotations.forEach((o) => canvas.remove(o));
+    const { left: leftOffset, top: topOffset, width: scaledW, height: scaledH } = bgDimsRef.current;
+    if (!scaledW || !scaledH) return;
 
-    const bgImg = canvas.backgroundImage as fabric.Image;
-    const leftOffset = bgImg.left ?? 0;
-    const topOffset = bgImg.top ?? 0;
-    const scaledW = bgImg.getScaledWidth() ?? canvas.getWidth();
-    const scaledH = bgImg.getScaledHeight() ?? canvas.getHeight();
+    const toDisplayX = (value: number) => (value <= 1 ? leftOffset + value * scaledW : leftOffset + value);
+    const toDisplayY = (value: number) => (value <= 1 ? topOffset + value * scaledH : topOffset + value);
+    const toDisplayW = (value: number) => (value <= 1 ? value * scaledW : value);
+    const toDisplayH = (value: number) => (value <= 1 ? value * scaledH : value);
 
     if (initialRooms?.length) {
       roomsRef.current = [...initialRooms];
       for (const room of initialRooms) {
-        const x = leftOffset + room.x * scaledW;
-        const y = topOffset + room.y * scaledH;
-        const w = room.width * scaledW;
-        const h = room.height * scaledH;
+        const x = toDisplayX(room.x);
+        const y = toDisplayY(room.y);
+        const w = toDisplayW(room.width);
+        const h = toDisplayH(room.height);
         const roomType = room.room_type || 'room';
         const rect = new fabric.Rect({
           width: w,
@@ -207,15 +208,13 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         };
         canvas.add(group);
       }
-    } else {
-      roomsRef.current = [];
     }
 
     if (initialDoors?.length) {
       doorsRef.current = [...initialDoors];
       for (const door of initialDoors) {
-        const cx = leftOffset + ((door.x1 + door.x2) / 2) * scaledW;
-        const cy = topOffset + ((door.y1 + door.y2) / 2) * scaledH;
+        const cx = toDisplayX((door.x1 + door.x2) / 2);
+        const cy = toDisplayY((door.y1 + door.y2) / 2);
         const circle = new fabric.Circle({
           left: cx,
           top: cy,
@@ -233,13 +232,10 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         };
         canvas.add(circle);
       }
-    } else {
-      doorsRef.current = [];
     }
 
     canvas.renderAll();
   }, [initialRooms, initialDoors]);
-
   useEffect(() => {
     if (!maskUrl) return;
     fabric.Image.fromURL(
@@ -247,19 +243,16 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
       (img) => {
         if (!img || !fabricRef.current) return;
         const c = fabricRef.current;
-        const imgW = img.width ?? 1;
-        const imgH = img.height ?? 1;
-        const scaleX = c.getWidth() / imgW;
-        const scaleY = c.getHeight() / imgH;
+        const scaleX = c.getWidth() / (img.width ?? 1);
+        const scaleY = c.getHeight() / (img.height ?? 1);
         const scale = Math.min(scaleX, scaleY);
-        const scaledW = imgW * scale;
-        const scaledH = imgH * scale;
+        const scaledW = (img.width ?? 0) * scale;
+        const scaledH = (img.height ?? 0) * scale;
         const offsetX = (c.getWidth() - scaledW) / 2;
         const offsetY = (c.getHeight() - scaledH) / 2;
         img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
         c.setBackgroundImage(img, () => {
           setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
-          setMaskAspect(imgW / imgH);
           c.renderAll();
         });
       },
@@ -267,9 +260,7 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
     );
   }, [maskUrl]);
 
-  // Restore annotations whenever bgDims or initial data change
   useEffect(() => {
-    if (bgDims.width === 0 || bgDims.height === 0) return;
     restoreAnnotations();
   }, [bgDims, restoreAnnotations]);
 
@@ -464,14 +455,9 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
             type: 'door',
           };
 
-          // Normalize door position relative to background image bounds, not canvas
-          const bgImg = canvas.backgroundImage as fabric.Image | null;
-          const bgLeft = bgImg?.left ?? 0;
-          const bgTop = bgImg?.top ?? 0;
-          const bgW = bgImg?.getScaledWidth() ?? canvas.getWidth();
-          const bgH = bgImg?.getScaledHeight() ?? canvas.getHeight();
-          const doorMidX = (cx - bgLeft) / bgW;
-          const doorMidY = (cy - bgTop) / bgH;
+          const { left, top, width, height } = bgDimsRef.current;
+          const doorMidX = width ? (cx - left) / width : 0;
+          const doorMidY = height ? (cy - top) / height : 0;
           let closestRoomId: string | null = null;
           let minDist = Infinity;
           for (const room of roomsRef.current) {
@@ -621,17 +607,12 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         }
 
         const capturedRect = selectionRect;
-        // Normalize coordinates relative to background image bounds, not canvas
-        const bgImg = canvas.backgroundImage as fabric.Image | null;
-        const bgLeft = bgImg?.left ?? 0;
-        const bgTop = bgImg?.top ?? 0;
-        const bgW = bgImg?.getScaledWidth() ?? canvas.getWidth();
-        const bgH = bgImg?.getScaledHeight() ?? canvas.getHeight();
+        const { left, top, width, height } = bgDimsRef.current;
         const normalizedRect = {
-          x: (rectLeft - bgLeft) / bgW,
-          y: (rectTop - bgTop) / bgH,
-          w: rectW / bgW,
-          h: rectH / bgH,
+          x: width ? (rectLeft - left) / width : 0,
+          y: height ? (rectTop - top) / height : 0,
+          w: width ? rectW / width : 0,
+          h: height ? rectH / height : 0,
         };
 
         const currentTool = activeToolRef.current as 'room' | 'staircase' | 'elevator' | 'corridor';
@@ -756,7 +737,18 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
           o.visible = false;
         });
         canvas.renderAll();
-        const dataUrl = canvas.toDataURL({ format: 'png' });
+        const img = canvas.backgroundImage as fabric.Image | undefined;
+        const originalWidth = img?.width || bgDimsRef.current.width;
+        const multiplier = bgDimsRef.current.width ? originalWidth / bgDimsRef.current.width : 1;
+
+        const dataUrl = canvas.toDataURL({
+          format: 'png',
+          left: bgDimsRef.current.left || 0,
+          top: bgDimsRef.current.top || 0,
+          width: bgDimsRef.current.width || canvas.getWidth(),
+          height: bgDimsRef.current.height || canvas.getHeight(),
+          multiplier: multiplier
+        });
         annotations.forEach((o) => {
           o.visible = true;
         });
