@@ -3,7 +3,8 @@ Pydantic модели для реконструкции и обработки п
 """
 
 from datetime import datetime
-from typing import Optional, List
+from typing import List, Optional
+
 from pydantic import BaseModel, Field
 
 
@@ -34,17 +35,6 @@ class CalculateMaskRequest(BaseModel):
     file_id: str
     crop: Optional[CropRect] = None
     rotation: int = 0  # Rotation in degrees (0, 90, 180, 270)
-    block_size: int = 15
-    threshold_c: int = 10
-
-
-class MaskPreviewRequest(BaseModel):
-    """Запрос на превью маски (без сохранения)"""
-    file_id: str
-    crop: Optional[CropRect] = None
-    rotation: int = 0
-    block_size: int = 15
-    threshold_c: int = 10
     block_size: int = 15
     threshold_c: int = 10
 
@@ -99,6 +89,10 @@ class CalculateMeshRequest(BaseModel):
     """Запрос на построение 3D модели"""
     plan_file_id: str
     user_mask_file_id: str
+    rotation_angle: int = 0
+    crop_rect: Optional[CropRect] = None
+    rooms: Optional[List[dict]] = None
+    doors: Optional[List[dict]] = None
 
 
 class CalculateMeshResponse(BaseModel):
@@ -111,6 +105,11 @@ class CalculateMeshResponse(BaseModel):
     created_by: int
     saved_at: Optional[datetime] = None
     url: Optional[str] = None
+    original_image_url: Optional[str] = None
+    preview_url: Optional[str] = None
+    mask_file_id: Optional[str] = None
+    crop_rect: Optional[CropRect] = None
+    rotation_angle: int = 0
     error_message: Optional[str] = None
 
 
@@ -131,6 +130,7 @@ class ReconstructionListItem(BaseModel):
     rooms_count: int = 0
     walls_count: int = 0
     created_at: datetime
+    rotation_angle: int = 0
 
 
 class PatchReconstructionRequest(BaseModel):

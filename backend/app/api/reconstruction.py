@@ -15,26 +15,27 @@ from app.api.deps import (
     get_nav_service,
 )
 from app.models import (
-    CalculateMaskRequest,
-    CalculateMaskResponse,
-    MaskPreviewRequest,
-    CalculateHoughRequest,
-    CalculateHoughResponse,
-    CalculateMeshRequest,
-    CalculateMeshResponse,
-    SaveReconstructionRequest,
-    ReconstructionListItem,
-    PatchReconstructionRequest,
-    RoomsRequest,
     BuildNavGraphRequest,
     BuildNavGraphResponse,
+    CalculateHoughRequest,
+    CalculateHoughResponse,
+    CalculateMaskRequest,
+    CalculateMaskResponse,
+    CalculateMeshRequest,
+    CalculateMeshResponse,
     FindRouteRequest,
     FindRouteResponse,
+    MaskPreviewRequest,
+    PatchReconstructionRequest,
+    ReconstructionListItem,
+    RoomsRequest,
+    SaveReconstructionRequest,
 )
+from app.models.reconstruction_vectors import VectorizationResult as EditVectorizationResult
+from app.models.domain import VectorizationResult as DomainVectorizationResult
 from app.services.reconstruction_service import ReconstructionService
 from app.services.mask_service import MaskService
 from app.services.nav_service import NavService
-from app.models.domain import VectorizationResult
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/reconstruction", tags=["Reconstruction"])
@@ -99,7 +100,14 @@ async def calculate_mesh(
             plan_file_id=request.plan_file_id,
             mask_file_id=request.user_mask_file_id,
             user_id=1,
+            rotation_angle=request.rotation_angle,
+            crop_rect=request.crop_rect.model_dump() if request.crop_rect else None,
+            manual_rooms=request.rooms,
+            manual_doors=request.doors,
         )
+        # Re-fetch with joinedload so plan_file/mask_file are available
+        reconstruction = await svc.get_reconstruction(reconstruction.id) or reconstruction
+        vectorization = await svc.get_vectorization_data(reconstruction.id)
         return CalculateMeshResponse(
             id=reconstruction.id,
             name=reconstruction.name or "",
@@ -109,6 +117,11 @@ async def calculate_mesh(
             created_by=reconstruction.created_by,
             saved_at=None,  # Field doesn't exist in DB model
             url=svc.build_mesh_url(reconstruction),
+            original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
+            preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
+            mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
+            crop_rect=vectorization.crop_rect if vectorization else None,
+            rotation_angle=vectorization.rotation_angle if vectorization else 0,
             error_message=reconstruction.error_message,
         )
     except Exception as e:
@@ -136,19 +149,31 @@ async def get_reconstructions(
     if status is not None:
         reconstructions = [r for r in reconstructions if r.status == status]
 
-    return [
-        ReconstructionListItem(
-            id=r.id,
-            name=r.name or f"Реконструкция #{r.id}",
-            building_id=r.building_id,
-            floor_number=r.floor_number,
-            preview_url=svc.build_mesh_url(r),
-            rooms_count=0,  # TODO: count from vectorization_data
-            walls_count=0,  # TODO: count from vectorization_data
-            created_at=r.created_at,
+    import json
+    results = []
+    for r in reconstructions:
+        rot = 0
+        if r.vectorization_data:
+            try:
+                vd = json.loads(r.vectorization_data)
+                rot = vd.get("rotation_angle", 0)
+            except Exception:
+                pass
+
+        results.append(
+            ReconstructionListItem(
+                id=r.id,
+                name=r.name or f"Реконструкция #{r.id}",
+                building_id=r.building_id,
+                floor_number=r.floor_number,
+                preview_url=r.plan_file.url if getattr(r, "plan_file", None) else None,
+                rooms_count=0,  # TODO: count from vectorization_data
+                walls_count=0,  # TODO: count from vectorization_data
+                created_at=r.created_at,
+                rotation_angle=rot,
+            )
         )
-        for r in reconstructions
-    ]
+    return results
 
 
 @router.get("/reconstructions/{id}", response_model=CalculateMeshResponse)
@@ -170,6 +195,9 @@ async def get_reconstruction_by_id(
         created_by=reconstruction.created_by,
         saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
+        original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
+        preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
+        mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
         error_message=reconstruction.error_message,
     )
 
@@ -187,6 +215,8 @@ async def save_reconstruction(
     )
     if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    # Re-fetch with joinedload so plan_file/mask_file are available
+    reconstruction = await svc.get_reconstruction(reconstruction.id) or reconstruction
     return CalculateMeshResponse(
         id=reconstruction.id,
         name=reconstruction.name or "",
@@ -196,6 +226,9 @@ async def save_reconstruction(
         created_by=reconstruction.created_by,
         saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
+        original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
+        preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
+        mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
         error_message=reconstruction.error_message,
     )
 
@@ -224,7 +257,7 @@ async def delete_reconstruction(
 
 # === Vectorization Data ===
 
-@router.get("/reconstructions/{id}/vectors", response_model=VectorizationResult)
+@router.get("/reconstructions/{id}/vectors", response_model=DomainVectorizationResult)
 async def get_vectorization_data(
     id: int = Path(...),
     credentials: HTTPAuthorizationCredentials = Depends(security),
@@ -240,7 +273,7 @@ async def get_vectorization_data(
 @router.put("/reconstructions/{id}/vectors", response_model=dict)
 async def update_vectorization_data(
     id: int,
-    data: VectorizationResult,
+    data: EditVectorizationResult,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):

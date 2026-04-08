@@ -129,7 +129,14 @@ export const useWizard = (): UseWizardReturn => {
     if (!state.planFileId || !maskId) return;
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
-      const data = await reconstructionApi.calculateMesh(state.planFileId, maskId);
+      const data = await reconstructionApi.calculateMesh(
+        state.planFileId,
+        maskId,
+        state.rotation,
+        state.cropRect,
+        state.rooms,
+        state.doors
+      );
       const detail = await reconstructionApi.getReconstructionById(data.id as number);
       setState((s) => ({
         ...s,

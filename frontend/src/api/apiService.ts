@@ -3,6 +3,7 @@
  */
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
+import type { VectorizationResult } from '../types/reconstructionVectors';
 
 const API_BASE_URL = '/api/v1';
 
@@ -116,7 +117,7 @@ export const uploadApi = {
 
 // === Reconstruction API ===
 
-interface CropRect {
+export interface CropRect {
   x: number;
   y: number;
   width: number;
@@ -136,6 +137,23 @@ export interface ReconstructionListItem {
 
 interface CalculateMaskResponse {
   file_id: string;
+}
+
+export interface ReconstructionResponse {
+  id: number;
+  name: string;
+  status: number;
+  status_display: string;
+  created_at: string;
+  created_by: number;
+  saved_at: string | null;
+  url: string | null;
+  original_image_url: string | null;
+  preview_url: string | null;
+  mask_file_id: string | null;
+  crop_rect: CropRect | null;
+  rotation_angle: number;
+  error_message: string | null;
 }
 
 export const reconstructionApi = {
@@ -175,28 +193,30 @@ export const reconstructionApi = {
     return response.data;
   },
   
-  calculateMesh: async (planFileId: string, maskFileId: string, rotationAngle: number = 0, cropRect: any = null) => {
+  calculateMesh: async (planFileId: string, maskFileId: string, rotationAngle: number = 0, cropRect: CropRect | null = null, rooms?: unknown[], doors?: unknown[]) => {
     const response = await apiClient.post('/reconstruction/reconstructions', {
       plan_file_id: planFileId,
       user_mask_file_id: maskFileId,
       rotation_angle: rotationAngle,
-      crop_rect: cropRect,
+      crop_rect: cropRect ? { x: cropRect.x, y: cropRect.y, width: cropRect.width, height: cropRect.height } : null,
+      rooms,
+      doors,
     });
     return response.data;
   },
   
-  getReconstructionById: async (id: number) => {
-    const response = await apiClient.get(`/reconstruction/reconstructions/${id}`);
+  getReconstructionById: async (id: number): Promise<ReconstructionResponse> => {
+    const response = await apiClient.get<ReconstructionResponse>(`/reconstruction/reconstructions/${id}`);
     return response.data;
   },
-  
-  getReconstructionVectors: async (id: number) => {
-    const response = await apiClient.get(`/reconstruction/reconstructions/${id}/vectors`);
+
+  getReconstructionVectors: async (id: number): Promise<VectorizationResult> => {
+    const response = await apiClient.get<VectorizationResult>(`/reconstruction/reconstructions/${id}/vectors`);
     return response.data;
   },
-  
-  updateVectorizationData: async (id: number, data: any) => {
-    const response = await apiClient.put(`/reconstruction/reconstructions/${id}/vectors`, data);
+
+  updateVectorizationData: async (id: number, data: VectorizationResult): Promise<{ message: string }> => {
+    const response = await apiClient.put<{ message: string }>(`/reconstruction/reconstructions/${id}/vectors`, data);
     return response.data;
   },
   

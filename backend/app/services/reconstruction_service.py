@@ -7,9 +7,12 @@ from app.db.repositories.reconstruction_repo import ReconstructionRepository
 from app.models.domain import (
     Point2D,
     TextBlock,
-    VectorizationResult,
+    VectorizationResult as DomainVectorizationResult,
     Wall,
+    Room,
+    Door,
 )
+from app.models.reconstruction_vectors import VectorizationResult as ReconstructionVectorizationResult
 from app.processing.contours import extract_elements
 from app.processing.pipeline import (
     assign_room_numbers,
@@ -54,6 +57,8 @@ class ReconstructionService:
         crop_rect: Optional[dict] = None,
         crop_applied: bool = False,
         rotation_angle: int = 0,
+        manual_rooms: Optional[List[dict]] = None,
+        manual_doors: Optional[List[dict]] = None,
     ) -> Reconstruction:
         """
         Execute full 3D reconstruction pipeline.
@@ -118,11 +123,60 @@ class ReconstructionService:
             wall_thickness_px = compute_wall_thickness(mask_array)
 
             # 5. Detect rooms
-            rooms = room_detect(mask_array)
-            rooms = classify_rooms(rooms)
+            if manual_rooms is not None:
+                rooms = []
+                for idx, r_dict in enumerate(manual_rooms):
+                    rx = float(r_dict.get("x", 0))
+                    ry = float(r_dict.get("y", 0))
+                    rw = float(r_dict.get("width", 0))
+                    rh = float(r_dict.get("height", 0))
+                    poly = [
+                        Point2D(x=rx, y=ry),
+                        Point2D(x=rx + rw, y=ry),
+                        Point2D(x=rx + rw, y=ry + rh),
+                        Point2D(x=rx, y=ry + rh),
+                    ]
+                    c_dict = r_dict.get("center", {})
+                    if isinstance(c_dict, dict) and "x" in c_dict and "y" in c_dict:
+                        cx = float(c_dict["x"])
+                        cy = float(c_dict["y"])
+                    else:
+                        cx = rx + rw / 2
+                        cy = ry + rh / 2
+                    
+                    rooms.append(
+                        Room(
+                            id=r_dict.get("id", f"manual_room_{idx}"),
+                            name=r_dict.get("name", ""),
+                            polygon=poly,
+                            center=Point2D(x=cx, y=cy),
+                            room_type=r_dict.get("room_type", "room"),
+                            area_normalized=rw * rh
+                        )
+                    )
+            else:
+                rooms = room_detect(mask_array)
+                rooms = classify_rooms(rooms)
 
             # 6. Detect doors
-            doors = door_detect(mask_array, rooms)
+            if manual_doors is not None:
+                doors = []
+                for idx, d_dict in enumerate(manual_doors):
+                    dx = float(d_dict.get("x1", 0))
+                    dy = float(d_dict.get("y1", 0))
+                    conns = []
+                    if d_dict.get("room_id"):
+                        conns.append(str(d_dict["room_id"]))
+                    doors.append(
+                        Door(
+                            id=d_dict.get("id", f"manual_door_{idx}"),
+                            position=Point2D(x=dx, y=dy),
+                            width=0.05,
+                            connects=conns
+                        )
+                    )
+            else:
+                doors = door_detect(mask_array, rooms)
 
             # 7. Load text blocks from storage if not provided
             if not text_blocks:
@@ -144,7 +198,7 @@ class ReconstructionService:
 
             # 11. Assemble VectorizationResult
             orig_size = image_size_original or image_size
-            vectorization_result = VectorizationResult(
+            vectorization_result = DomainVectorizationResult(
                 walls=walls,
                 rooms=rooms,
                 doors=doors,
@@ -206,7 +260,7 @@ class ReconstructionService:
 
     async def get_vectorization_data(
         self, reconstruction_id: int
-    ) -> Optional[VectorizationResult]:
+    ) -> Optional[ReconstructionVectorizationResult]:
         """
         Retrieve vectorization data from database.
 
@@ -221,7 +275,7 @@ class ReconstructionService:
             return None
         try:
             data = json.loads(reconstruction.vectorization_data)
-            return VectorizationResult(**data)
+            return ReconstructionVectorizationResult(**data)
         except (json.JSONDecodeError, Exception) as e:
             logger.error(
                 "Failed to parse vectorization data for %d: %s",
@@ -232,7 +286,7 @@ class ReconstructionService:
             return None
 
     async def update_vectorization_data(
-        self, reconstruction_id: int, data: VectorizationResult
+        self, reconstruction_id: int, data: ReconstructionVectorizationResult
     ) -> bool:
         """
         Update vectorization data in database.
@@ -244,7 +298,21 @@ class ReconstructionService:
         Returns:
             True if successful, False if reconstruction not found
         """
-        json_str = json.dumps(data.model_dump(), ensure_ascii=False)
+        existing = await self.get_vectorization_data(reconstruction_id)
+        if existing is not None:
+            merged = existing.model_copy(
+                update={
+                    "rooms": data.rooms,
+                    "doors": data.doors,
+                    "rotation_angle": data.rotation_angle,
+                    "crop_rect": data.crop_rect,
+                }
+            )
+            payload = merged.model_dump()
+        else:
+            payload = data.model_dump()
+
+        json_str = json.dumps(payload, ensure_ascii=False)
         result = await self._repo.update_vectorization_data(
             reconstruction_id, json_str
         )
@@ -316,7 +384,7 @@ class ReconstructionService:
         return STATUS_DISPLAY.get(status, "Неизвестно")
 
     @staticmethod
-    def get_room_labels(vr: Optional[VectorizationResult]) -> list[dict]:
+    def get_room_labels(vr: Optional[DomainVectorizationResult]) -> list[dict]:
         """
         Format room labels for API response.
 
