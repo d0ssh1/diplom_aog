@@ -6,9 +6,11 @@ import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { PublicHomePage } from './pages/PublicHomePage';
 import { DashboardPage } from './pages/DashboardPage';
 import { WizardPage } from './pages/WizardPage';
-import { ViewMeshPage } from './pages/ViewMeshPage';
+import { EditPlanPage } from './pages/EditPlanPage';
 import { PendingUsersPage } from './pages/PendingUsersPage';
 import { StitchingPage } from './pages/StitchingPage';
+import { TransitionsPage } from './pages/TransitionsPage';
+import { RouteTestPage } from './pages/RouteTestPage';
 
 function App() {
   return (
@@ -19,10 +21,13 @@ function App() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/admin" element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
-        <Route path="mesh/:id" element={<ViewMeshPage />} />
         <Route path="pending-users" element={<PendingUsersPage />} />
         <Route path="stitching" element={<StitchingPage />} />
       </Route>
+      <Route path="/admin/transitions" element={<TransitionsPage />} />
+      <Route path="/admin/transitions/:buildingId" element={<TransitionsPage />} />
+      <Route path="/admin/route-test" element={<RouteTestPage />} />
+      <Route path="/admin/edit/:id" element={<EditPlanPage />} />
       <Route path="/upload" element={<WizardPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
