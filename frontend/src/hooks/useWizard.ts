@@ -10,14 +10,18 @@ interface UseWizardReturn {
   setPlanFile: (id: string, url: string) => void;
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
-  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: any) => Promise<string | null>;
+  saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: unknown) => Promise<string | null>;
   buildNavGraph: (maskId: string, rooms: RoomAnnotation[], doors: DoorAnnotation[]) => Promise<void>;
   buildMesh: (editedMaskId?: string) => Promise<void>;
-  save: (name: string, buildingId: string, floorNumber: number) => Promise<void>;
+  save: (name: string) => Promise<void>;
+  setFloor: (buildingId: number | null, floorId: number | null) => Promise<void>;
   setCropRect: (rect: CropRect | null) => void;
   setRotation: (deg: 0 | 90 | 180 | 270) => void;
   setBlockSize: (v: number) => void;
   setThresholdC: (v: number) => void;
+  canProceedFromUpload: boolean;
+  selectedBuildingId: number | null;
+  selectedFloorId: number | null;
 }
 
 const initialState: WizardState = {
@@ -40,8 +44,14 @@ const initialState: WizardState = {
   error: null,
 };
 
+interface FloorSelection {
+  buildingId: number | null;
+  floorId: number | null;
+}
+
 export const useWizard = (): UseWizardReturn => {
   const [state, setState] = useState<WizardState>(initialState);
+  const [floorSelection, setFloorSelection] = useState<FloorSelection>({ buildingId: null, floorId: null });
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
@@ -76,7 +86,7 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
 
-  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: any): Promise<string | null> => {
+  const saveMaskAndAnnotations = useCallback(async (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: unknown): Promise<string | null> => {
     setState((s) => ({ ...s, isLoading: true, error: null }));
     try {
       const file = new File([blob], 'mask.png', { type: 'image/png' });
@@ -150,19 +160,38 @@ export const useWizard = (): UseWizardReturn => {
     }
   }, [state.planFileId, state.editedMaskFileId, state.maskFileId]);
 
+  const setFloor = useCallback(
+    async (buildingId: number | null, floorId: number | null): Promise<void> => {
+      setFloorSelection({ buildingId, floorId });
+      // Early binding: if reconstruction already created, PATCH immediately
+      if (floorId !== null && state.reconstructionId !== null) {
+        try {
+          await reconstructionApi.patchReconstructionFloor(state.reconstructionId, floorId);
+        } catch {
+          // Non-fatal: binding will be retried on save
+        }
+      }
+    },
+    [state.reconstructionId],
+  );
+
   const save = useCallback(
-    async (name: string, buildingId: string, floorNumber: number) => {
+    async (name: string) => {
       if (!state.reconstructionId) return;
+      const floorId = floorSelection.floorId;
+      if (floorId === null) return;
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
-        await reconstructionApi.saveReconstruction(state.reconstructionId, name, buildingId, floorNumber);
+        await reconstructionApi.saveReconstruction(state.reconstructionId, name, floorId);
         navigate('/');
       } catch {
         setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения' }));
       }
     },
-    [state.reconstructionId, navigate],
+    [state.reconstructionId, floorSelection.floorId, navigate],
   );
+
+  const canProceedFromUpload = floorSelection.floorId !== null;
 
   return {
     state,
@@ -175,9 +204,13 @@ export const useWizard = (): UseWizardReturn => {
     buildNavGraph,
     buildMesh,
     save,
+    setFloor,
     setCropRect,
     setRotation,
     setBlockSize,
     setThresholdC,
+    canProceedFromUpload,
+    selectedBuildingId: floorSelection.buildingId,
+    selectedFloorId: floorSelection.floorId,
   };
 };

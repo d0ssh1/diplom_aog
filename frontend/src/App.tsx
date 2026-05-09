@@ -11,11 +11,15 @@ import { PendingUsersPage } from './pages/PendingUsersPage';
 import { StitchingPage } from './pages/StitchingPage';
 import { TransitionsPage } from './pages/TransitionsPage';
 import { RouteTestPage } from './pages/RouteTestPage';
+import { AdminBuildingsPage } from './pages/AdminBuildingsPage';
+import { FloorViewerPage } from './pages/FloorViewerPage';
+import { FloorEditorPage } from './pages/FloorEditorPage';
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<PublicHomePage />} />
+      <Route path="/viewer" element={<FloorViewerPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
@@ -24,6 +28,8 @@ function App() {
         <Route path="pending-users" element={<PendingUsersPage />} />
         <Route path="stitching" element={<StitchingPage />} />
       </Route>
+      <Route path="/admin/buildings" element={<AdminBuildingsPage />} />
+      <Route path="/admin/floor-editor" element={<FloorEditorPage />} />
       <Route path="/admin/transitions" element={<TransitionsPage />} />
       <Route path="/admin/transitions/:buildingId" element={<TransitionsPage />} />
       <Route path="/admin/route-test" element={<RouteTestPage />} />

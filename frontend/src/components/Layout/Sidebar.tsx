@@ -41,6 +41,20 @@ export const Sidebar: React.FC = () => {
           <span className={styles.arrow}>&gt;</span> Загрузить изображение
         </button>
         <button
+          className={`${styles.item} ${isActive('/admin/buildings') ? styles.active : ''}`}
+          onClick={() => navigate('/admin/buildings')}
+          type="button"
+        >
+          <span className={styles.arrow}>&gt;</span> Корпуса и этажи
+        </button>
+        <button
+          className={`${styles.item} ${isActive('/admin/floor-editor') ? styles.active : ''}`}
+          onClick={() => navigate('/admin/floor-editor')}
+          type="button"
+        >
+          <span className={styles.arrow}>&gt;</span> Редактор отсеков
+        </button>
+        <button
           className={`${styles.item} ${isActive('/admin/transitions') ? styles.active : ''}`}
           onClick={() => navigate('/admin/transitions')}
           type="button"

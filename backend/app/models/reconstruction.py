@@ -114,27 +114,48 @@ class CalculateMeshResponse(BaseModel):
 
 
 class SaveReconstructionRequest(BaseModel):
-    """Запрос на сохранение реконструкции"""
-    name: str = Field(..., min_length=1, max_length=100)
-    building_id: Optional[str] = None
-    floor_number: Optional[int] = None
+    """Запрос на сохранение реконструкции.
+
+    Phase 02 change: floor_id replaces building_id + floor_number (ADR-14).
+    """
+    name: str = Field(..., min_length=1, max_length=255)
+    floor_id: int = Field(..., description="ID of the floor this reconstruction belongs to")
+
+
+class ReconstructionPatchRequest(BaseModel):
+    """PATCH /reconstruction/reconstructions/{id} — early floor binding (ADR-24)."""
+
+    floor_id: int = Field(..., description="ID of the floor to bind reconstruction to")
+
+
+class FloorPublicBrief(BaseModel):
+    """Minimal floor info for embedding inside ReconstructionListItem."""
+
+    id: int
+    number: int
+    building_code: Optional[str] = None
+
+
+class SectionBriefEmbed(BaseModel):
+    """Minimal section info for embedding inside reconstruction list/detail."""
+
+    id: int
+    number: int
 
 
 class ReconstructionListItem(BaseModel):
-    """Элемент списка реконструкций"""
+    """Элемент списка реконструкций (Phase 02: floor/section replace building_id/floor_number)."""
     id: int
-    name: str
-    building_id: Optional[str] = None
-    floor_number: Optional[int] = None
+    name: Optional[str] = None
+    status: int = 1
     preview_url: Optional[str] = None
-    rooms_count: int = 0
-    walls_count: int = 0
-    created_at: datetime
-    rotation_angle: int = 0
+    floor: Optional[FloorPublicBrief] = None
+    section: Optional[SectionBriefEmbed] = None
+    updated_at: datetime
 
 
 class PatchReconstructionRequest(BaseModel):
-    """Обновление имени реконструкции"""
+    """Обновление имени реконструкции (legacy — kept for backward compatibility)."""
     name: str
 
 

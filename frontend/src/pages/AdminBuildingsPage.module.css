@@ -1,0 +1,584 @@
+/* AdminBuildingsPage — admin panel for managing buildings and floors */
+
+.container {
+  padding: 2.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+  min-height: 100vh;
+  background: #e5e5e5;
+  position: relative;
+}
+
+/* ===================== Header ===================== */
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 2px solid #000;
+  gap: 1rem;
+}
+
+.title {
+  font-size: 2.25rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: -0.025em;
+  margin: 0 0 0.5rem 0;
+}
+
+.subtitle {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0;
+}
+
+.counter {
+  background: #000;
+  color: #fff;
+  padding: 0.5rem 1rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  border: 2px solid #000;
+  box-shadow: 4px 4px 0px 0px #ff4500;
+  white-space: nowrap;
+  flex-shrink: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+/* ===================== Buttons ===================== */
+.btnPrimary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 1.5rem;
+  background: #ff4500;
+  border: 2px solid #ff4500;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btnPrimary:hover {
+  background: #000;
+  border-color: #000;
+  color: #fff;
+}
+
+.btnSecondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #fff;
+  border: 2px solid #000;
+  color: #000;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btnSecondary:hover {
+  background: #000;
+  color: #fff;
+}
+
+.btnDanger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: #fff;
+  border: 2px solid #dc2626;
+  color: #dc2626;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+
+.btnDanger:hover {
+  background: #dc2626;
+  color: #fff;
+}
+
+.btnGhost {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.375rem 0.75rem;
+  background: transparent;
+  border: none;
+  color: #6b7280;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.btnGhost:hover {
+  color: #000;
+}
+
+/* ===================== Loading / Error ===================== */
+.loading,
+.errorState {
+  text-align: center;
+  padding: 3rem;
+  font-family: 'Courier New', monospace;
+  font-size: 1.125rem;
+}
+
+.errorState {
+  color: #dc2626;
+}
+
+/* ===================== Empty State ===================== */
+.emptyState {
+  border: 2px dashed #9ca3af;
+  padding: 4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: #6b7280;
+  margin-top: 2.5rem;
+}
+
+.emptyIcon {
+  color: #d1d5db;
+  margin-bottom: 1rem;
+}
+
+.emptyTitle {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #000;
+  margin: 0 0 0.5rem 0;
+}
+
+.emptyText {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  margin: 0 0 1.5rem 0;
+}
+
+/* ===================== Building Cards ===================== */
+.buildingList {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.buildingCard {
+  background: #fff;
+  border: 2px solid #000;
+  position: relative;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.buildingCard:hover {
+  box-shadow: 6px 6px 0px 0px rgba(255, 69, 0, 0.6);
+  transform: translateY(-1px);
+}
+
+.cardAccent {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: #ff4500;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.buildingCard:hover .cardAccent {
+  opacity: 1;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  gap: 1rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cardHeaderLeft {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.buildingCode {
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: #000;
+  color: #ff4500;
+  padding: 0.25rem 0.75rem;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.buildingInfo {
+  min-width: 0;
+}
+
+.buildingName {
+  font-size: 1.125rem;
+  font-weight: 700;
+  margin: 0 0 0.25rem 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buildingMeta {
+  display: flex;
+  gap: 1rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #6b7280;
+  flex-wrap: wrap;
+}
+
+.buildingMetaItem {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.expandIcon {
+  transition: transform 0.2s ease;
+  color: #9ca3af;
+}
+
+.expandIconOpen {
+  transform: rotate(180deg);
+}
+
+/* ===================== Floor Section ===================== */
+.floorSection {
+  border-top: 1px dashed #d1d5db;
+  padding: 1rem 1.5rem 1.5rem;
+  background: #f9fafb;
+}
+
+.floorSectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.floorSectionTitle {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #6b7280;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin: 0;
+}
+
+.floorList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.floorChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #fff;
+  border: 2px solid #000;
+  padding: 0.375rem 0.75rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  transition: all 0.15s ease;
+}
+
+.floorChipNumber {
+  color: #ff4500;
+}
+
+.floorChipDeleteBtn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #9ca3af;
+  transition: color 0.15s ease;
+}
+
+.floorChipDeleteBtn:hover {
+  color: #dc2626;
+}
+
+.floorSectionLoading {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  color: #9ca3af;
+  padding: 0.5rem 0;
+}
+
+.floorSectionEmpty {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  color: #9ca3af;
+  padding: 0.5rem 0;
+}
+
+/* ===================== Modal Overlay ===================== */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal {
+  background: #fff;
+  border: 2px solid #000;
+  box-shadow: 8px 8px 0px 0px rgba(255, 69, 0, 0.5);
+  width: 100%;
+  max-width: 480px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 2px solid #000;
+  background: #000;
+  color: #fff;
+}
+
+.modalTitle {
+  font-size: 1rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0;
+  font-family: 'Courier New', monospace;
+}
+
+.modalCloseBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s ease;
+}
+
+.modalCloseBtn:hover {
+  color: #ff4500;
+}
+
+.modalBody {
+  padding: 1.5rem;
+}
+
+.modalFooter {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-top: 1px dashed #d1d5db;
+}
+
+/* ===================== Form Elements ===================== */
+.formGroup {
+  margin-bottom: 1.25rem;
+}
+
+.formLabel {
+  display: block;
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7280;
+  margin-bottom: 0.375rem;
+}
+
+.formInput {
+  width: 100%;
+  padding: 0.625rem 0.875rem;
+  border: 2px solid #000;
+  background: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  color: #000;
+  outline: none;
+  transition: border-color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.formInput:focus {
+  border-color: #ff4500;
+}
+
+.formInputError {
+  border-color: #dc2626;
+}
+
+.formError {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #dc2626;
+  margin-top: 0.25rem;
+}
+
+.formHint {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #9ca3af;
+  margin-top: 0.25rem;
+}
+
+/* ===================== Confirm Dialog ===================== */
+.confirmIcon {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 1rem;
+  color: #ff4500;
+}
+
+.confirmText {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  margin: 0 0 0.75rem 0;
+  text-align: center;
+}
+
+.confirmWarning {
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  color: #dc2626;
+  background: #fef2f2;
+  border: 1px solid #fca5a5;
+  padding: 0.75rem;
+  text-align: center;
+  margin: 0;
+}
+
+/* ===================== Toast ===================== */
+.toast {
+  position: fixed;
+  bottom: 2.5rem;
+  right: 2.5rem;
+  background: #000;
+  border: 2px solid #ff4500;
+  color: #fff;
+  padding: 1rem 1.25rem;
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  box-shadow: 6px 6px 0px 0px rgba(255, 69, 0, 0.5);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  z-index: 200;
+  animation: fadeIn 0.3s ease;
+  max-width: 400px;
+}
+
+.toastError {
+  border-color: #dc2626;
+  box-shadow: 6px 6px 0px 0px rgba(220, 38, 38, 0.5);
+}
+
+.toastDot {
+  width: 8px;
+  height: 8px;
+  background: #ff4500;
+  border-radius: 50%;
+  flex-shrink: 0;
+  animation: pulse 1.5s ease infinite;
+}
+
+.toastDotError {
+  background: #dc2626;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ===================== Responsive ===================== */
+@media (max-width: 767px) {
+  .container {
+    padding: 1.5rem;
+  }
+
+  .title {
+    font-size: 1.875rem;
+  }
+
+  .cardHeader {
+    flex-wrap: wrap;
+  }
+
+  .toast {
+    bottom: 1rem;
+    right: 1rem;
+    left: 1rem;
+  }
+}

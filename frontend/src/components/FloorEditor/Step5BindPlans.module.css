@@ -1,0 +1,122 @@
+.body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+.sectionsPanel {
+  width: 200px;
+  flex-shrink: 0;
+  background: #1a1a1a;
+  color: #fff;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  border-right: 2px solid #333;
+  overflow-y: auto;
+}
+
+.galleryPanel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  background: #f0f0f0;
+  overflow: hidden;
+}
+
+.previewPanel {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  background: #1a1a1a;
+  border-left: 2px solid #333;
+}
+
+.panelTitle {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #888;
+  margin: 0 0 0.75rem 0;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
+}
+
+.galleryPanel .panelTitle {
+  color: #444;
+  border-bottom-color: #ccc;
+}
+
+.sectionList {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.sectionBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.625rem;
+  background: transparent;
+  border: 1px solid #333;
+  color: #ccc;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s;
+}
+
+.sectionBtn:hover {
+  border-color: #ff4500;
+  color: #fff;
+}
+
+.sectionBtnActive {
+  background: #ff4500;
+  border-color: #ff4500;
+  color: #000;
+  font-weight: 700;
+}
+
+.sectionDot {
+  width: 8px;
+  height: 8px;
+  background: #555;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sectionDotBound {
+  background: #22c55e;
+}
+
+.checkmark {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: #22c55e;
+}
+
+.sectionBtnActive .checkmark {
+  color: #000;
+}
+
+.canvasWrap {
+  flex: 1;
+  min-height: 120px;
+  background: #2a2a2a;
+  overflow: hidden;
+}
+
+.previewLabel {
+  font-family: 'Courier New', monospace;
+  font-size: 0.75rem;
+  color: #888;
+  text-align: center;
+  margin: 0.5rem 0 0 0;
+}

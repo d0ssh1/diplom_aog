@@ -428,3 +428,102 @@ class ReconstructionService:
             model_id = reconstruction.id
             return f"/api/v1/uploads/models/reconstruction_{model_id}.glb"
         return None
+
+    # ── Phase 04 extensions ───────────────────────────────────────────────────
+
+    async def patch_floor(
+        self, reconstruction_id: int, floor_id: int
+    ) -> Optional[Reconstruction]:
+        """PATCH: early binding of a reconstruction to a floor (ADR-24).
+
+        Used on wizard StepUpload when admin picks building+floor.
+        Validates floor exists (404 if not via caller).
+
+        Args:
+            reconstruction_id: Reconstruction to update.
+            floor_id: Floor to bind to.
+
+        Returns:
+            Updated Reconstruction with relations, or None if not found.
+        """
+        logger.info(
+            "patch_floor: reconstruction_id=%d, floor_id=%d",
+            reconstruction_id,
+            floor_id,
+        )
+        result = await self._repo.update_floor_id(reconstruction_id, floor_id)
+        if result is None:
+            return None
+        return await self._repo.get_with_relations(reconstruction_id)
+
+    async def save(
+        self, reconstruction_id: int, name: str, floor_id: int
+    ) -> Optional[Reconstruction]:
+        """Save reconstruction with name + floor_id (replaces old building_id+floor_number).
+
+        Validates floor exists; caller raises 404 if floor absent.
+
+        Args:
+            reconstruction_id: Reconstruction to update.
+            name: Human-readable name for the reconstruction.
+            floor_id: Floor FK.
+
+        Returns:
+            Updated Reconstruction with full relations, or None if not found.
+        """
+        logger.info(
+            "save: reconstruction_id=%d, name=%s, floor_id=%d",
+            reconstruction_id,
+            name,
+            floor_id,
+        )
+        result = await self._repo.update_reconstruction(
+            reconstruction_id, name=name, floor_id=floor_id
+        )
+        if result is None:
+            return None
+        return await self._repo.get_with_relations(reconstruction_id)
+
+    async def list(
+        self,
+        floor_id: Optional[int] = None,
+        status: Optional[int] = None,
+        unbound: bool = False,
+        search: Optional[str] = None,
+    ) -> list[Reconstruction]:
+        """List saved reconstructions with optional filters.
+
+        Args:
+            floor_id: Filter by floor (for floor editor).
+            status: Filter by status (e.g. 3=Done for gallery).
+            unbound: If True, only reconstructions not linked to any section.
+            search: Substring match on name.
+
+        Returns:
+            List of Reconstruction ORM models.
+        """
+        logger.debug(
+            "list: floor_id=%s, status=%s, unbound=%s, search=%s",
+            floor_id,
+            status,
+            unbound,
+            search,
+        )
+        return await self._repo.get_saved(
+            floor_id=floor_id,
+            status=status,
+            unbound=unbound,
+            search=search,
+        )
+
+    async def get_by_id(self, reconstruction_id: int) -> Optional[Reconstruction]:
+        """Get reconstruction by ID with full relations (floor→building + section).
+
+        Args:
+            reconstruction_id: Reconstruction ID.
+
+        Returns:
+            Reconstruction with relations or None if not found.
+        """
+        logger.debug("get_by_id (with relations): reconstruction_id=%d", reconstruction_id)
+        return await self._repo.get_with_relations(reconstruction_id)

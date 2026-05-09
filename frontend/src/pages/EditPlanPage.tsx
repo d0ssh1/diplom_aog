@@ -5,8 +5,38 @@ import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
 import { StepNavGraph } from '../components/Wizard/StepNavGraph';
 import { StepView3D } from '../components/Wizard/StepView3D';
+import { SectionBindingBadge } from '../components/Editor/SectionBindingBadge';
 import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
 import type { RoomAnnotation, DoorAnnotation, CropRect } from '../types/wizard';
+import type { VectorizationResult } from '../types/reconstructionVectors';
+import type { ReconstructionFloor, ReconstructionSectionBrief } from '../types/hierarchy';
+
+function toRoomAnnotation(room: VectorizationResult['rooms'][number]): RoomAnnotation {
+  if (room.polygon.length === 4) {
+    const xs = room.polygon.map((p) => p.x);
+    const ys = room.polygon.map((p) => p.y);
+    return {
+      id: room.id,
+      name: room.name,
+      room_type: room.room_type,
+      x: Math.min(...xs),
+      y: Math.min(...ys),
+      width: Math.max(...xs) - Math.min(...xs),
+      height: Math.max(...ys) - Math.min(...ys),
+    };
+  }
+
+  const side = Math.sqrt(room.area_normalized);
+  return {
+    id: room.id,
+    name: room.name,
+    room_type: room.room_type,
+    x: room.center.x - side / 2,
+    y: room.center.y - side / 2,
+    width: side,
+    height: side,
+  };
+}
 
 interface PlanData {
   maskUrl: string;
@@ -17,7 +47,9 @@ interface PlanData {
   meshUrl: string | null;
   initialRooms: RoomAnnotation[];
   initialDoors: DoorAnnotation[];
-  rawVectors: unknown;
+  rawVectors: VectorizationResult | null;
+  floor: ReconstructionFloor | null;
+  section: ReconstructionSectionBrief | null;
 }
 
 export const EditPlanPage: React.FC = () => {
@@ -43,42 +75,49 @@ export const EditPlanPage: React.FC = () => {
           reconstructionApi.getReconstructionVectors(numId).catch(() => null),
         ]);
 
-        const rooms: RoomAnnotation[] = (vectors?.rooms ?? []).map((r: any) => {
-          if (r.polygon && r.polygon.length >= 3) {
-            const xs = r.polygon.map((p: any) => p.x);
-            const ys = r.polygon.map((p: any) => p.y);
-            return {
-              id: r.id,
-              name: r.name || '',
-              room_type: r.room_type || 'room',
-              x: Math.min(...xs),
-              y: Math.min(...ys),
-              width: Math.max(...xs) - Math.min(...xs),
-              height: Math.max(...ys) - Math.min(...ys),
-            };
-          }
-          return null;
-        }).filter(Boolean) as RoomAnnotation[];
+        const vectorData = vectors as VectorizationResult | null;
+        const rooms: RoomAnnotation[] = (vectorData?.rooms ?? []).map((r) => {
+          const xs = r.polygon.map((p) => p.x);
+          const ys = r.polygon.map((p) => p.y);
+          return {
+            id: r.id,
+            name: r.name,
+            room_type: r.room_type,
+            x: Math.min(...xs),
+            y: Math.min(...ys),
+            width: Math.max(...xs) - Math.min(...xs),
+            height: Math.max(...ys) - Math.min(...ys),
+            polygon: r.polygon,
+            center: r.center,
+            area_normalized: r.area_normalized,
+          };
+        });
 
-        const doors: DoorAnnotation[] = (vectors?.doors ?? []).map((d: any) => ({
+        void toRoomAnnotation;
+
+        const doors: DoorAnnotation[] = (vectorData?.doors ?? []).map((d) => ({
           id: d.id,
-          x1: d.position?.x ?? 0,
-          y1: d.position?.y ?? 0,
-          x2: d.position?.x ?? 0,
-          y2: d.position?.y ?? 0,
+          x1: d.position.x,
+          y1: d.position.y,
+          x2: d.position.x,
+          y2: d.position.y,
           room_id: d.connects?.[0] ?? null,
         }));
+
+        const fallbackCropRect = rec.crop_rect ?? null;
 
         setData({
           maskUrl: rec.preview_url || '',
           maskFileId: rec.mask_file_id || null,
           planUrl: rec.original_image_url || '',
-          rotation: vectors?.rotation_angle ?? 0,
-          cropRect: vectors?.crop_rect ?? null,
+          rotation: vectorData?.rotation_angle ?? rec.rotation_angle ?? 0,
+          cropRect: vectorData?.crop_rect ?? fallbackCropRect,
           meshUrl: rec.url ?? null,
           initialRooms: rooms,
           initialDoors: doors,
-          rawVectors: vectors,
+          rawVectors: vectorData,
+          floor: rec.floor ?? null,
+          section: rec.section ?? null,
         });
         setCurrentRooms(rooms);
       } catch (err) {
@@ -120,43 +159,44 @@ export const EditPlanPage: React.FC = () => {
     if (!canvasRef.current || !id || !data) return null;
     const { rooms, doors } = canvasRef.current.getAnnotations();
 
-    const newRooms = rooms.map(r => ({
-      id: r.id,
-      name: r.name,
-      room_type: r.room_type,
-      center: { x: r.x + r.width / 2, y: r.y + r.height / 2 },
-      polygon: [
-        { x: r.x, y: r.y },
-        { x: r.x + r.width, y: r.y },
-        { x: r.x + r.width, y: r.y + r.height },
-        { x: r.x, y: r.y + r.height },
-      ],
-      area_normalized: r.width * r.height,
-    }));
-
-    const newDoors = doors.map(d => ({
-      id: d.id,
-      position: { x: d.x1, y: d.y1 },
-      width: 0.05,
-      connects: d.room_id ? [d.room_id] : [],
-    }));
-
-    const updatedPayload = {
-      ...(data.rawVectors || {}),
-      rooms: newRooms,
-      doors: newDoors,
+    const updatedPayload: VectorizationResult = {
+      ...(data.rawVectors ?? {
+        rooms: [],
+        doors: [],
+        rotation_angle: data.rotation,
+        crop_rect: data.cropRect,
+      }),
+      rooms: rooms.map((r) => ({
+        id: r.id,
+        name: r.name,
+        room_type: r.room_type,
+        center: r.center ?? { x: r.x + r.width / 2, y: r.y + r.height / 2 },
+        polygon: r.polygon ?? [
+          { x: r.x, y: r.y },
+          { x: r.x + r.width, y: r.y },
+          { x: r.x + r.width, y: r.y + r.height },
+          { x: r.x, y: r.y + r.height },
+        ],
+        area_normalized: r.area_normalized ?? (r.width * r.height),
+      })),
+      doors: doors.map((d) => ({
+        id: d.id,
+        position: { x: d.x1, y: d.y1 },
+        width: 0.05,
+        connects: d.room_id ? [d.room_id] : [],
+      })),
     };
 
     await reconstructionApi.updateVectorizationData(parseInt(id, 10), updatedPayload);
     setCurrentRooms(rooms);
-    return { rooms, doors, newRooms, newDoors };
+    return { rooms, doors };
   }, [id, data]);
 
   const handleNext = useCallback(async () => {
     if (step === 1) {
       if (!data?.maskFileId) {
         if (data?.meshUrl) {
-          setStep(3 as any);
+          setStep(3);
         } else {
           try {
             await saveVectors();
@@ -232,50 +272,53 @@ export const EditPlanPage: React.FC = () => {
   }
 
   return (
-    <WizardShell
-      currentStep={step}
-      totalSteps={totalSteps}
-      onNext={handleNext}
-      onPrev={handlePrev}
-      onClose={handleClose}
-      nextLabel={nextLabel}
-      nextDisabled={isBuildingGraph}
-      hideFooter={step === 3}
-    >
-      {step === 1 ? (
-        <StepWallEditor
-          maskUrl={data.maskUrl}
-          planFileId={null}
-          planUrl={data.planUrl}
-          cropRect={data.cropRect}
-          rotation={data.rotation as any}
-          blockSize={15}
-          thresholdC={10}
-          canvasRef={canvasRef}
-          onBlockSizeChange={() => {}}
-          onThresholdCChange={() => {}}
-          initialRooms={data.initialRooms}
-          initialDoors={data.initialDoors}
-          hideMaskParams={true}
-        />
-      ) : step === 2 ? (
-        <StepNavGraph
-          navGraphId={navGraphId}
-          maskUrl={data.maskUrl}
-        />
-      ) : (
-        <StepView3D
-          meshUrl={data.meshUrl}
-          reconstructionId={id ? parseInt(id, 10) : null}
-          navGraphId={navGraphId}
-          rooms={currentRooms}
-          onNext={handleSaveAndExit}
-          onPrev={() => setStep(2)}
-          isNextDisabled={false}
-          nextLabel="Сохранить изменения"
-        />
-      )}
-    </WizardShell>
+    <>
+      <WizardShell
+        currentStep={step}
+        totalSteps={totalSteps}
+        onNext={handleNext}
+        onPrev={handlePrev}
+        onClose={handleClose}
+        nextLabel={nextLabel}
+        nextDisabled={isBuildingGraph}
+        hideFooter={step === 3}
+      >
+        {step === 1 ? (
+          <StepWallEditor
+            maskUrl={data.maskUrl}
+            planFileId={null}
+            planUrl={data.planUrl}
+            cropRect={data.cropRect}
+            rotation={data.rotation as any}
+            blockSize={15}
+            thresholdC={10}
+            canvasRef={canvasRef}
+            onBlockSizeChange={() => {}}
+            onThresholdCChange={() => {}}
+            initialRooms={data.initialRooms}
+            initialDoors={data.initialDoors}
+            hideMaskParams={true}
+          />
+        ) : step === 2 ? (
+          <StepNavGraph
+            navGraphId={navGraphId}
+            maskUrl={data.maskUrl}
+          />
+        ) : (
+          <StepView3D
+            meshUrl={data.meshUrl}
+            reconstructionId={id ? parseInt(id, 10) : null}
+            navGraphId={navGraphId}
+            rooms={currentRooms}
+            onNext={handleSaveAndExit}
+            onPrev={() => setStep(2)}
+            isNextDisabled={false}
+            nextLabel="Сохранить изменения"
+          />
+        )}
+      </WizardShell>
+      <SectionBindingBadge floor={data.floor} section={data.section} />
+    </>
   );
 };
 

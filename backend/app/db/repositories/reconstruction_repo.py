@@ -4,8 +4,10 @@ from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload, selectinload
 
 from app.db.models.reconstruction import Reconstruction, UploadedFile
+from app.db.models.section import Section
 from app.db.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -75,7 +77,10 @@ class ReconstructionRepository(BaseRepository):
         """SELECT by PK. Returns None if not found."""
         logger.debug("get_by_id: reconstruction_id=%d", reconstruction_id)
         result = await self._session.execute(
-            select(Reconstruction).where(Reconstruction.id == reconstruction_id)
+            select(Reconstruction)
+            .options(joinedload(Reconstruction.plan_file))
+            .options(joinedload(Reconstruction.mask_file))
+            .where(Reconstruction.id == reconstruction_id)
         )
         return result.scalar_one_or_none()
 
@@ -123,22 +128,40 @@ class ReconstructionRepository(BaseRepository):
         self,
         reconstruction_id: int,
         name: str,
-        building_id: Optional[str] = None,
-        floor_number: Optional[int] = None,
+        floor_id: Optional[int] = None,
     ) -> Optional[Reconstruction]:
-        """UPDATE name, building_id, floor_number. Returns None if not found."""
+        """UPDATE name and optionally floor_id. Returns None if not found.
+
+        Phase 02 change: floor_id replaces building_id + floor_number (ADR-14).
+        """
         logger.debug(
-            "update_reconstruction: reconstruction_id=%d, name=%s, building_id=%s, floor_number=%s",
-            reconstruction_id, name, building_id, floor_number
+            "update_reconstruction: reconstruction_id=%d, name=%s, floor_id=%s",
+            reconstruction_id, name, floor_id,
         )
         reconstruction = await self._session.get(Reconstruction, reconstruction_id)
         if not reconstruction:
             return None
         reconstruction.name = name
-        if building_id is not None:
-            reconstruction.building_id = building_id
-        if floor_number is not None:
-            reconstruction.floor_number = floor_number
+        if floor_id is not None:
+            reconstruction.floor_id = floor_id
+        await self._session.commit()
+        await self._session.refresh(reconstruction)
+        return reconstruction
+
+    async def update_floor_id(
+        self,
+        reconstruction_id: int,
+        floor_id: Optional[int],
+    ) -> Optional[Reconstruction]:
+        """UPDATE floor_id (partial). Returns None if reconstruction not found."""
+        logger.debug(
+            "update_floor_id: reconstruction_id=%d, floor_id=%s",
+            reconstruction_id, floor_id,
+        )
+        reconstruction = await self._session.get(Reconstruction, reconstruction_id)
+        if not reconstruction:
+            return None
+        reconstruction.floor_id = floor_id
         await self._session.commit()
         await self._session.refresh(reconstruction)
         return reconstruction
@@ -146,18 +169,80 @@ class ReconstructionRepository(BaseRepository):
     async def get_saved(
         self,
         user_id: Optional[int] = None,
+        floor_id: Optional[int] = None,
+        status: Optional[int] = None,
+        unbound: bool = False,
+        search: Optional[str] = None,
     ) -> list[Reconstruction]:
-        """SELECT WHERE name IS NOT NULL ORDER BY created_at DESC."""
-        logger.debug("get_saved: user_id=%s", user_id)
+        """SELECT WHERE name IS NOT NULL ORDER BY updated_at DESC.
+
+        Phase 02 extensions: filter by floor_id, status, unbound, and search substring.
+        """
+        logger.debug(
+            "get_saved: user_id=%s, floor_id=%s, status=%s, unbound=%s, search=%s",
+            user_id, floor_id, status, unbound, search,
+        )
         query = (
             select(Reconstruction)
+            .options(joinedload(Reconstruction.plan_file))
+            .options(joinedload(Reconstruction.mask_file))
+            .options(selectinload(Reconstruction.section))
             .where(Reconstruction.name.isnot(None))
-            .order_by(Reconstruction.created_at.desc())
+            .order_by(Reconstruction.updated_at.desc())
         )
         if user_id is not None:
             query = query.where(Reconstruction.created_by == user_id)
+        if floor_id is not None:
+            query = query.where(Reconstruction.floor_id == floor_id)
+        if status is not None:
+            query = query.where(Reconstruction.status == status)
+        if search is not None:
+            query = query.where(Reconstruction.name.ilike(f"%{search}%"))
+        if unbound:
+            # Only reconstructions not linked to any section
+            query = (
+                query
+                .outerjoin(Section, Section.reconstruction_id == Reconstruction.id)
+                .where(Section.id.is_(None))
+            )
         result = await self._session.execute(query)
-        return list(result.scalars().all())
+        return list(result.scalars().unique().all())
+
+    async def list_unbound_for_floor(self, floor_id: int) -> list[Reconstruction]:
+        """SELECT reconstructions with floor_id=?, status=Done(3), not in any section.
+
+        LEFT OUTER JOIN sections on sections.reconstruction_id = reconstructions.id,
+        keep rows WHERE sections.id IS NULL.
+        """
+        logger.debug("list_unbound_for_floor: floor_id=%d", floor_id)
+        result = await self._session.execute(
+            select(Reconstruction)
+            .outerjoin(Section, Section.reconstruction_id == Reconstruction.id)
+            .where(
+                Reconstruction.floor_id == floor_id,
+                Reconstruction.status == 3,  # Done
+                Section.id.is_(None),
+            )
+            .order_by(Reconstruction.updated_at.desc())
+        )
+        return list(result.scalars().unique().all())
+
+    async def get_with_relations(self, reconstruction_id: int) -> Optional[Reconstruction]:
+        """SELECT by PK with full relations: floor→building + linked section."""
+        logger.debug("get_with_relations: reconstruction_id=%d", reconstruction_id)
+        from app.db.models.building import Floor  # noqa: PLC0415
+
+        result = await self._session.execute(
+            select(Reconstruction)
+            .options(
+                selectinload(Reconstruction.floor).selectinload(Floor.building),
+            )
+            .options(selectinload(Reconstruction.section))
+            .options(joinedload(Reconstruction.plan_file))
+            .options(joinedload(Reconstruction.mask_file))
+            .where(Reconstruction.id == reconstruction_id)
+        )
+        return result.scalar_one_or_none()
 
     async def delete(self, reconstruction_id: int) -> bool:
         """DELETE. Returns True if deleted, False if not found."""

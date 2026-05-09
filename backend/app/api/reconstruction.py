@@ -13,7 +13,9 @@ from app.api.deps import (
     get_reconstruction_service,
     get_mask_service,
     get_nav_service,
+    get_floor_service,
 )
+from app.core.exceptions import FloorNotFoundError
 from app.models import (
     BuildNavGraphRequest,
     BuildNavGraphResponse,
@@ -26,14 +28,15 @@ from app.models import (
     FindRouteRequest,
     FindRouteResponse,
     MaskPreviewRequest,
-    PatchReconstructionRequest,
     ReconstructionListItem,
     RoomsRequest,
     SaveReconstructionRequest,
 )
+from app.models.reconstruction import ReconstructionPatchRequest
 from app.models.reconstruction_vectors import VectorizationResult as EditVectorizationResult
 from app.models.domain import VectorizationResult as DomainVectorizationResult
 from app.services.reconstruction_service import ReconstructionService
+from app.services.floor_service import FloorService
 from app.services.mask_service import MaskService
 from app.services.nav_service import NavService
 
@@ -117,9 +120,17 @@ async def calculate_mesh(
             created_by=reconstruction.created_by,
             saved_at=None,  # Field doesn't exist in DB model
             url=svc.build_mesh_url(reconstruction),
-            original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
-            preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
-            mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
+            original_image_url=(
+                reconstruction.plan_file.url
+                if getattr(reconstruction, "plan_file", None) else None
+            ),
+            preview_url=(
+                reconstruction.mask_file.url
+                if getattr(reconstruction, "mask_file", None) else None
+            ),
+            mask_file_id=(
+                str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None
+            ),
             crop_rect=vectorization.crop_rect if vectorization else None,
             rotation_angle=vectorization.rotation_angle if vectorization else 0,
             error_message=reconstruction.error_message,
@@ -131,32 +142,93 @@ async def calculate_mesh(
 
 @router.get("/reconstructions", response_model=List[ReconstructionListItem])
 async def get_reconstructions(
-    is_saved: int = Query(1),
-    building_id: Optional[str] = Query(None),
-    floor_number: Optional[int] = Query(None),
-    status: Optional[int] = Query(None),
+    floor_id: Optional[int] = Query(None, description="Filter by floor ID"),
+    building_code: Optional[str] = Query(None, description="Filter by building code"),
+    unbound: bool = Query(
+        False, description="Return only reconstructions not linked to any section"
+    ),
+    status: Optional[int] = Query(None, description="Filter by status (3=Done)"),
+    search: Optional[str] = Query(None, description="Substring match on name"),
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
 ):
-    """List saved reconstructions with optional filters."""
-    reconstructions = await svc.get_saved_reconstructions()
+    """List saved reconstructions with optional filters (Phase 02 query params).
 
-    # Apply filters
-    if building_id:
-        reconstructions = [r for r in reconstructions if r.building_id == building_id]
-    if floor_number is not None:
-        reconstructions = [r for r in reconstructions if r.floor_number == floor_number]
-    if status is not None:
-        reconstructions = [r for r in reconstructions if r.status == status]
+    Replaces deprecated building_id / floor_number params.
+    """
+    reconstructions = await svc.list(
+        floor_id=floor_id,
+        status=status,
+        unbound=unbound,
+        search=search,
+    )
+
+    results = []
+    for r in reconstructions:
+        # Apply building_code filter (post-query, requires loaded relations)
+        if building_code is not None:
+            floor = getattr(r, "floor", None)
+            building = getattr(floor, "building", None) if floor else None
+            code = getattr(building, "code", None) if building else None
+            if code != building_code.upper():
+                continue
+
+        floor_brief = None
+        floor = getattr(r, "floor", None)
+        if floor:
+            building = getattr(floor, "building", None)
+            floor_brief = {
+                "id": floor.id,
+                "number": floor.number,
+                "building_code": building.code if building else None,
+            }
+
+        section_brief = None
+        section = getattr(r, "section", None)
+        if section:
+            section_brief = {"id": section.id, "number": section.number}
+
+        preview_url = None
+        plan_file = getattr(r, "plan_file", None)
+        if plan_file:
+            preview_url = plan_file.url
+
+        results.append(
+            ReconstructionListItem(
+                id=r.id,
+                name=r.name,
+                status=r.status,
+                preview_url=preview_url,
+                floor=floor_brief,
+                section=section_brief,
+                updated_at=r.updated_at,
+            )
+        )
+    return results
+
+
+@router.get("/buildings/{building_id}/reconstructions", response_model=List[ReconstructionListItem])
+async def get_reconstructions_by_building(
+    building_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+):
+    """List saved reconstructions for a building."""
+    reconstructions = await svc.get_saved_reconstructions()
+    reconstructions = [r for r in reconstructions if r.building_id == building_id]
 
     import json
     results = []
     for r in reconstructions:
         rot = 0
+        rooms_count = 0
+        walls_count = 0
         if r.vectorization_data:
             try:
                 vd = json.loads(r.vectorization_data)
                 rot = vd.get("rotation_angle", 0)
+                rooms_count = len(vd.get("rooms", []))
+                walls_count = len(vd.get("walls", []))
             except Exception:
                 pass
 
@@ -167,8 +239,8 @@ async def get_reconstructions(
                 building_id=r.building_id,
                 floor_number=r.floor_number,
                 preview_url=r.plan_file.url if getattr(r, "plan_file", None) else None,
-                rooms_count=0,  # TODO: count from vectorization_data
-                walls_count=0,  # TODO: count from vectorization_data
+                rooms_count=rooms_count,
+                walls_count=walls_count,
                 created_at=r.created_at,
                 rotation_angle=rot,
             )
@@ -186,6 +258,7 @@ async def get_reconstruction_by_id(
     reconstruction = await svc.get_reconstruction(id)
     if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    vectorization = await svc.get_vectorization_data(id)
     return CalculateMeshResponse(
         id=reconstruction.id,
         name=reconstruction.name or "",
@@ -195,9 +268,19 @@ async def get_reconstruction_by_id(
         created_by=reconstruction.created_by,
         saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
-        original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
-        preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
+        original_image_url=(
+            str(reconstruction.plan_file.url)
+            if getattr(reconstruction, "plan_file", None)
+            and getattr(reconstruction.plan_file, "url", None) is not None else None
+        ),
+        preview_url=(
+            str(reconstruction.mask_file.url)
+            if getattr(reconstruction, "mask_file", None)
+            and getattr(reconstruction.mask_file, "url", None) is not None else None
+        ),
         mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
+        crop_rect=vectorization.crop_rect if vectorization else None,
+        rotation_angle=vectorization.rotation_angle if vectorization else 0,
         error_message=reconstruction.error_message,
     )
 
@@ -208,11 +291,19 @@ async def save_reconstruction(
     request: SaveReconstructionRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
     svc: ReconstructionService = Depends(get_reconstruction_service),
+    floor_svc: FloorService = Depends(get_floor_service),
 ):
-    """Save reconstruction with name, building_id, and floor_number."""
-    reconstruction = await svc.save_reconstruction(
-        id, request.name, request.building_id, request.floor_number
-    )
+    """Save reconstruction with name and floor_id (Phase 02: replaces building_id+floor_number)."""
+    # Validate that the floor exists before saving
+    try:
+        await floor_svc.get_by_id(request.floor_id)
+    except FloorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Floor {request.floor_id} not found",
+        )
+
+    reconstruction = await svc.save(id, request.name, request.floor_id)
     if not reconstruction:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
     # Re-fetch with joinedload so plan_file/mask_file are available
@@ -226,21 +317,69 @@ async def save_reconstruction(
         created_by=reconstruction.created_by,
         saved_at=None,  # Field doesn't exist in DB model
         url=svc.build_mesh_url(reconstruction),
-        original_image_url=reconstruction.plan_file.url if getattr(reconstruction, "plan_file", None) else None,
-        preview_url=reconstruction.mask_file.url if getattr(reconstruction, "mask_file", None) else None,
+        original_image_url=(
+            str(reconstruction.plan_file.url)
+            if getattr(reconstruction, "plan_file", None)
+            and getattr(reconstruction.plan_file, "url", None) is not None else None
+        ),
+        preview_url=(
+            str(reconstruction.mask_file.url)
+            if getattr(reconstruction, "mask_file", None)
+            and getattr(reconstruction.mask_file, "url", None) is not None else None
+        ),
         mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
         error_message=reconstruction.error_message,
     )
 
 
-@router.patch("/reconstructions/{id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch("/reconstructions/{id}", response_model=CalculateMeshResponse)
 async def patch_reconstruction(
     id: int,
-    request: PatchReconstructionRequest,
+    request: ReconstructionPatchRequest,
     credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+    floor_svc: FloorService = Depends(get_floor_service),
 ):
-    """Patch reconstruction (not implemented)."""
-    pass
+    """Early floor binding (ADR-24): PATCH floor_id on a reconstruction.
+
+    Used on wizard StepUpload when admin selects building+floor.
+    """
+    # Validate floor exists
+    try:
+        await floor_svc.get_by_id(request.floor_id)
+    except FloorNotFoundError:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Floor {request.floor_id} not found",
+        )
+
+    reconstruction = await svc.patch_floor(id, request.floor_id)
+    if not reconstruction:
+        raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    # Re-fetch with joinedload so plan_file/mask_file are available
+    reconstruction = await svc.get_reconstruction(reconstruction.id) or reconstruction
+    return CalculateMeshResponse(
+        id=reconstruction.id,
+        name=reconstruction.name or "",
+        status=reconstruction.status,
+        status_display=svc.get_status_display(reconstruction.status),
+        created_at=reconstruction.created_at,
+        created_by=reconstruction.created_by,
+        saved_at=None,
+        url=svc.build_mesh_url(reconstruction),
+        original_image_url=(
+            str(reconstruction.plan_file.url)
+            if getattr(reconstruction, "plan_file", None)
+            and getattr(reconstruction.plan_file, "url", None) is not None else None
+        ),
+        preview_url=(
+            str(reconstruction.mask_file.url)
+            if getattr(reconstruction, "mask_file", None)
+            and getattr(reconstruction.mask_file, "url", None) is not None else None
+        ),
+        mask_file_id=str(reconstruction.mask_file_id) if reconstruction.mask_file_id else None,
+        error_message=reconstruction.error_message,
+    )
 
 
 @router.delete("/reconstructions/{id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -4,6 +4,8 @@
 
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import type { VectorizationResult } from '../types/reconstructionVectors';
+import type { MultifloorRouteRequest, MultifloorRouteResponse } from '../types/transitions';
+import type { ReconstructionFloor, ReconstructionSectionBrief } from '../types/hierarchy';
 
 const API_BASE_URL = '/api/v1';
 
@@ -127,12 +129,13 @@ export interface CropRect {
 export interface ReconstructionListItem {
   id: number;
   name: string;
-  status: string;
+  status: number;
   preview_url: string | null;
-  rooms_count: number;
-  walls_count: number;
-  created_at: string;
-  rotation_angle: number;
+  /** Nested floor info — null when reconstruction is unbound */
+  floor: { id: number; number: number; building_code: string } | null;
+  /** Nested section info — null when not yet assigned to a section */
+  section: ReconstructionSectionBrief | null;
+  updated_at: string;
 }
 
 interface CalculateMaskResponse {
@@ -150,10 +153,18 @@ export interface ReconstructionResponse {
   url: string | null;
   original_image_url: string | null;
   preview_url: string | null;
+  plan_file_id: string | null;
   mask_file_id: string | null;
+  mesh_file_id_obj: string | null;
+  mesh_file_id_glb: string | null;
   crop_rect: CropRect | null;
   rotation_angle: number;
   error_message: string | null;
+  vectorization_data: string | null;
+  /** Nested floor info — null when reconstruction is unbound */
+  floor: ReconstructionFloor | null;
+  /** Nested section info — null when not yet assigned to a section */
+  section: ReconstructionSectionBrief | null;
 }
 
 export const reconstructionApi = {
@@ -220,16 +231,39 @@ export const reconstructionApi = {
     return response.data;
   },
   
-  getReconstructions: async (): Promise<ReconstructionListItem[]> => {
-    const response = await apiClient.get<ReconstructionListItem[]>('/reconstruction/reconstructions');
+  getReconstructions: async (filters?: {
+    floorId?: number;
+    buildingCode?: string;
+    unbound?: boolean;
+    status?: number;
+    search?: string;
+  }): Promise<ReconstructionListItem[]> => {
+    const params: Record<string, string> = {};
+    if (filters?.floorId !== undefined) params['floor_id'] = String(filters.floorId);
+    if (filters?.buildingCode !== undefined) params['building_code'] = filters.buildingCode;
+    if (filters?.unbound !== undefined) params['unbound'] = String(filters.unbound);
+    if (filters?.status !== undefined) params['status'] = String(filters.status);
+    if (filters?.search !== undefined) params['search'] = filters.search;
+    const response = await apiClient.get<ReconstructionListItem[]>('/reconstruction/reconstructions', { params });
     return response.data;
   },
-  
-  saveReconstruction: async (id: number, name: string, buildingId?: string, floorNumber?: number) => {
-    const response = await apiClient.put(`/reconstruction/reconstructions/${id}/save`, {
+
+  getReconstructionsByBuilding: async (buildingId: string): Promise<ReconstructionListItem[]> => {
+    const response = await apiClient.get<ReconstructionListItem[]>(`/reconstruction/buildings/${buildingId}/reconstructions`);
+    return response.data;
+  },
+
+  saveReconstruction: async (id: number, name: string, floorId: number): Promise<ReconstructionResponse> => {
+    const response = await apiClient.put<ReconstructionResponse>(`/reconstruction/reconstructions/${id}/save`, {
       name,
-      building_id: buildingId,
-      floor_number: floorNumber,
+      floor_id: floorId,
+    });
+    return response.data;
+  },
+
+  patchReconstructionFloor: async (id: number, floorId: number): Promise<ReconstructionResponse> => {
+    const response = await apiClient.patch<ReconstructionResponse>(`/reconstruction/reconstructions/${id}`, {
+      floor_id: floorId,
     });
     return response.data;
   },
@@ -281,15 +315,14 @@ export const reconstructionApi = {
   },
 
   getReadyReconstructions: async (
-    buildingId?: string,
-    floorNumber?: number
+    buildingCode?: string,
+    floorId?: number,
   ): Promise<ReconstructionListItem[]> => {
-    const params = new URLSearchParams();
-    params.append('status', 'ready_for_stitching');
-    if (buildingId) params.append('building_id', buildingId);
-    if (floorNumber !== undefined) params.append('floor_number', String(floorNumber));
+    const params: Record<string, string> = { status: '2' }; // status=2 maps to ready_for_stitching
+    if (buildingCode) params['building_code'] = buildingCode;
+    if (floorId !== undefined) params['floor_id'] = String(floorId);
 
-    const response = await apiClient.get<ReconstructionListItem[]>(`/reconstruction/reconstructions?${params.toString()}`);
+    const response = await apiClient.get<ReconstructionListItem[]>('/reconstruction/reconstructions', { params });
     return response.data;
   },
 
@@ -309,6 +342,9 @@ export const navigationApi = {
     });
     return response.data;
   },
+
+  multifloorRoute: (params: MultifloorRouteRequest): Promise<MultifloorRouteResponse> =>
+    apiClient.post('/navigation/multifloor-route', params).then((r) => r.data as MultifloorRouteResponse),
 };
 
 export default apiClient;

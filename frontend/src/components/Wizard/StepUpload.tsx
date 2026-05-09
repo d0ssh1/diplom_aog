@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { DropZone } from '../Upload/DropZone';
-import { MetadataForm } from '../Upload/MetadataForm';
+import { BuildingFloorPicker } from '../Upload/BuildingFloorPicker';
 import type { UploadedFile } from '../../types/wizard';
 import styles from './StepUpload.module.css';
 
@@ -9,6 +9,9 @@ interface StepUploadProps {
   onFilesSelect: (files: File[]) => void;
   onRemove: (id: string) => void;
   isUploading: boolean;
+  selectedBuildingId: number | null;
+  selectedFloorId: number | null;
+  onFloorChange: (data: { buildingId: number | null; floorId: number | null }) => void;
 }
 
 function useRotatedUrl(url: string | undefined): string | undefined {
@@ -46,6 +49,9 @@ export const StepUpload: React.FC<StepUploadProps> = ({
   onFilesSelect,
   onRemove,
   isUploading,
+  selectedBuildingId,
+  selectedFloorId,
+  onFloorChange,
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
 
@@ -97,7 +103,12 @@ export const StepUpload: React.FC<StepUploadProps> = ({
                 </div>
               </div>
 
-              <MetadataForm />
+              <BuildingFloorPicker
+                selectedBuildingId={selectedBuildingId}
+                selectedFloorId={selectedFloorId}
+                onChange={onFloorChange}
+                disabled={isUploading}
+              />
             </>
           ) : (
             <div className={styles.rightEmpty}>Загрузите файл</div>

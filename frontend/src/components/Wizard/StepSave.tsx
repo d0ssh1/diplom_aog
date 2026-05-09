@@ -3,19 +3,18 @@ import { Button } from '../UI/Button';
 import styles from './StepSave.module.css';
 
 interface StepSaveProps {
-  onSave: (name: string, buildingId: string, floorNumber: number) => Promise<void>;
+  onSave: (name: string, floorId: number) => Promise<void>;
   isLoading: boolean;
 }
 
 export const StepSave: React.FC<StepSaveProps> = ({ onSave, isLoading }) => {
   const [name, setName] = useState('');
-  const [buildingId, setBuildingId] = useState('');
-  const [floorNumber, setFloorNumber] = useState<number>(1);
+  const [floorId, setFloorId] = useState<number>(0);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (name.trim() && buildingId.trim()) {
-      onSave(name.trim(), buildingId.trim(), floorNumber);
+    if (name.trim() && floorId > 0) {
+      onSave(name.trim(), floorId);
     }
   };
 
@@ -38,36 +37,21 @@ export const StepSave: React.FC<StepSaveProps> = ({ onSave, isLoading }) => {
           />
         </div>
         <div className={styles.field}>
-          <label className={styles.label} htmlFor="building-id">
-            Корпус (A, B, C)
+          <label className={styles.label} htmlFor="floor-id">
+            ID этажа
           </label>
           <input
-            id="building-id"
-            type="text"
-            className={styles.input}
-            value={buildingId}
-            onChange={(e) => setBuildingId(e.target.value.toUpperCase())}
-            placeholder="A"
-            maxLength={10}
-            disabled={isLoading}
-          />
-        </div>
-        <div className={styles.field}>
-          <label className={styles.label} htmlFor="floor-number">
-            Этаж
-          </label>
-          <input
-            id="floor-number"
+            id="floor-id"
             type="number"
             className={styles.input}
-            value={floorNumber}
-            onChange={(e) => setFloorNumber(parseInt(e.target.value, 10) || 1)}
-            min={0}
-            max={50}
+            value={floorId || ''}
+            onChange={(e) => setFloorId(parseInt(e.target.value, 10) || 0)}
+            min={1}
+            placeholder="Введите ID этажа"
             disabled={isLoading}
           />
         </div>
-        <Button variant="primary" type="submit" disabled={isLoading || !name.trim() || !buildingId.trim()}>
+        <Button variant="primary" type="submit" disabled={isLoading || !name.trim() || floorId <= 0}>
           {isLoading ? 'Сохранение...' : 'Сохранить'}
         </Button>
       </form>

@@ -1,0 +1,36 @@
+.topBar {
+  display: flex;
+  align-items: center;
+  padding: 0.625rem 1.5rem;
+  background: #111;
+  border-bottom: 1px solid #333;
+  gap: 1rem;
+}
+
+.topBarTitle {
+  font-family: 'Courier New', monospace;
+  font-size: 0.875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #fff;
+}
+
+.viewToggle {
+  margin-left: auto;
+  padding: 0.375rem 0.875rem;
+  background: transparent;
+  border: 1px solid #555;
+  color: #ccc;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.15s;
+}
+
+.viewToggle:hover {
+  border-color: #ff4500;
+  color: #ff4500;
+}

@@ -1,0 +1,85 @@
+.selector {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.carousel {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.arrowBtn {
+  width: 24px;
+  height: 28px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  color: #555;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.arrowBtn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.items {
+  display: flex;
+  gap: 4px;
+  flex: 1;
+}
+
+.item {
+  flex: 1;
+  height: 28px;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: #333;
+  text-align: center;
+  padding: 0 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.item:hover {
+  border-color: #f97316;
+  background: #fff7ed;
+}
+
+.itemActive {
+  border-color: #f97316;
+  background: #f97316;
+  color: #fff;
+}
+
+.itemActive:hover {
+  background: #ea6c0a;
+}

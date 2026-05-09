@@ -51,6 +51,20 @@ try:
         Coordinate,
     )
 
+    from app.models.transition import (
+        MultiPlanRouteRequest,
+        MultiPlanRouteResponse,
+        RouteSegment,
+        RouteStatus,
+        TransitionGroupCreate,
+        TransitionGroupResponse,
+        TransitionGroupUpdate,
+        TransitionPointCreate,
+        TransitionPointResponse,
+        TransitionPointUpdate,
+        TransitionType,
+    )
+
     __all__ = [
         # User
         "LoginRequest",
@@ -94,6 +108,18 @@ try:
         "FloorCreate",
         "FloorResponse",
         "Coordinate",
+        # Transition
+        "TransitionType",
+        "RouteStatus",
+        "TransitionGroupCreate",
+        "TransitionGroupUpdate",
+        "TransitionGroupResponse",
+        "TransitionPointCreate",
+        "TransitionPointUpdate",
+        "TransitionPointResponse",
+        "RouteSegment",
+        "MultiPlanRouteRequest",
+        "MultiPlanRouteResponse",
     ]
 except ImportError:
     # Web stack not installed — processing-only environment

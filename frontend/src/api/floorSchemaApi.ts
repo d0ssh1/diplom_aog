@@ -1,0 +1,33 @@
+// REST client for Floor Schema endpoints (schema image, wall extraction, wall polygons).
+// See docs/features/building-hierarchy/05-api-contract.md §Floor Schema
+
+import apiClient from './apiService';
+import type {
+  FloorWithSchema,
+  FloorSchemaUpdateRequest,
+  FloorWallsUpdateResponse,
+  ExtractWallsResponse,
+} from '../types/hierarchy';
+
+export const floorSchemaApi = {
+  // PUT /api/v1/floors/{id}/schema — upload/update schema image + crop bbox
+  uploadSchema: (floorId: number, req: FloorSchemaUpdateRequest): Promise<FloorWithSchema> =>
+    apiClient
+      .put(`/floors/${floorId}/schema`, req)
+      .then((r) => r.data as FloorWithSchema),
+
+  // POST /api/v1/floors/{id}/extract-walls — run CV pipeline to extract wall polygons
+  extractWalls: (floorId: number): Promise<ExtractWallsResponse> =>
+    apiClient
+      .post(`/floors/${floorId}/extract-walls`)
+      .then((r) => r.data as ExtractWallsResponse),
+
+  // PUT /api/v1/floors/{id}/walls — manually save wall polygons after editing
+  updateWalls: (
+    floorId: number,
+    wallPolygons: [number, number][][],
+  ): Promise<FloorWallsUpdateResponse> =>
+    apiClient
+      .put(`/floors/${floorId}/walls`, { wall_polygons: wallPolygons })
+      .then((r) => r.data as FloorWallsUpdateResponse),
+};

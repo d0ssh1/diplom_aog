@@ -22,3 +22,88 @@ class FileStorageError(Exception):
     def __init__(self, file_id: str, path: str) -> None:
         self.file_id = file_id
         super().__init__(f"File {file_id} not found at {path}")
+
+
+class FloorTransitionNotFoundError(Exception):
+    """Переход между этажами не найден в БД."""
+    def __init__(self, transition_id: int) -> None:
+        self.transition_id = transition_id
+        super().__init__(f"FloorTransition {transition_id} not found")
+
+
+class FloorTransitionError(Exception):
+    """Ошибка бизнес-логики при работе с переходами."""
+    pass
+
+
+class NavGraphNotFoundError(Exception):
+    """Nav-граф не найден на диске для данной реконструкции."""
+    def __init__(self, reconstruction_id: int) -> None:
+        self.reconstruction_id = reconstruction_id
+        super().__init__(
+            f"Nav graph not found for reconstruction {reconstruction_id}. Build nav graph first."
+        )
+
+
+# ── Building hierarchy exceptions (Phase 03) ──────────────────────────────────
+
+
+class BuildingNotFoundError(Exception):
+    """Building not found in DB."""
+
+    def __init__(self, building_id: int) -> None:
+        self.building_id = building_id
+        super().__init__(f"Building {building_id} not found")
+
+
+class BuildingDuplicateCodeError(Exception):
+    """Attempt to create a building with a code that is already taken."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        super().__init__(f"Building with code '{code}' already exists")
+
+
+class FloorNotFoundError(Exception):
+    """Floor not found in DB."""
+
+    def __init__(self, floor_id: int) -> None:
+        self.floor_id = floor_id
+        super().__init__(f"Floor {floor_id} not found")
+
+
+class FloorDuplicateNumberError(Exception):
+    """Attempt to create a floor with a number already used in this building."""
+
+    def __init__(self, building_code: str, number: int) -> None:
+        self.building_code = building_code
+        self.number = number
+        super().__init__(f"Floor {number} already exists in building {building_code}")
+
+
+class SectionValidationError(Exception):
+    """Payload validation error for section replace operation (Phase 04).
+
+    Raised by SectionService._validate_payload for:
+    - Duplicate section numbers within the payload
+    - Duplicate reconstruction_id within the payload
+    - Missing reconstruction (FK does not exist in DB)
+    """
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
+
+
+class FloorSchemaError(Exception):
+    """Error related to floor schema image or pipeline (Phase 04).
+
+    Raised by FloorSchemaService when:
+    - schema_image_id is None and extract_walls is called
+    - Image file is not found on disk
+    - Any domain-level schema constraint is violated
+    """
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)

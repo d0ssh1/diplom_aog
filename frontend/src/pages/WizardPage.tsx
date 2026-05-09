@@ -54,7 +54,7 @@ export const WizardPage: React.FC = () => {
   };
 
   const isNextDisabled =
-    (state.step === 1 && upload.files.length === 0) ||
+    (state.step === 1 && (upload.files.length === 0 || wizard.selectedFloorId === null)) ||
     state.isLoading;
 
   const nextLabel =
@@ -73,6 +73,9 @@ export const WizardPage: React.FC = () => {
             onFilesSelect={upload.addFiles}
             onRemove={upload.removeFile}
             isUploading={upload.isUploading}
+            selectedBuildingId={wizard.selectedBuildingId}
+            selectedFloorId={wizard.selectedFloorId}
+            onFloorChange={({ buildingId, floorId }) => { void wizard.setFloor(buildingId, floorId); }}
           />
         );
       case 2:
