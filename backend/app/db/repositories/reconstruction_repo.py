@@ -8,6 +8,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.db.models.reconstruction import Reconstruction, UploadedFile
 from app.db.models.section import Section
+from app.db.models.building import Floor
 from app.db.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -187,6 +188,7 @@ class ReconstructionRepository(BaseRepository):
             .options(joinedload(Reconstruction.plan_file))
             .options(joinedload(Reconstruction.mask_file))
             .options(selectinload(Reconstruction.section))
+            .options(selectinload(Reconstruction.floor).selectinload(Floor.building))
             .where(Reconstruction.name.isnot(None))
             .order_by(Reconstruction.updated_at.desc())
         )
