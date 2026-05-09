@@ -5,7 +5,6 @@ import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
 import { StepNavGraph } from '../components/Wizard/StepNavGraph';
 import { StepView3D } from '../components/Wizard/StepView3D';
-import { SectionBindingBadge } from '../components/Editor/SectionBindingBadge';
 import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
 import type { RoomAnnotation, DoorAnnotation, CropRect } from '../types/wizard';
 import type { VectorizationResult } from '../types/reconstructionVectors';
@@ -243,7 +242,7 @@ export const EditPlanPage: React.FC = () => {
 
   if (isLoading) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#888', fontFamily: "'Courier New', monospace" }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#888',  }}>
         SYS.LOADING... загрузка плана...
       </div>
     );
@@ -251,9 +250,9 @@ export const EditPlanPage: React.FC = () => {
 
   if (error || !data) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#888', fontFamily: "'Courier New', monospace", gap: '16px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#0a0a0a', color: '#888',  gap: '16px' }}>
         <div>{error ?? 'Данные не найдены'}</div>
-        <button onClick={() => navigate('/admin')} style={{ padding: '8px 20px', background: '#222', color: '#fff', border: '1px solid #444', cursor: 'pointer', fontFamily: "'Courier New', monospace" }}>
+        <button onClick={() => navigate('/admin')} style={{ padding: '8px 20px', background: '#222', color: '#fff', border: '1px solid #444', cursor: 'pointer',  }}>
           ← Назад
         </button>
       </div>
@@ -317,7 +316,6 @@ export const EditPlanPage: React.FC = () => {
           />
         )}
       </WizardShell>
-      <SectionBindingBadge floor={data.floor} section={data.section} />
     </>
   );
 };

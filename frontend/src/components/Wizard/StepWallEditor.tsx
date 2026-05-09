@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, StretchHorizontal, DoorOpen, Trash2 } from 'lucide-react';
+import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, DoorOpen, Trash2 } from 'lucide-react';
 import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
 import { RoomPopup } from '../Editor/RoomPopup';
@@ -37,7 +37,6 @@ const MARKUP_TOOLS: { id: ActiveTool; label: string; icon: React.ReactNode }[] =
   { id: 'room', label: 'Кабинет', icon: <Square size={18} /> },
   { id: 'staircase', label: 'Лестница', icon: <ArrowUpDown size={18} /> },
   { id: 'elevator', label: 'Лифт', icon: <ArrowUp size={18} /> },
-  { id: 'corridor', label: 'Коридор', icon: <StretchHorizontal size={18} /> },
   { id: 'door', label: 'Дверь', icon: <DoorOpen size={18} /> },
   { id: 'erase_markup', label: 'Удалить разметку', icon: <Trash2 size={18} /> },
 ];
