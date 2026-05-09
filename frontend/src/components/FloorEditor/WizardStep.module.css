@@ -1,73 +1,84 @@
-/* Shared styles for all FloorEditor wizard steps */
+/* Shared styles for all FloorEditor wizard step components */
 
 .layout {
   display: flex;
   flex-direction: column;
   flex: 1;
-  height: calc(100vh - 64px);
+  min-height: 0;
+  /* height is constrained by parent flexbox, not fixed calc */
 }
 
 .body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
 
-/* ===================== Sidebar ===================== */
+/* ===================== Left tool/section sidebar ===================== */
 .sidebar {
-  width: 220px;
+  width: 260px;
   flex-shrink: 0;
-  background: #1a1a1a;
+  background: #1c1d20;
   color: #fff;
   display: flex;
   flex-direction: column;
-  padding: 1.5rem 1rem;
-  border-right: 2px solid #333;
+  padding: 1.25rem 1rem;
+  border-right: 1px solid #2a2a2a;
+  overflow-y: auto;
 }
 
 .sidebarTitle {
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: #888;
-  margin-bottom: 1rem;
+  color: #555;
+  margin-bottom: 0.875rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #2a2a2a;
 }
 
+/* Tool buttons */
 .toolBtn {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.625rem 0.75rem;
+  width: 100%;
+  padding: 0.625rem 0.875rem;
   background: transparent;
-  border: 1px solid #333;
+  border: 1px solid #2e2e2e;
   color: #ccc;
   font-family: 'Courier New', monospace;
   font-size: 0.8125rem;
   cursor: pointer;
   text-align: left;
-  margin-bottom: 0.5rem;
-  transition: all 0.15s;
+  margin-bottom: 0.375rem;
+  transition: border-color 0.15s, color 0.15s;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
+  border-radius: 2px;
 }
 
 .toolBtn:hover {
-  border-color: #ff4500;
+  border-color: #ff6b1f;
   color: #fff;
 }
 
 .toolBtnActive {
-  background: #ff4500;
-  border-color: #ff4500;
-  color: #000;
+  background: #ff6b1f;
+  border-color: #ff6b1f;
+  color: #fff;
   font-weight: 700;
 }
 
+.toolBtnActive:hover {
+  border-color: #ff6b1f;
+  color: #fff;
+}
+
 .toolBtnDanger {
-  border-color: #555;
-  color: #aaa;
+  border-color: #2e2e2e;
+  color: #888;
   margin-top: auto;
 }
 
@@ -80,7 +91,7 @@
 .canvasArea {
   flex: 1;
   position: relative;
-  background: #2a2a2a;
+  background: #e8e9ec;
   overflow: hidden;
 }
 
@@ -93,119 +104,125 @@
 
 .canvasHint {
   position: absolute;
-  bottom: 4rem;
+  bottom: 4.5rem;
   left: 50%;
   transform: translateX(-50%);
-  background: rgba(0, 0, 0, 0.75);
-  color: #ccc;
+  background: rgba(0, 0, 0, 0.65);
+  color: #ddd;
   font-size: 0.75rem;
-  padding: 0.375rem 0.75rem;
-  letter-spacing: 0.05em;
+  padding: 0.35rem 0.75rem;
+  border-radius: 2px;
+  letter-spacing: 0.04em;
   pointer-events: none;
   white-space: nowrap;
 }
 
-/* ===================== Footer ===================== */
+/* ===================== Footer bar ===================== */
 .footer {
   display: flex;
   align-items: center;
-  gap: 1rem;
-  padding: 1rem 2rem;
-  background: #000;
-  border-top: 2px solid #333;
+  gap: 0.875rem;
+  padding: 0.875rem 1.5rem;
+  background: #0a0a0a;
+  border-top: 1px solid #222;
+  flex-shrink: 0;
 }
 
 .footerHint {
   flex: 1;
   font-size: 0.75rem;
-  color: #888;
-  letter-spacing: 0.05em;
+  color: #666;
+  letter-spacing: 0.04em;
+  text-align: center;
 }
 
 .btnBack {
-  padding: 0.625rem 1.25rem;
+  padding: 0.5rem 1.125rem;
   background: transparent;
-  border: 2px solid #555;
-  color: #ccc;
+  border: 1px solid #444;
+  color: #aaa;
   font-family: 'Courier New', monospace;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   cursor: pointer;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  transition: all 0.15s;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s, color 0.15s;
+  border-radius: 2px;
 }
 
 .btnBack:hover {
-  border-color: #fff;
+  border-color: #888;
   color: #fff;
 }
 
 .btnNext {
-  padding: 0.625rem 1.5rem;
-  background: #ff4500;
-  border: 2px solid #ff4500;
-  color: #000;
+  padding: 0.5rem 1.375rem;
+  background: #ff6b1f;
+  border: 1px solid #ff6b1f;
+  color: #fff;
   font-family: 'Courier New', monospace;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
+  border-radius: 2px;
 }
 
 .btnNext:hover:not(:disabled) {
-  background: #cc3300;
-  border-color: #cc3300;
+  background: #e05a10;
+  border-color: #e05a10;
 }
 
 .btnNext:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
 .btnSave {
-  padding: 0.625rem 1.5rem;
-  background: #ff4500;
-  border: 2px solid #ff4500;
-  color: #000;
+  padding: 0.5rem 1.375rem;
+  background: #ff6b1f;
+  border: 1px solid #ff6b1f;
+  color: #fff;
   font-family: 'Courier New', monospace;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: background 0.15s, border-color 0.15s;
+  border-radius: 2px;
 }
 
 .btnSave:hover:not(:disabled) {
-  background: #cc3300;
-  border-color: #cc3300;
+  background: #e05a10;
+  border-color: #e05a10;
 }
 
 .btnSave:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-/* ===================== Spinner overlay ===================== */
+/* ===================== Spinner overlay (inside canvas) ===================== */
 .spinnerOverlay {
   position: absolute;
   inset: 0;
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 1rem;
+  gap: 0.875rem;
   z-index: 10;
 }
 
 .spinner {
-  width: 48px;
-  height: 48px;
-  border: 4px solid #444;
-  border-top-color: #ff4500;
+  width: 44px;
+  height: 44px;
+  border: 3px solid #444;
+  border-top-color: #ff6b1f;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -216,77 +233,119 @@
 
 .spinnerText {
   color: #ccc;
-  font-size: 0.875rem;
-  letter-spacing: 0.1em;
+  font-size: 0.8125rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-/* ===================== Step 1 upload ===================== */
+/* ===================== Step 1 upload area ===================== */
 .uploadArea {
   flex: 1;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2rem;
+  background: #e8e9ec;
+  overflow: hidden;
 }
 
+/* Step1: two-column layout using sidebar + canvas slots */
 .uploadColumns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-  max-width: 900px;
-  width: 100%;
+  grid-template-columns: 260px 1fr;
+  flex: 1;
+  min-height: 0;
 }
 
 .uploadPanel {
-  background: #fff;
-  border: 2px solid #000;
-  padding: 1.5rem;
+  background: #1c1d20;
+  color: #fff;
+  padding: 1.25rem 1rem;
+  border-right: 1px solid #2a2a2a;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
 }
 
 .uploadPanelTitle {
-  font-size: 0.875rem;
-  font-weight: 700;
+  font-size: 0.6875rem;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  margin-bottom: 1rem;
+  letter-spacing: 0.15em;
+  color: #555;
+  margin-bottom: 0.875rem;
   padding-bottom: 0.5rem;
-  border-bottom: 2px solid #000;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.uploadPanelCenter {
+  flex: 1;
+  background: #e8e9ec;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  overflow: hidden;
 }
 
 .dropZone {
-  border: 2px dashed #999;
-  padding: 2.5rem 1.5rem;
+  border: 2px dashed #444;
+  padding: 2rem 1.25rem;
   text-align: center;
   cursor: pointer;
-  transition: all 0.2s;
-  min-height: 200px;
+  transition: border-color 0.2s, background 0.2s;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
+  margin-bottom: 1rem;
 }
 
 .dropZone:hover,
 .dropZoneActive {
-  border-color: #ff4500;
-  background: #fff8f5;
+  border-color: #ff6b1f;
+  background: rgba(255, 107, 31, 0.06);
 }
 
 .dropZoneIcon {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+  font-size: 2rem;
+  margin-bottom: 0.375rem;
 }
 
 .dropZoneText {
-  font-size: 0.875rem;
-  color: #333;
+  font-size: 0.8125rem;
+  color: #bbb;
 }
 
 .dropZoneHint {
-  font-size: 0.75rem;
-  color: #999;
+  font-size: 0.6875rem;
+  color: #666;
+}
+
+.uploadSelectBtn {
+  width: 100%;
+  padding: 0.625rem;
+  background: #ff6b1f;
+  border: none;
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  border-radius: 2px;
+}
+
+.uploadSelectBtn:hover {
+  background: #e05a10;
+}
+
+.uploadRecommend {
+  font-size: 0.6875rem;
+  color: #666;
+  margin-top: 0.875rem;
+  line-height: 1.4;
 }
 
 .uploadPreview {
@@ -294,13 +353,16 @@
   flex-direction: column;
   align-items: center;
   gap: 0.75rem;
+  max-width: 700px;
+  width: 100%;
 }
 
 .uploadPreviewImg {
   max-width: 100%;
-  max-height: 280px;
+  max-height: 420px;
   object-fit: contain;
   border: 1px solid #ccc;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
 }
 
 .uploadPreviewName {
@@ -313,25 +375,25 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
-  color: #999;
-  text-align: center;
   gap: 0.5rem;
+  color: #aaa;
+  text-align: center;
+  font-size: 0.875rem;
 }
 
 .uploadHint {
   font-size: 0.875rem;
-  color: #555;
+  color: #777;
 }
 
-/* ===================== Section list sidebar ===================== */
+/* ===================== Section list (shared) ===================== */
 .sectionList {
   display: flex;
   flex-direction: column;
-  gap: 0.375rem;
+  gap: 0.25rem;
   overflow-y: auto;
   flex: 1;
-  margin-top: 0.75rem;
+  margin-top: 0.625rem;
 }
 
 .sectionItem {
@@ -340,52 +402,59 @@
   gap: 0.5rem;
   padding: 0.5rem 0.75rem;
   background: transparent;
-  border: 1px solid #333;
+  border: 1px solid #2e2e2e;
   color: #ccc;
   font-family: 'Courier New', monospace;
   font-size: 0.8125rem;
   cursor: pointer;
   text-align: left;
-  transition: all 0.15s;
+  transition: border-color 0.15s, color 0.15s;
+  border-radius: 2px;
 }
 
 .sectionItem:hover {
-  border-color: #ff4500;
+  border-color: #ff6b1f;
   color: #fff;
 }
 
 .sectionItemActive {
-  background: #ff4500;
-  border-color: #ff4500;
-  color: #000;
+  background: #ff6b1f;
+  border-color: #ff6b1f;
+  color: #fff;
   font-weight: 700;
+}
+
+.sectionItemActive:hover {
+  border-color: #ff6b1f;
+  color: #fff;
 }
 
 .sectionDot {
   width: 10px;
   height: 10px;
-  background: #ff4500;
-  border-radius: 50%;
+  background: #ff6b1f;
+  border-radius: 2px;
   flex-shrink: 0;
+  transition: background 0.15s;
 }
 
 .sectionDotBound {
   background: #22c55e;
 }
 
-/* ===================== Stats footer ===================== */
+/* ===================== Stats footer row ===================== */
 .statsRow {
   display: flex;
-  gap: 1.5rem;
+  gap: 1.25rem;
   align-items: center;
   font-size: 0.75rem;
-  color: #888;
-  letter-spacing: 0.05em;
+  color: #666;
+  letter-spacing: 0.04em;
 }
 
 .statItem {
   display: flex;
-  gap: 0.375rem;
+  gap: 0.35rem;
   align-items: center;
 }
 

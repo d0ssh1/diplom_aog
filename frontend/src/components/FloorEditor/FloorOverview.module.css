@@ -1,36 +1,53 @@
 .topBar {
   display: flex;
   align-items: center;
-  padding: 0.625rem 1.5rem;
+  padding: 0.5rem 1.25rem;
   background: #111;
-  border-bottom: 1px solid #333;
+  border-bottom: 1px solid #222;
   gap: 1rem;
+  flex-shrink: 0;
 }
 
 .topBarTitle {
   font-family: 'Courier New', monospace;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: #fff;
+  letter-spacing: 0.08em;
+  color: #ccc;
+}
+
+.viewToggles {
+  margin-left: auto;
+  display: flex;
+  gap: 0.375rem;
 }
 
 .viewToggle {
-  margin-left: auto;
-  padding: 0.375rem 0.875rem;
+  padding: 0.3rem 0.875rem;
   background: transparent;
-  border: 1px solid #555;
-  color: #ccc;
+  border: 1px solid #444;
+  color: #aaa;
   font-family: 'Courier New', monospace;
-  font-size: 0.8125rem;
+  font-size: 0.75rem;
   cursor: pointer;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  transition: all 0.15s;
+  letter-spacing: 0.04em;
+  transition: border-color 0.15s, color 0.15s;
+  border-radius: 2px;
 }
 
-.viewToggle:hover {
-  border-color: #ff4500;
-  color: #ff4500;
+.viewToggle:hover:not(:disabled) {
+  border-color: #ff6b1f;
+  color: #ff6b1f;
+}
+
+.viewToggleActive {
+  border-color: #ff6b1f;
+  color: #ff6b1f;
+  cursor: default;
+}
+
+.viewToggleActive:disabled {
+  opacity: 1;
 }

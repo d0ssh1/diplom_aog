@@ -28,7 +28,7 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetIdx, setRenameTargetIdx] = useState<number | null>(null);
 
-  const handleRenameConfirm = (num: number) => {
+  const handleRenameConfirm = (num: number, _description: string) => {
     if (renameTargetIdx !== null) {
       onUpdateSectionDraft(renameTargetIdx, { number: num });
     }
@@ -58,10 +58,13 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
       {/* Top bar */}
       <div className={styles.topBar}>
         <button className={styles.backBtn} onClick={onSwitchToOverview} type="button">
-          ← Графический вид
+          ▦ Графический вид
         </button>
-        <h2 className={styles.title}>Таблица отсеков</h2>
+        <h2 className={styles.title}>Итоговый список отсеков</h2>
         <div className={styles.topActions}>
+          <button className={styles.exportBtn} type="button" title="Экспорт схемы (в разработке)">
+            ↓ Экспорт схемы
+          </button>
           <button className={styles.editSchemeBtn} onClick={handleEditScheme} type="button">
             Редактировать схему
           </button>
@@ -82,6 +85,7 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
           <thead>
             <tr>
               <th className={styles.th}>Номер отсека</th>
+              <th className={styles.th}>Описание</th>
               <th className={styles.th}>План</th>
               <th className={styles.th}>Статус</th>
               <th className={styles.th}>Действия</th>
@@ -90,7 +94,7 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
           <tbody>
             {sectionDrafts.length === 0 && (
               <tr>
-                <td className={styles.td} colSpan={4} style={{ textAlign: 'center', color: '#999' }}>
+                <td className={styles.td} colSpan={5} style={{ textAlign: 'center', color: '#999' }}>
                   Нет отсеков
                 </td>
               </tr>
@@ -102,6 +106,10 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
                 <tr key={idx} className={styles.tr}>
                   <td className={styles.td}>
                     <strong>{d.number}</strong>
+                  </td>
+                  <td className={styles.td} style={{ color: '#999' }}>
+                    {/* Description is client-side only (ADR-29); not persisted to backend */}
+                    —
                   </td>
                   <td className={styles.td}>
                     {plan && plan.name ? plan.name : isBound ? `План #${d.reconstruction_id}` : '—'}

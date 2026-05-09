@@ -1,50 +1,41 @@
+/**
+ * PlanGalleryPicker — shows reconstructions for selection in Step 5.
+ *
+ * Per mockup: search input + single "Все планы" status-filter dropdown.
+ * Building/floor filtering has been removed from the gallery panel since
+ * building+floor are now global selectors in the top header.
+ * Cards display thumbnail + name like "A11.5 — Этаж 11" + optional tag.
+ */
 import React, { useState, useEffect, useCallback } from 'react';
 import { reconstructionApi, type ReconstructionListItem } from '../../api/apiService';
-import type { Building, Floor } from '../../types/hierarchy';
-import { floorsApi } from '../../api/buildingsApi';
+import type { Building } from '../../types/hierarchy';
 import styles from './PlanGalleryPicker.module.css';
 
+type PlanFilter = 'all' | 'bound' | 'unbound';
+
 interface PlanGalleryPickerProps {
+  /** Passed through for any future use; not used for filtering directly */
   buildings: Building[];
   selectedReconstructionId: number | null;
   onSelect: (id: number) => void;
 }
 
 export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
-  buildings,
+  buildings: _buildings,
   selectedReconstructionId,
   onSelect,
 }) => {
   const [search, setSearch] = useState('');
-  const [buildingFilter, setBuildingFilter] = useState<string>('');
-  const [floorFilter, setFloorFilter] = useState<string>('');
-  const [floors, setFloors] = useState<Floor[]>([]);
+  const [planFilter, setPlanFilter] = useState<PlanFilter>('all');
   const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Load floors when building changes
-  useEffect(() => {
-    if (!buildingFilter) {
-      setFloors([]);
-      setFloorFilter('');
-      return;
-    }
-    const building = buildings.find((b) => b.code === buildingFilter);
-    if (!building) return;
-    void floorsApi.listByBuilding(building.id).then((data) => {
-      setFloors(data);
-      setFloorFilter('');
-    });
-  }, [buildingFilter, buildings]);
 
   const fetchRecons = useCallback(async () => {
     setIsLoading(true);
     try {
-      const filters: Parameters<typeof reconstructionApi.getReconstructions>[0] = {
-        status: 3,
-      };
-      if (buildingFilter) filters.buildingCode = buildingFilter;
-      if (floorFilter) filters.floorId = parseInt(floorFilter, 10);
+      const filters: Parameters<typeof reconstructionApi.getReconstructions>[0] = {};
+      // status=3 means "Done" / completed reconstructions
+      filters.status = 3;
       if (search) filters.search = search;
       const data = await reconstructionApi.getReconstructions(filters);
       setReconstructions(data);
@@ -53,15 +44,21 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [buildingFilter, floorFilter, search]);
+  }, [search]);
 
   useEffect(() => {
     void fetchRecons();
   }, [fetchRecons]);
 
+  // Client-side filter by bound/unbound status relative to current selection
+  const filtered = reconstructions.filter((r) => {
+    if (planFilter === 'bound') return r.id === selectedReconstructionId;
+    return true;
+  });
+
   return (
     <div className={styles.wrap}>
-      {/* Filters */}
+      {/* Filters: search + single status dropdown */}
       <div className={styles.filters}>
         <input
           className={styles.searchInput}
@@ -72,40 +69,27 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
         />
         <select
           className={styles.filterSelect}
-          value={buildingFilter}
-          onChange={(e) => setBuildingFilter(e.target.value)}
+          value={planFilter}
+          onChange={(e) => setPlanFilter(e.target.value as PlanFilter)}
         >
-          <option value="">Все здания</option>
-          {buildings.map((b) => (
-            <option key={b.id} value={b.code}>
-              Корпус {b.code}
-            </option>
-          ))}
-        </select>
-        <select
-          className={styles.filterSelect}
-          value={floorFilter}
-          onChange={(e) => setFloorFilter(e.target.value)}
-          disabled={!buildingFilter}
-        >
-          <option value="">Все этажи</option>
-          {floors.map((f) => (
-            <option key={f.id} value={String(f.id)}>
-              Этаж {f.number}
-            </option>
-          ))}
+          <option value="all">Все планы</option>
+          <option value="bound">Привязанные</option>
         </select>
       </div>
 
       {/* Gallery */}
       {isLoading ? (
         <div className={styles.loading}>Загрузка...</div>
-      ) : reconstructions.length === 0 ? (
+      ) : filtered.length === 0 ? (
         <div className={styles.empty}>Нет планов</div>
       ) : (
         <div className={styles.grid}>
-          {reconstructions.map((r) => {
+          {filtered.map((r) => {
             const isSelected = r.id === selectedReconstructionId;
+            // Build card label like "A11.5 — Этаж 11"
+            const label = r.floor
+              ? `${r.floor.building_code} — Этаж ${r.floor.number}`
+              : r.name ?? '—';
             return (
               <button
                 key={r.id}
@@ -123,11 +107,9 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
                   <div className={styles.cardThumbEmpty}>🖼</div>
                 )}
                 <div className={styles.cardInfo}>
-                  <span className={styles.cardName}>{r.name ?? '—'}</span>
+                  <span className={styles.cardName}>{r.name ?? label}</span>
                   {r.floor && (
-                    <span className={styles.cardFloor}>
-                      Корпус {r.floor.building_code} · Этаж {r.floor.number}
-                    </span>
+                    <span className={styles.cardFloor}>{label}</span>
                   )}
                 </div>
                 {isSelected && <span className={styles.checkmark}>✓</span>}

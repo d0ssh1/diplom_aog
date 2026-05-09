@@ -4,6 +4,7 @@ import overviewStyles from './FloorOverview.module.css';
 import { CanvasControls } from './CanvasControls';
 import { SectionContextMenu } from './SectionContextMenu';
 import { NewSectionDialog } from './NewSectionDialog';
+import { getSectionColor } from './sectionColors';
 import type { SectionDraft, Point2D } from '../../hooks/useFloorEditorWizard';
 
 interface ContextMenuState {
@@ -46,6 +47,8 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetIdx, setRenameTargetIdx] = useState<number | null>(null);
+  // Increment this to force re-render when localStorage colors change
+  const [colorVersion, setColorVersion] = useState(0);
 
   const draftsRef = useRef(sectionDrafts);
   useEffect(() => { draftsRef.current = sectionDrafts; }, [sectionDrafts]);
@@ -83,20 +86,21 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#2a2a2a';
+    // Light background to match working area
+    ctx.fillStyle = '#e8e9ec';
     ctx.fillRect(0, 0, cw, ch);
 
     // Background image
     const img = imageRef.current;
     if (img) {
       const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-      ctx.globalAlpha = 0.25;
+      ctx.globalAlpha = 0.2;
       ctx.drawImage(img, dx, dy, dw, dh);
       ctx.globalAlpha = 1;
     }
 
     // Wall polygons
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = '#555';
     ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -110,15 +114,23 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       ctx.stroke();
     }
 
-    // Sections
+    // Sections — each has its palette color
     for (let idx = 0; idx < draftsRef.current.length; idx++) {
       const draft = draftsRef.current[idx];
       const pts = draft.geometry.points;
       const isActive = idx === activeIdx;
+      const color = getSectionColor(idx, draft.id);
 
-      ctx.fillStyle = isActive ? 'rgba(255, 69, 0, 0.4)' : 'rgba(150, 150, 150, 0.2)';
-      ctx.strokeStyle = isActive ? '#ff4500' : '#aaa';
-      ctx.lineWidth = isActive ? 2.5 : 1.5;
+      if (isActive) {
+        ctx.fillStyle = `${color}66`; // ~40% opacity for active
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2.5;
+      } else {
+        ctx.fillStyle = `${color}33`; // ~20% opacity for inactive
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+      }
+
       ctx.beginPath();
       const f = toCanvas(pts[0][0], pts[0][1]);
       ctx.moveTo(f.cx, f.cy);
@@ -130,17 +142,20 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       ctx.fill();
       ctx.stroke();
 
-      // Label
+      // Centered number label
       const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
       const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
       const center = toCanvas(cx, cy);
-      ctx.fillStyle = isActive ? '#fff' : '#ccc';
+      ctx.fillStyle = color;
       ctx.font = `${isActive ? 'bold ' : ''}13px Courier New`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(255,255,255,0.9)';
+      ctx.shadowBlur = 4;
       ctx.fillText(String(draft.number), center.cx, center.cy);
+      ctx.shadowBlur = 0;
     }
-  }, [getCanvasSize, getImageParams, toCanvas, wallPolygons, activeIdx]);
+  }, [getCanvasSize, getImageParams, toCanvas, wallPolygons, activeIdx, colorVersion]); // colorVersion forces redraw
 
   useEffect(() => { draw(); }, [draw, sectionDrafts, activeIdx]);
 
@@ -157,7 +172,6 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
   const hitSection = useCallback((canvX: number, canvY: number): number | null => {
     for (let idx = 0; idx < draftsRef.current.length; idx++) {
       const pts = draftsRef.current[idx].geometry.points;
-      // Simple bounding box test
       const xs = pts.map((p) => toCanvas(p[0], p[1]).cx);
       const ys = pts.map((p) => toCanvas(p[0], p[1]).cy);
       const minX = Math.min(...xs);
@@ -212,7 +226,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     setContextMenu(null);
   };
 
-  const handleRenameConfirm = (num: number) => {
+  const handleRenameConfirm = (num: number, _description: string) => {
     if (renameTargetIdx !== null) {
       onUpdateSectionDraft(renameTargetIdx, { number: num });
     }
@@ -227,41 +241,71 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
 
   return (
     <div className={styles.layout}>
-      {/* Top bar */}
+      {/* Top bar: title + view toggle */}
       <div className={overviewStyles.topBar}>
-        <span className={overviewStyles.topBarTitle}>Обзор этажа</span>
-        <button className={overviewStyles.viewToggle} onClick={onSwitchToTable} type="button">
-          📋 Табличный вид
-        </button>
+        <span className={overviewStyles.topBarTitle}>Итоговая схема этажа</span>
+        <div className={overviewStyles.viewToggles}>
+          <button
+            className={`${overviewStyles.viewToggle} ${overviewStyles.viewToggleActive}`}
+            type="button"
+            disabled
+            aria-current="true"
+          >
+            ▦ Схема
+          </button>
+          <button
+            className={overviewStyles.viewToggle}
+            onClick={onSwitchToTable}
+            type="button"
+          >
+            ☰ Таблица
+          </button>
+        </div>
       </div>
 
       <div className={styles.body}>
-        {/* Left: section list */}
+        {/* Left: colored section list */}
         <aside className={styles.sidebar}>
-          <h3 className={styles.sidebarTitle}>Отсеки на схеме</h3>
+          <div className={styles.sidebarTitle}>Отсеки на схеме</div>
           <div className={styles.sectionList}>
-            {sectionDrafts.map((d, idx) => (
-              <button
-                key={idx}
-                className={`${styles.sectionItem} ${idx === activeIdx ? styles.sectionItemActive : ''}`}
-                onClick={() => setActiveIdx(idx)}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  setActiveIdx(idx);
-                  const rect = (e.target as HTMLElement).getBoundingClientRect();
-                  setContextMenu({ x: rect.right, y: rect.top, sectionIdx: idx });
-                }}
-                type="button"
-              >
-                <span className={`${styles.sectionDot} ${d.reconstruction_id !== null ? styles.sectionDotBound : ''}`} />
-                Отсек {d.number}
-              </button>
-            ))}
+            {sectionDrafts.map((d, idx) => {
+              const color = getSectionColor(idx, d.id);
+              return (
+                <button
+                  key={idx}
+                  className={`${styles.sectionItem} ${idx === activeIdx ? styles.sectionItemActive : ''}`}
+                  onClick={() => setActiveIdx(idx)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setActiveIdx(idx);
+                    const rect = (e.target as HTMLElement).getBoundingClientRect();
+                    setContextMenu({ x: rect.right, y: rect.top, sectionIdx: idx });
+                  }}
+                  type="button"
+                >
+                  <span
+                    className={styles.sectionDot}
+                    style={{
+                      background: color,
+                      borderRadius: '2px',
+                    }}
+                  />
+                  {idx === activeIdx ? (
+                    <span style={{ flex: 1 }}>Отсек {d.number}</span>
+                  ) : (
+                    <span style={{ flex: 1 }}>Отсек {d.number}</span>
+                  )}
+                  {d.reconstruction_id !== null && (
+                    <span style={{ fontSize: '0.625rem', color: idx === activeIdx ? '#fff' : '#22c55e' }}>✓</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </aside>
 
-        {/* Canvas */}
-        <div className={styles.canvasArea} ref={containerRef}>
+        {/* Canvas — light background */}
+        <div className={styles.canvasArea} ref={containerRef} style={{ background: '#e8e9ec' }}>
           <canvas
             ref={canvasRef}
             className={styles.canvas}
@@ -312,8 +356,11 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
           x={contextMenu.x}
           y={contextMenu.y}
           sectionNumber={sectionDrafts[contextMenu.sectionIdx]?.number ?? 0}
+          sectionId={sectionDrafts[contextMenu.sectionIdx]?.id}
+          sectionIdx={contextMenu.sectionIdx}
           onRename={handleRename}
           onDelete={handleDelete}
+          onColorChange={() => setColorVersion((v) => v + 1)}
           onClose={() => setContextMenu(null)}
         />
       )}

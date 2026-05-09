@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import styles from './WizardStep.module.css';
 import { CanvasControls } from './CanvasControls';
 import { NewSectionDialog } from './NewSectionDialog';
+import { getSectionColor } from './sectionColors';
 import type { SectionDraft, Point2D } from '../../hooks/useFloorEditorWizard';
 import type { SectionGeometry } from '../../types/hierarchy';
 
@@ -77,11 +78,11 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#2a2a2a';
+    ctx.fillStyle = '#e8e9ec';
     ctx.fillRect(0, 0, cw, ch);
 
     // Draw wall polygons
-    ctx.strokeStyle = '#888';
+    ctx.strokeStyle = '#555';
     ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -95,11 +96,14 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
       ctx.stroke();
     }
 
-    // Draw existing sections
-    for (const draft of draftsRef.current) {
+    // Draw existing sections with palette colors
+    for (let idx = 0; idx < draftsRef.current.length; idx++) {
+      const draft = draftsRef.current[idx];
       const pts = draft.geometry.points;
-      ctx.fillStyle = 'rgba(255, 69, 0, 0.35)';
-      ctx.strokeStyle = '#ff4500';
+      const color = getSectionColor(idx, draft.id);
+
+      ctx.fillStyle = `${color}55`; // 33% opacity fill
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.beginPath();
       const first = toCanvas(pts[0][0], pts[0][1]);
@@ -116,21 +120,31 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
       const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
       const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
       const center = toCanvas(cx, cy);
-      ctx.fillStyle = '#000';
-      ctx.font = 'bold 14px Courier New';
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 13px Courier New';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
+      // Shadow for readability
+      ctx.shadowColor = 'rgba(0,0,0,0.5)';
+      ctx.shadowBlur = 3;
       ctx.fillText(String(draft.number), center.cx, center.cy);
+      ctx.shadowBlur = 0;
     }
 
     // Drag preview
     if (dragStart && dragCur) {
       const s = toCanvas(dragStart.x, dragStart.y);
       const e = toCanvas(dragCur.x, dragCur.y);
-      ctx.strokeStyle = '#ff4500';
+      ctx.strokeStyle = '#ff6b1f';
       ctx.lineWidth = 2;
+      ctx.fillStyle = 'rgba(255, 107, 31, 0.15)';
       ctx.setLineDash([5, 5]);
-      ctx.strokeRect(s.cx, s.cy, e.cx - s.cx, e.cy - s.cy);
+      const rx = Math.min(s.cx, e.cx);
+      const ry = Math.min(s.cy, e.cy);
+      const rw = Math.abs(e.cx - s.cx);
+      const rh = Math.abs(e.cy - s.cy);
+      ctx.fillRect(rx, ry, rw, rh);
+      ctx.strokeRect(rx, ry, rw, rh);
       ctx.setLineDash([]);
     }
   }, [getCanvasSize, toCanvas, wallPolygons, dragStart, dragCur]);
@@ -172,7 +186,8 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     setDialogOpen(true);
   };
 
-  const handleDialogConfirm = (num: number) => {
+  const handleDialogConfirm = (num: number, _description: string) => {
+    // _description is client-only; backend API doesn't have description field (ADR-29)
     if (!pendingRect) return;
     const { x1, y1, x2, y2 } = pendingRect;
     const geometry: SectionGeometry = {
@@ -192,40 +207,60 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
   return (
     <div className={styles.layout}>
       <div className={styles.body}>
+        {/* Left sidebar */}
         <aside className={styles.sidebar}>
-          <h3 className={styles.sidebarTitle}>Инструменты</h3>
+          <div className={styles.sidebarTitle}>Инструменты</div>
           <button className={styles.toolBtn} onClick={onGoToWalls} type="button">
             ← Стены
           </button>
           <button className={`${styles.toolBtn} ${styles.toolBtnActive}`} type="button">
-            Прямоугольник
+            ▭ Прямоугольник
           </button>
           <button
             className={`${styles.toolBtn} ${styles.toolBtnDanger}`}
             onClick={handleClearAll}
             type="button"
           >
-            Очистить всё
+            🗑 Очистить всё
           </button>
+
           {sectionDrafts.length > 0 && (
-            <div className={styles.sectionList}>
-              {sectionDrafts.map((d, idx) => (
-                <div key={idx} className={styles.sectionItem}>
-                  <span className={styles.sectionDot} />
-                  Отсек {d.number}
-                  <button
-                    style={{ marginLeft: 'auto', background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '0.75rem' }}
-                    onClick={() => onDeleteSectionDraft(idx)}
-                    type="button"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
+            <>
+              <div className={styles.sidebarTitle} style={{ marginTop: '1rem' }}>
+                Отсеки
+              </div>
+              <div className={styles.sectionList}>
+                {sectionDrafts.map((d, idx) => (
+                  <div key={idx} className={styles.sectionItem}>
+                    <span
+                      className={styles.sectionDot}
+                      style={{ background: getSectionColor(idx, d.id), borderRadius: '2px' }}
+                    />
+                    Отсек {d.number}
+                    <button
+                      style={{
+                        marginLeft: 'auto',
+                        background: 'none',
+                        border: 'none',
+                        color: '#666',
+                        cursor: 'pointer',
+                        fontSize: '0.75rem',
+                        padding: '0',
+                      }}
+                      onClick={() => onDeleteSectionDraft(idx)}
+                      type="button"
+                      title="Удалить отсек"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </aside>
 
+        {/* Canvas — light background */}
         <div className={styles.canvasArea} ref={containerRef}>
           <canvas
             ref={canvasRef}
@@ -244,15 +279,18 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
             onReset={() => setZoom(1)}
           />
         </div>
-      </div>
 
-      <NewSectionDialog
-        open={dialogOpen}
-        initialNumber={defaultNumber}
-        takenNumbers={takenNumbers}
-        onConfirm={handleDialogConfirm}
-        onCancel={() => { setDialogOpen(false); setPendingRect(null); }}
-      />
+        {/* Right side panel — only when dialog is open */}
+        {dialogOpen && (
+          <NewSectionDialog
+            open={dialogOpen}
+            initialNumber={defaultNumber}
+            takenNumbers={takenNumbers}
+            onConfirm={handleDialogConfirm}
+            onCancel={() => { setDialogOpen(false); setPendingRect(null); }}
+          />
+        )}
+      </div>
 
       <footer className={styles.footer}>
         <button className={styles.btnBack} onClick={onBack} type="button">

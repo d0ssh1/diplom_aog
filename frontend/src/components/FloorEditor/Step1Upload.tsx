@@ -81,64 +81,75 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
 
   return (
     <div className={styles.layout}>
-      <div className={styles.uploadArea}>
-        <div className={styles.uploadColumns}>
-          {/* Left: drop zone */}
-          <div className={styles.uploadPanel}>
-            <h3 className={styles.uploadPanelTitle}>Источник плана</h3>
-            <div
-              className={`${styles.dropZone} ${isDragging ? styles.dropZoneActive : ''}`}
-              onClick={() => fileInputRef.current?.click()}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
-              aria-label="Загрузить файл"
-            >
-              <span className={styles.dropZoneIcon}>📁</span>
-              <span className={styles.dropZoneText}>
-                {busy ? 'Загрузка...' : 'Перетащите файл или нажмите для выбора'}
-              </span>
-              <span className={styles.dropZoneHint}>JPG, PNG, PDF — до 50 МБ</span>
-            </div>
-            {localError && (
-              <p style={{ color: '#cc0000', fontSize: '0.75rem', marginTop: '0.5rem' }}>
-                {localError}
-              </p>
-            )}
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".jpg,.jpeg,.png,.pdf"
-              onChange={handleFileChange}
-              style={{ display: 'none' }}
-            />
+      {/* Two-column: dark left panel + light center */}
+      <div className={styles.uploadColumns}>
+        {/* Left: drop zone */}
+        <div className={styles.uploadPanel}>
+          <div className={styles.uploadPanelTitle}>Источник плана</div>
+
+          <div
+            className={`${styles.dropZone} ${isDragging ? styles.dropZoneActive : ''}`}
+            onClick={() => fileInputRef.current?.click()}
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
+            aria-label="Загрузить файл"
+          >
+            <span className={styles.dropZoneIcon}>📁</span>
+            <span className={styles.dropZoneText}>
+              {busy ? 'Загрузка...' : 'Загрузите изображение плана этажа'}
+            </span>
+            <span className={styles.dropZoneHint}>JPG, PNG, PDF</span>
           </div>
 
-          {/* Right: preview */}
-          <div className={styles.uploadPanel}>
-            <h3 className={styles.uploadPanelTitle}>Предварительный просмотр</h3>
-            {previewUrl ? (
-              <div className={styles.uploadPreview}>
-                <img
-                  src={previewUrl}
-                  alt="Схема этажа"
-                  className={styles.uploadPreviewImg}
-                />
-                {fileName && <span className={styles.uploadPreviewName}>{fileName}</span>}
-              </div>
-            ) : (
-              <div className={styles.uploadPreviewEmpty}>
-                <span style={{ fontSize: '2rem' }}>🖼</span>
-                <span className={styles.uploadHint}>Загрузите изображение плана этажа</span>
-                <span className={styles.dropZoneHint}>
-                  Рекомендуем загружать качественные фото или сканы схемы этажа
-                </span>
-              </div>
-            )}
-          </div>
+          <button
+            className={styles.uploadSelectBtn}
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+            type="button"
+          >
+            Выбрать файл
+          </button>
+
+          {localError && (
+            <p style={{ color: '#cc3300', fontSize: '0.75rem', marginTop: '0.5rem' }}>
+              {localError}
+            </p>
+          )}
+
+          <p className={styles.uploadRecommend}>
+            Рекомендуем загружать качественные фото или сканы схемы этажа
+          </p>
+
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".jpg,.jpeg,.png,.pdf"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
+        </div>
+
+        {/* Center: preview */}
+        <div className={styles.uploadPanelCenter}>
+          {previewUrl ? (
+            <div className={styles.uploadPreview}>
+              <img
+                src={previewUrl}
+                alt="Схема этажа"
+                className={styles.uploadPreviewImg}
+              />
+              {fileName && <span className={styles.uploadPreviewName}>{fileName}</span>}
+            </div>
+          ) : (
+            <div className={styles.uploadPreviewEmpty}>
+              <span style={{ fontSize: '3rem', opacity: 0.3 }}>🖼</span>
+              <span className={styles.uploadHint}>Загрузите изображение плана этажа</span>
+            </div>
+          )}
         </div>
       </div>
 

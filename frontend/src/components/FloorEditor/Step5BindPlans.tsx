@@ -2,6 +2,7 @@ import React, { useRef, useEffect, useCallback, useState } from 'react';
 import styles from './WizardStep.module.css';
 import step5Styles from './Step5BindPlans.module.css';
 import { PlanGalleryPicker } from './PlanGalleryPicker';
+import { getSectionColor } from './sectionColors';
 import type { SectionDraft, Point2D } from '../../hooks/useFloorEditorWizard';
 import type { Building } from '../../types/hierarchy';
 
@@ -49,11 +50,11 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#2a2a2a';
+    ctx.fillStyle = '#e8e9ec';
     ctx.fillRect(0, 0, cw, ch);
 
     // Wall polygons
-    ctx.strokeStyle = '#555';
+    ctx.strokeStyle = '#666';
     ctx.lineWidth = 1;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -67,12 +68,13 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
       ctx.stroke();
     }
 
-    // Active section
+    // Active section — use palette color
     if (activeIdx < sectionDrafts.length) {
       const draft = sectionDrafts[activeIdx];
       const pts = draft.geometry.points;
-      ctx.fillStyle = 'rgba(255, 69, 0, 0.4)';
-      ctx.strokeStyle = '#ff4500';
+      const color = getSectionColor(activeIdx, draft.id);
+      ctx.fillStyle = `${color}55`;
+      ctx.strokeStyle = color;
       ctx.lineWidth = 2;
       ctx.beginPath();
       const f = toCanvas(pts[0][0], pts[0][1]);
@@ -84,10 +86,33 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
       ctx.closePath();
       ctx.fill();
       ctx.stroke();
+
+      // Section number label
+      const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
+      const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
+      const center = toCanvas(cx, cy);
+      ctx.fillStyle = color;
+      ctx.font = 'bold 12px Courier New';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.shadowColor = 'rgba(255,255,255,0.8)';
+      ctx.shadowBlur = 3;
+      ctx.fillText(String(draft.number), center.cx, center.cy);
+      ctx.shadowBlur = 0;
     }
   }, [getCanvasSize, toCanvas, wallPolygons, sectionDrafts, activeIdx]);
 
   useEffect(() => { draw(); }, [draw]);
+
+  // Cleanup canvas on unmount
+  useEffect(() => {
+    return () => {
+      if (canvasRef.current) {
+        const ctx = canvasRef.current.getContext('2d');
+        if (ctx) ctx.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
+      }
+    };
+  }, []);
 
   const activeDraft = sectionDrafts[activeIdx] ?? null;
   const selectedReconId = activeDraft?.reconstruction_id ?? null;
@@ -95,30 +120,36 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
   return (
     <div className={styles.layout}>
       <div className={step5Styles.body}>
-        {/* Left: section list */}
+        {/* Left: section list with colored chips */}
         <aside className={step5Styles.sectionsPanel}>
-          <h3 className={step5Styles.panelTitle}>Отсеки на схеме</h3>
+          <div className={step5Styles.panelTitle}>Отсеки на схеме</div>
           <div className={step5Styles.sectionList}>
-            {sectionDrafts.map((d, idx) => (
-              <button
-                key={idx}
-                className={`${step5Styles.sectionBtn} ${idx === activeIdx ? step5Styles.sectionBtnActive : ''}`}
-                onClick={() => setActiveIdx(idx)}
-                type="button"
-              >
-                <span
-                  className={`${step5Styles.sectionDot} ${d.reconstruction_id !== null ? step5Styles.sectionDotBound : ''}`}
-                />
-                Отсек {d.number}
-                {d.reconstruction_id !== null && <span className={step5Styles.checkmark}>✓</span>}
-              </button>
-            ))}
+            {sectionDrafts.map((d, idx) => {
+              const color = getSectionColor(idx, d.id);
+              return (
+                <button
+                  key={idx}
+                  className={`${step5Styles.sectionBtn} ${idx === activeIdx ? step5Styles.sectionBtnActive : ''}`}
+                  onClick={() => setActiveIdx(idx)}
+                  type="button"
+                >
+                  <span
+                    className={step5Styles.sectionDot}
+                    style={{ background: color }}
+                  />
+                  <span style={{ flex: 1 }}>Отсек {d.number}</span>
+                  {d.reconstruction_id !== null && (
+                    <span className={step5Styles.checkmark}>✓</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </aside>
 
         {/* Center: gallery */}
         <div className={step5Styles.galleryPanel}>
-          <h3 className={step5Styles.panelTitle}>Планы этого этажа</h3>
+          <div className={step5Styles.panelTitle}>Планы этого этажа</div>
           <PlanGalleryPicker
             buildings={buildings}
             selectedReconstructionId={selectedReconId}
@@ -131,7 +162,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
 
         {/* Right: preview */}
         <div className={step5Styles.previewPanel}>
-          <h3 className={step5Styles.panelTitle}>Превью отсека</h3>
+          <div className={step5Styles.panelTitle}>Превью отсека</div>
           <div className={step5Styles.canvasWrap} ref={containerRef}>
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
           </div>
@@ -151,7 +182,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
           onClick={() => void onSaveAndExit()}
           disabled={isLoading}
           type="button"
-          style={{ borderColor: '#ff4500', color: '#ff4500' }}
+          style={{ borderColor: '#ff6b1f', color: '#ff6b1f' }}
         >
           Сохранить и выйти
         </button>

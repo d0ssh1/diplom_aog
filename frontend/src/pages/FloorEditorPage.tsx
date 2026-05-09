@@ -13,6 +13,14 @@ import { FloorOverview } from '../components/FloorEditor/FloorOverview';
 import { FloorSectionsTable } from '../components/FloorEditor/FloorSectionsTable';
 import type { Floor } from '../types/hierarchy';
 
+const STEP_LABELS: Record<number, string> = {
+  1: 'Загрузка плана этажа',
+  2: 'Кадрирование и выбор отсека',
+  3: 'Обработка отсека (выделение стен)',
+  4: 'Выделение отсека и присвоение номера',
+  5: 'Сопоставление отсека с планами этажа',
+};
+
 export const FloorEditorPage: React.FC = () => {
   const navigate = useNavigate();
   const wizard = useFloorEditorWizard();
@@ -51,28 +59,34 @@ export const FloorEditorPage: React.FC = () => {
   }, [wizard, navigate]);
 
   const handleClearAllDrafts = useCallback(() => {
-    // delete from tail to head to avoid index shifting issues
     const count = wizard.sectionDrafts.length;
     for (let i = count - 1; i >= 0; i--) {
       wizard.deleteSectionDraft(i);
     }
   }, [wizard]);
 
-  // Header with selectors
+  // Selected building label for breadcrumb
+  const selectedBuilding = buildings.find((b) => String(b.id) === selectedBuildingId);
+  const breadcrumbBuilding = selectedBuilding ? selectedBuilding.code : 'ДВФУ';
+
+  // Always-visible top header
   const header = (
     <header className={styles.header}>
-      <span className={styles.breadcrumb}>
-        ДВФУ &gt; <span>Редактор отсеков</span>
-      </span>
+      <div className={styles.breadcrumb}>
+        <span className={styles.breadcrumbBase}>{breadcrumbBuilding}</span>
+        <span className={styles.breadcrumbSep}>&gt;</span>
+        <span className={styles.breadcrumbCurrent}>Редактор отсеков</span>
+      </div>
+
       <div className={styles.selectors}>
-        <div>
+        <div className={styles.selectorGroup}>
           <div className={styles.selectLabel}>Корпус</div>
           <select
             className={styles.select}
             value={selectedBuildingId}
             onChange={(e) => { setSelectedBuildingId(e.target.value); setSelectedFloorId(''); }}
           >
-            <option value="">— Выберите корпус —</option>
+            <option value="">— Корпус —</option>
             {buildings.map((b) => (
               <option key={b.id} value={String(b.id)}>
                 {b.code} — {b.name}
@@ -80,7 +94,7 @@ export const FloorEditorPage: React.FC = () => {
             ))}
           </select>
         </div>
-        <div>
+        <div className={styles.selectorGroup}>
           <div className={styles.selectLabel}>Этаж</div>
           <select
             className={styles.select}
@@ -88,7 +102,7 @@ export const FloorEditorPage: React.FC = () => {
             onChange={(e) => setSelectedFloorId(e.target.value)}
             disabled={!selectedBuildingId || floorsLoading}
           >
-            <option value="">— Выберите этаж —</option>
+            <option value="">— Этаж —</option>
             {floors.map((f) => (
               <option key={f.id} value={String(f.id)}>
                 Этаж {f.number}
@@ -100,54 +114,33 @@ export const FloorEditorPage: React.FC = () => {
     </header>
   );
 
-  // Not selected yet
+  // Step badge shown in wizard mode
+  const stepBadge = (step: number) => (
+    <div className={styles.stepBadge}>
+      <span className={styles.stepBadgeNum}>{step}</span>
+      <span className={styles.stepBadgeLabel}>{STEP_LABELS[step] ?? ''}</span>
+    </div>
+  );
+
+  // Not selected yet — show empty state inside working area (NOT centered card)
   if (!selectedFloorId) {
     return (
       <div className={styles.page}>
         {header}
-        <div className={styles.pickerWrap}>
-          <div className={styles.pickerCard}>
-            <h2>Редактор отсеков</h2>
-            <p>Выберите корпус и этаж для редактирования схемы</p>
-            <div className={styles.pickerForm}>
-              <div className={styles.pickerFormGroup}>
-                <label>Корпус</label>
-                <select
-                  className={styles.pickerSelect}
-                  value={selectedBuildingId}
-                  onChange={(e) => { setSelectedBuildingId(e.target.value); setSelectedFloorId(''); }}
-                >
-                  <option value="">— Выберите корпус —</option>
-                  {buildings.map((b) => (
-                    <option key={b.id} value={String(b.id)}>
-                      {b.code} — {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className={styles.pickerFormGroup}>
-                <label>Этаж</label>
-                <select
-                  className={styles.pickerSelect}
-                  value={selectedFloorId}
-                  onChange={(e) => setSelectedFloorId(e.target.value)}
-                  disabled={!selectedBuildingId || floorsLoading}
-                >
-                  <option value="">— Выберите этаж —</option>
-                  {floors.map((f) => (
-                    <option key={f.id} value={String(f.id)}>
-                      Этаж {f.number}
-                    </option>
-                  ))}
-                </select>
-              </div>
+        <div className={styles.workingArea}>
+          <aside className={styles.leftPanel}>
+            <div className={styles.leftPanelTitle}>Источник</div>
+          </aside>
+          <div className={styles.centerCanvas}>
+            <div className={styles.emptyState}>
+              <div className={styles.emptyStateIcon}>🏢</div>
+              <p className={styles.emptyStateText}>
+                Выберите корпус и этаж в шапке для начала работы
+              </p>
               {buildings.length === 0 && (
-                <p style={{ fontSize: '0.875rem', color: '#888' }}>
-                  Нет корпусов.{' '}
-                  <a href="/admin/buildings" style={{ color: '#ff4500' }}>
-                    Создать корпус
-                  </a>
-                </p>
+                <a className={styles.emptyStateLink} href="/admin/buildings">
+                  Создать корпус
+                </a>
               )}
             </div>
           </div>
@@ -161,9 +154,14 @@ export const FloorEditorPage: React.FC = () => {
     return (
       <div className={styles.page}>
         {header}
-        <div className={styles.spinnerWrap}>
-          <div className={styles.spinner} />
-          <span className={styles.spinnerText}>Загрузка этажа...</span>
+        <div className={styles.workingArea}>
+          <aside className={styles.leftPanel} />
+          <div className={styles.centerCanvas}>
+            <div className={styles.emptyState}>
+              <div className={styles.spinner} />
+              <span className={styles.spinnerText}>Загрузка этажа...</span>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -174,12 +172,19 @@ export const FloorEditorPage: React.FC = () => {
     return (
       <div className={styles.page}>
         {header}
-        <div className={styles.errorWrap}>
-          <div className={styles.errorCard}>
-            <p>{wizard.error}</p>
-            <button onClick={() => void wizard.loadFor(parseInt(selectedFloorId, 10))} type="button">
-              Повторить
-            </button>
+        <div className={styles.workingArea}>
+          <aside className={styles.leftPanel} />
+          <div className={styles.centerCanvas}>
+            <div className={styles.emptyState}>
+              <p className={styles.errorText}>{wizard.error}</p>
+              <button
+                className={styles.retryBtn}
+                onClick={() => void wizard.loadFor(parseInt(selectedFloorId, 10))}
+                type="button"
+              >
+                Повторить
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -190,70 +195,85 @@ export const FloorEditorPage: React.FC = () => {
     switch (wizard.currentStep) {
       case 1:
         return (
-          <Step1Upload
-            schemaImageUrl={wizard.schemaImageUrl}
-            isLoading={wizard.isLoading}
-            onUploaded={wizard.setSchemaImage}
-            onNext={wizard.nextStep}
-            onBack={() => navigate('/admin')}
-          />
+          <>
+            {stepBadge(1)}
+            <Step1Upload
+              schemaImageUrl={wizard.schemaImageUrl}
+              isLoading={wizard.isLoading}
+              onUploaded={wizard.setSchemaImage}
+              onNext={wizard.nextStep}
+              onBack={() => navigate('/admin')}
+            />
+          </>
         );
       case 2:
         return (
-          <Step2CropRotate
-            schemaImageUrl={wizard.schemaImageUrl ?? ''}
-            cropBbox={wizard.cropBbox}
-            isLoading={wizard.isLoading}
-            onCropBboxChange={wizard.setCropBbox}
-            onNext={async () => {
-              await wizard.commitCropBbox();
-              wizard.nextStep();
-            }}
-            onBack={wizard.prevStep}
-          />
+          <>
+            {stepBadge(2)}
+            <Step2CropRotate
+              schemaImageUrl={wizard.schemaImageUrl ?? ''}
+              cropBbox={wizard.cropBbox}
+              isLoading={wizard.isLoading}
+              onCropBboxChange={wizard.setCropBbox}
+              onNext={async () => {
+                await wizard.commitCropBbox();
+                wizard.nextStep();
+              }}
+              onBack={wizard.prevStep}
+            />
+          </>
         );
       case 3:
         return (
-          <Step3WallExtraction
-            schemaImageUrl={wizard.schemaImageUrl}
-            wallPolygons={wizard.wallPolygons}
-            isLoading={wizard.isLoading}
-            onTriggerExtraction={wizard.triggerWallExtraction}
-            onSetWallPolygons={wizard.setWallPolygons}
-            onNext={async () => {
-              await wizard.commitWallPolygons();
-              wizard.nextStep();
-            }}
-            onBack={wizard.prevStep}
-          />
+          <>
+            {stepBadge(3)}
+            <Step3WallExtraction
+              schemaImageUrl={wizard.schemaImageUrl}
+              wallPolygons={wizard.wallPolygons}
+              isLoading={wizard.isLoading}
+              onTriggerExtraction={wizard.triggerWallExtraction}
+              onSetWallPolygons={wizard.setWallPolygons}
+              onNext={async () => {
+                await wizard.commitWallPolygons();
+                wizard.nextStep();
+              }}
+              onBack={wizard.prevStep}
+            />
+          </>
         );
       case 4:
         return (
-          <Step4MarkSections
-            wallPolygons={wizard.wallPolygons}
-            sectionDrafts={wizard.sectionDrafts}
-            onAddSectionDraft={wizard.addSectionDraft}
-            onDeleteSectionDraft={wizard.deleteSectionDraft}
-            onClearAllDrafts={handleClearAllDrafts}
-            onNext={wizard.nextStep}
-            onBack={wizard.prevStep}
-            onGoToWalls={() => wizard.goToStep(3)}
-          />
+          <>
+            {stepBadge(4)}
+            <Step4MarkSections
+              wallPolygons={wizard.wallPolygons}
+              sectionDrafts={wizard.sectionDrafts}
+              onAddSectionDraft={wizard.addSectionDraft}
+              onDeleteSectionDraft={wizard.deleteSectionDraft}
+              onClearAllDrafts={handleClearAllDrafts}
+              onNext={wizard.nextStep}
+              onBack={wizard.prevStep}
+              onGoToWalls={() => wizard.goToStep(3)}
+            />
+          </>
         );
       case 5:
         return (
-          <Step5BindPlans
-            sectionDrafts={wizard.sectionDrafts}
-            wallPolygons={wizard.wallPolygons}
-            buildings={buildings}
-            isLoading={wizard.isLoading}
-            onBind={wizard.bindReconstruction}
-            onSave={async () => {
-              await wizard.saveAll();
-            }}
-            onSaveAndExit={handleSaveAndExit}
-            onBack={wizard.prevStep}
-          />
+          <>
+            {stepBadge(5)}
+            <Step5BindPlans
+              sectionDrafts={wizard.sectionDrafts}
+              wallPolygons={wizard.wallPolygons}
+              buildings={buildings}
+              isLoading={wizard.isLoading}
+              onBind={wizard.bindReconstruction}
+              onSave={async () => {
+                await wizard.saveAll();
+              }}
+              onSaveAndExit={handleSaveAndExit}
+              onBack={wizard.prevStep}
+            />
+          </>
         );
       default:
         return null;
@@ -263,7 +283,11 @@ export const FloorEditorPage: React.FC = () => {
   return (
     <div className={styles.page}>
       {header}
-      {wizard.mode === 'wizard' && renderWizardStep()}
+      {wizard.mode === 'wizard' && (
+        <div className={styles.wizardWrap}>
+          {renderWizardStep()}
+        </div>
+      )}
       {wizard.mode === 'overview' && (
         <FloorOverview
           schemaImageUrl={wizard.schemaImageUrl}
