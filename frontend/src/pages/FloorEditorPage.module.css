@@ -1,38 +1,52 @@
-/* FloorEditorPage — top-level shell: header + working area */
+/* FloorEditorPage — top-level shell: header + working area — LIGHT THEME */
 
 /* ===================== Page root ===================== */
 .page {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: #0d1117;
-  font-family: 'Courier New', monospace;
+  background: #ffffff;
 }
 
-/* ===================== Dark top header ===================== */
+/* ===================== Light top header ===================== */
 .header {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 0.75rem 2rem;
-  background: #0a0a0a;
-  color: #fff;
-  border-bottom: 2px solid #ff6b1f;
+  gap: 1rem;
+  padding: 0.625rem 1.5rem;
+  background: #ffffff;
+  border-bottom: 1px solid #e1e4e8;
   flex-shrink: 0;
   z-index: 100;
+}
+
+.backBtn {
+  background: transparent;
+  border: none;
+  color: #9ca3af;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem;
+  transition: color 0.15s;
+}
+
+.backBtn:hover {
+  color: #0f172a;
 }
 
 .breadcrumb {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  letter-spacing: 0.05em;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
 .breadcrumbBase {
-  color: #888;
+  color: #9ca3af;
 }
 
 .breadcrumbSep {
@@ -41,51 +55,37 @@
 }
 
 .breadcrumbCurrent {
-  color: #ffffff;
-  font-weight: 700;
+  color: #0f172a;
+  font-weight: 600;
 }
 
-/* Selectors sit at right edge */
-.selectors {
+/* Step badge in header area */
+.stepBadge {
   display: flex;
-  gap: 1.25rem;
-  align-items: flex-end;
-  margin-left: auto;
+  align-items: center;
+  gap: 0.5rem;
+  margin-left: 1.25rem;
 }
 
-.selectorGroup {
-  display: flex;
-  flex-direction: column;
-  gap: 0.2rem;
-}
-
-.selectLabel {
-  font-size: 0.625rem;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.12em;
-}
-
-.select {
-  background: #1a1a1a;
+.stepBadgeNum {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #ff6b1f;
   color: #fff;
-  border: 1px solid #333;
-  padding: 0.35rem 0.65rem;
-  font-family: 'Courier New', monospace;
-  font-size: 0.8125rem;
-  cursor: pointer;
-  min-width: 160px;
-  border-radius: 2px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.select:focus {
-  outline: none;
-  border-color: #ff6b1f;
-}
-
-.select:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
+.stepBadgeLabel {
+  font-size: 0.75rem;
+  color: #374151;
+  font-weight: 500;
+  white-space: nowrap;
 }
 
 /* ===================== Working area (left panel + center) ===================== */
@@ -99,12 +99,12 @@
 .leftPanel {
   width: 260px;
   flex-shrink: 0;
-  background: #1c1d20;
-  color: #fff;
+  background: #f5f6f8;
+  color: #0f172a;
   display: flex;
   flex-direction: column;
   padding: 1.25rem 1rem;
-  border-right: 1px solid #2a2a2a;
+  border-right: 1px solid #e1e4e8;
   overflow-y: auto;
 }
 
@@ -112,56 +112,21 @@
   font-size: 0.6875rem;
   text-transform: uppercase;
   letter-spacing: 0.15em;
-  color: #555;
+  color: #9ca3af;
   margin-bottom: 0.75rem;
   padding-bottom: 0.5rem;
-  border-bottom: 1px solid #2a2a2a;
+  border-bottom: 1px solid #e1e4e8;
+  font-weight: 400;
 }
 
 .centerCanvas {
   flex: 1;
-  background: #e8e9ec;
+  background: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   position: relative;
-}
-
-/* ===================== Step badge ===================== */
-.stepBadge {
-  position: absolute;
-  top: 0.875rem;
-  left: 0.875rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  z-index: 20;
-  pointer-events: none;
-}
-
-.stepBadgeNum {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: #ff6b1f;
-  color: #fff;
-  font-size: 0.75rem;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.stepBadgeLabel {
-  font-size: 0.75rem;
-  color: #111;
-  background: rgba(255, 255, 255, 0.88);
-  padding: 0.2rem 0.5rem;
-  border-radius: 2px;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
 }
 
 /* ===================== Wizard wrapper ===================== */
@@ -173,7 +138,7 @@
   position: relative;
 }
 
-/* ===================== Empty / error states ===================== */
+/* ===================== Empty state / info message ===================== */
 .emptyState {
   display: flex;
   flex-direction: column;
@@ -185,15 +150,16 @@
 }
 
 .emptyStateIcon {
-  font-size: 3rem;
-  opacity: 0.4;
+  color: #d1d5db;
+  margin-bottom: 0.5rem;
 }
 
 .emptyStateText {
   font-size: 0.9375rem;
-  color: #555;
+  color: #6b7280;
   max-width: 360px;
   margin: 0;
+  line-height: 1.5;
 }
 
 .emptyStateLink {
@@ -202,8 +168,21 @@
   text-decoration: underline;
 }
 
+/* ===================== Info banner (no floor_id from URL) ===================== */
+.infoBanner {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: #9a3412;
+  margin: 1.25rem;
+  line-height: 1.5;
+  flex-shrink: 0;
+}
+
 .errorText {
-  color: #cc0000;
+  color: #dc2626;
   font-size: 0.875rem;
   margin: 0;
 }
@@ -213,20 +192,19 @@
   background: #ff6b1f;
   border: none;
   color: #fff;
-  font-family: 'Courier New', monospace;
   font-size: 0.875rem;
   font-weight: 700;
   cursor: pointer;
-  border-radius: 2px;
+  border-radius: 4px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 
 /* ===================== Spinner ===================== */
 .spinner {
-  width: 40px;
-  height: 40px;
-  border: 3px solid #ddd;
+  width: 36px;
+  height: 36px;
+  border: 3px solid #e5e7eb;
   border-top-color: #ff6b1f;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -238,7 +216,7 @@
 
 .spinnerText {
   font-size: 0.8125rem;
-  color: #666;
+  color: #6b7280;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }

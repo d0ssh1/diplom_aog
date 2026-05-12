@@ -94,7 +94,7 @@ export const Step2CropRotate: React.FC<Step2CropRotateProps> = ({
     canvas.height = ch;
 
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#e8e9ec';
+    ctx.fillStyle = '#161618';
     ctx.fillRect(0, 0, cw, ch);
 
     const { dx, dy, dw, dh } = getImageDrawParams(img.naturalWidth, img.naturalHeight, cw, ch);

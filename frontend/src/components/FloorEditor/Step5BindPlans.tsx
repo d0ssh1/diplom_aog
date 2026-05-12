@@ -50,12 +50,12 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#e8e9ec';
+    ctx.fillStyle = '#161618';
     ctx.fillRect(0, 0, cw, ch);
 
     // Wall polygons
-    ctx.strokeStyle = '#666';
-    ctx.lineWidth = 1;
+    ctx.strokeStyle = '#888';
+    ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
       ctx.beginPath();

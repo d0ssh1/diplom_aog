@@ -86,8 +86,8 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    // Light background to match working area
-    ctx.fillStyle = '#e8e9ec';
+    // Light background
+    ctx.fillStyle = '#f9fafb';
     ctx.fillRect(0, 0, cw, ch);
 
     // Background image
@@ -99,8 +99,8 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       ctx.globalAlpha = 1;
     }
 
-    // Wall polygons
-    ctx.strokeStyle = '#555';
+    // Wall polygons — dark on light background
+    ctx.strokeStyle = '#374151';
     ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -226,7 +226,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     setContextMenu(null);
   };
 
-  const handleRenameConfirm = (num: number, _description: string) => {
+  const handleRenameConfirm = (num: number, _description: string, _color: string) => {
     if (renameTargetIdx !== null) {
       onUpdateSectionDraft(renameTargetIdx, { number: num });
     }
@@ -305,7 +305,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
         </aside>
 
         {/* Canvas — light background */}
-        <div className={styles.canvasArea} ref={containerRef} style={{ background: '#e8e9ec' }}>
+        <div className={styles.canvasArea} ref={containerRef}>
           <canvas
             ref={canvasRef}
             className={styles.canvas}

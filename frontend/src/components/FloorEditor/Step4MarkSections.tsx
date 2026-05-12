@@ -78,11 +78,11 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#e8e9ec';
+    ctx.fillStyle = '#161618';
     ctx.fillRect(0, 0, cw, ch);
 
     // Draw wall polygons
-    ctx.strokeStyle = '#555';
+    ctx.strokeStyle = '#888';
     ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -186,7 +186,7 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     setDialogOpen(true);
   };
 
-  const handleDialogConfirm = (num: number, _description: string) => {
+  const handleDialogConfirm = (num: number, _description: string, color: string) => {
     // _description is client-only; backend API doesn't have description field (ADR-29)
     if (!pendingRect) return;
     const { x1, y1, x2, y2 } = pendingRect;
@@ -194,6 +194,11 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
       points: [[x1, y1], [x2, y1], [x2, y2], [x1, y2]],
     };
     onAddSectionDraft(geometry, num);
+    // Persist user-chosen color in localStorage so FloorOverview / FloorSectionsTable
+    // pick it up on next render. Keyed by draft index (negative pseudo-id) until saved.
+    try {
+      localStorage.setItem(`sectionColor:draft:${num}`, color);
+    } catch { /* ignore */ }
     setDialogOpen(false);
     setPendingRect(null);
   };

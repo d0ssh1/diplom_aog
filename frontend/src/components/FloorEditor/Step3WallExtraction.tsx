@@ -97,7 +97,7 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#e8e9ec';
+    ctx.fillStyle = '#161618';
     ctx.fillRect(0, 0, cw, ch);
 
     // Draw image watermark

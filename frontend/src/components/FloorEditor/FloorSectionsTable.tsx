@@ -28,7 +28,7 @@ export const FloorSectionsTable: React.FC<FloorSectionsTableProps> = ({
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetIdx, setRenameTargetIdx] = useState<number | null>(null);
 
-  const handleRenameConfirm = (num: number, _description: string) => {
+  const handleRenameConfirm = (num: number, _description: string, _color: string) => {
     if (renameTargetIdx !== null) {
       onUpdateSectionDraft(renameTargetIdx, { number: num });
     }

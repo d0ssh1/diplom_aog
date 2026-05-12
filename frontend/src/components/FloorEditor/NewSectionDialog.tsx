@@ -1,45 +1,46 @@
 /**
- * NewSectionDialog — displayed as a RIGHT SIDE PANEL (not a centered modal overlay).
+ * NewSectionDialog — RIGHT SIDE PANEL (not a modal overlay).
+ * Light theme, takes real layout space, no backdrop.
  *
- * Per mockup screen 4: the panel sits flush against the right edge of the
- * working area, takes real layout space (does NOT overlap the canvas), and
- * includes an optional "Описание" textarea.
- *
- * Note on "Описание": this field is client-side only. The backend section
- * API does not have a description field (ADR-29); the value is stored in
- * component state for display purposes only and is NOT sent to the server.
- * If backend support is added in a future phase, pass it through
- * SectionPayloadItem.
+ * Includes:
+ *  - Номер отсека (required, duplicate-validated)
+ *  - Описание (optional, client-only — not sent to backend per ADR-29)
+ *  - Цвет отсека (palette of 7 colors, presentation-only via localStorage)
  */
 import React, { useState, useEffect, useRef } from 'react';
 import styles from './NewSectionDialog.module.css';
+import { SECTION_COLOR_PALETTE } from './sectionColors';
 
 interface NewSectionDialogProps {
   open: boolean;
   initialNumber: number | null;
+  initialColor?: string;
   takenNumbers: number[];
-  onConfirm: (number: number, description: string) => void;
+  onConfirm: (number: number, description: string, color: string) => void;
   onCancel: () => void;
 }
 
 export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   open,
   initialNumber,
+  initialColor,
   takenNumbers,
   onConfirm,
   onCancel,
 }) => {
   const [value, setValue] = useState<string>(String(initialNumber ?? 1));
   const [description, setDescription] = useState<string>('');
+  const [color, setColor] = useState<string>(initialColor ?? SECTION_COLOR_PALETTE[0]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setValue(String(initialNumber ?? 1));
       setDescription('');
+      setColor(initialColor ?? SECTION_COLOR_PALETTE[0]);
       setTimeout(() => inputRef.current?.select(), 50);
     }
-  }, [open, initialNumber]);
+  }, [open, initialNumber, initialColor]);
 
   if (!open) return null;
 
@@ -49,7 +50,7 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   const canConfirm = isValid && !isDuplicate;
 
   const handleConfirm = () => {
-    if (canConfirm) onConfirm(num, description);
+    if (canConfirm) onConfirm(num, description, color);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -58,7 +59,7 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   };
 
   return (
-    <div className={styles.panel} role="complementary" aria-label="Новый отсек">
+    <aside className={styles.panel} role="dialog" aria-label="Новый отсек">
       <div className={styles.panelHeader}>
         <h3 className={styles.title}>Новый отсек</h3>
         <button
@@ -73,7 +74,7 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
 
       <div className={styles.field}>
         <label className={styles.label} htmlFor="section-number-input">
-          Номер отсека
+          Номер отсека <span className={styles.required}>*</span>
         </label>
         <input
           id="section-number-input"
@@ -100,8 +101,25 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
           rows={3}
           value={description}
           onChange={(e) => setDescription(e.target.value)}
-          placeholder="Например: Аудиторный корпус A"
+          placeholder="Например: Северный блок"
         />
+      </div>
+
+      <div className={styles.field}>
+        <span className={styles.label}>Цвет отсека</span>
+        <div className={styles.colorRow}>
+          {SECTION_COLOR_PALETTE.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`${styles.colorSwatch} ${c === color ? styles.colorSwatchActive : ''}`}
+              style={{ backgroundColor: c }}
+              onClick={() => setColor(c)}
+              aria-label={`Цвет ${c}`}
+              aria-pressed={c === color}
+            />
+          ))}
+        </div>
       </div>
 
       <div className={styles.actions}>
@@ -117,6 +135,6 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
           Применить
         </button>
       </div>
-    </div>
+    </aside>
   );
 };

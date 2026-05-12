@@ -1,20 +1,22 @@
+/* FloorOverview — top bar + view toggles — LIGHT THEME */
+
 .topBar {
   display: flex;
   align-items: center;
   padding: 0.5rem 1.25rem;
-  background: #111;
-  border-bottom: 1px solid #222;
+  background: #ffffff;
+  border-bottom: 1px solid #e1e4e8;
   gap: 1rem;
   flex-shrink: 0;
 }
 
 .topBarTitle {
-  font-family: 'Courier New', monospace;
+  font-family: inherit;
   font-size: 0.8125rem;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #0f172a;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: #ccc;
 }
 
 .viewToggles {
@@ -26,15 +28,14 @@
 .viewToggle {
   padding: 0.3rem 0.875rem;
   background: transparent;
-  border: 1px solid #444;
-  color: #aaa;
-  font-family: 'Courier New', monospace;
+  border: 1px solid #e1e4e8;
+  color: #6b7280;
+  font-family: inherit;
   font-size: 0.75rem;
   cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.03em;
   transition: border-color 0.15s, color 0.15s;
-  border-radius: 2px;
+  border-radius: 6px;
 }
 
 .viewToggle:hover:not(:disabled) {
@@ -46,6 +47,7 @@
   border-color: #ff6b1f;
   color: #ff6b1f;
   cursor: default;
+  font-weight: 600;
 }
 
 .viewToggleActive:disabled {
