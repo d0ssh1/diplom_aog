@@ -1,7 +1,9 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './FloorEditorPage.module.css';
 import { useFloorEditorWizard } from '../hooks/useFloorEditorWizard';
+import { useBuildings } from '../hooks/useBuildings';
+import { useFloors } from '../hooks/useFloors';
 import { Step1Upload } from '../components/FloorEditor/Step1Upload';
 import { Step2CropRotate } from '../components/FloorEditor/Step2CropRotate';
 import { Step3WallExtraction } from '../components/FloorEditor/Step3WallExtraction';
@@ -77,23 +79,15 @@ export const FloorEditorPage: React.FC = () => {
     </header>
   );
 
-  // ─── No floor_id from URL — show instruction message but still allow wizard ─
+  // ─── No floor_id from URL — show a building/floor picker card ──────────────
   if (urlFloorId === null || isNaN(urlFloorId)) {
     return (
       <div className={styles.page}>
         {header}
-        <p className={styles.infoBanner}>
-          Откройте страницу через «Корпуса и этажи» → выберите этаж → «Редактировать».
-          Можно также добавить параметр <code>?floor_id=N</code> в URL вручную.
-        </p>
-        <div className={styles.wizardWrap}>
-          {/* Allow upload step for testing even without floor_id */}
-          <Step1Upload
-            schemaImageUrl={wizard.schemaImageUrl}
-            isLoading={wizard.isLoading}
-            onUploaded={async () => { /* no-op without floorId */ }}
-            onNext={wizard.nextStep}
-            onBack={() => navigate('/admin')}
+        <div className={styles.pickerWrap}>
+          <FloorPickerCard
+            onPicked={(fid) => navigate(`/admin/floor-editor?floor_id=${fid}`)}
+            onCancel={() => navigate('/admin/buildings')}
           />
         </div>
         <Toaster />
@@ -255,6 +249,104 @@ export const FloorEditorPage: React.FC = () => {
         />
       )}
       <Toaster />
+    </div>
+  );
+};
+
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Floor picker — shown when /admin/floor-editor opened without ?floor_id=N
+ * Allows admin to pick which floor to edit before the wizard starts.
+ * ───────────────────────────────────────────────────────────────────────────── */
+
+interface FloorPickerCardProps {
+  onPicked: (floorId: number) => void;
+  onCancel: () => void;
+}
+
+const FloorPickerCard: React.FC<FloorPickerCardProps> = ({ onPicked, onCancel }) => {
+  const { buildings, isLoading: buildingsLoading } = useBuildings();
+  const { floors, isLoading: floorsLoading, loadForBuilding } = useFloors();
+  const [buildingId, setBuildingId] = useState<number | null>(null);
+  const [floorId, setFloorId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (buildingId !== null) {
+      void loadForBuilding(buildingId);
+    }
+  }, [buildingId, loadForBuilding]);
+
+  return (
+    <div className={styles.pickerCard}>
+      <h2 className={styles.pickerTitle}>Выберите этаж для редактирования</h2>
+      <p className={styles.pickerHint}>
+        Сначала выберите корпус, затем этаж. Если нужного корпуса или этажа нет —
+        создайте их в разделе «Корпуса и этажи».
+      </p>
+
+      <div className={styles.pickerField}>
+        <label className={styles.pickerLabel} htmlFor="fp-building">Корпус</label>
+        <select
+          id="fp-building"
+          className={styles.pickerSelect}
+          value={buildingId ?? ''}
+          disabled={buildingsLoading || buildings.length === 0}
+          onChange={(e) => {
+            const v = e.target.value;
+            setBuildingId(v === '' ? null : parseInt(v, 10));
+            setFloorId(null);
+          }}
+        >
+          <option value="">— выберите корпус —</option>
+          {buildings.map((b) => (
+            <option key={b.id} value={b.id}>{b.code} — {b.name}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className={styles.pickerField}>
+        <label className={styles.pickerLabel} htmlFor="fp-floor">Этаж</label>
+        <select
+          id="fp-floor"
+          className={styles.pickerSelect}
+          value={floorId ?? ''}
+          disabled={buildingId === null || floorsLoading || floors.length === 0}
+          onChange={(e) => {
+            const v = e.target.value;
+            setFloorId(v === '' ? null : parseInt(v, 10));
+          }}
+        >
+          <option value="">
+            {buildingId === null
+              ? '— сначала выберите корпус —'
+              : floorsLoading
+                ? 'Загрузка этажей…'
+                : floors.length === 0
+                  ? '— в этом корпусе нет этажей —'
+                  : '— выберите этаж —'}
+          </option>
+          {floors.map((f) => (
+            <option key={f.id} value={f.id}>Этаж {f.number}</option>
+          ))}
+        </select>
+      </div>
+
+      <div className={styles.pickerActions}>
+        <button
+          type="button"
+          className={styles.pickerBtnSecondary}
+          onClick={onCancel}
+        >
+          К «Корпуса и этажи»
+        </button>
+        <button
+          type="button"
+          className={styles.pickerBtnPrimary}
+          disabled={floorId === null}
+          onClick={() => { if (floorId !== null) onPicked(floorId); }}
+        >
+          Открыть редактор →
+        </button>
+      </div>
     </div>
   );
 };
