@@ -110,21 +110,16 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
       setSectionDrafts(drafts);
       setIsDirty(false);
 
-      // Decide initial mode based on state
+      // Always start the wizard at step 1 (upload) so the admin sees the full
+      // sequence: upload → crop → walls → sections. If saved data exists, each
+      // step shows it as preview and "Далее" skips re-processing.
+      // If sections are already saved, show overview by default — admin can hit
+      // "Редактировать" to re-enter wizard from step 1.
       if (sections.length > 0) {
         setModeState('overview');
-      } else if (floor.schema_image_id === null) {
-        setModeState('wizard');
-        setCurrentStep(1);
-      } else if (floor.schema_crop_bbox === null) {
-        setModeState('wizard');
-        setCurrentStep(2);
-      } else if (floor.wall_polygons === null) {
-        setModeState('wizard');
-        setCurrentStep(3);
       } else {
         setModeState('wizard');
-        setCurrentStep(4);
+        setCurrentStep(1);
       }
     } catch {
       setError('Ошибка загрузки этажа');
