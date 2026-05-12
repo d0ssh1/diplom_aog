@@ -78,11 +78,11 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#161618';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
     // Draw wall polygons
-    ctx.strokeStyle = '#888';
+    ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 1.5;
     for (const poly of (wallPolygons ?? [])) {
       if (poly.length < 2) continue;
@@ -120,13 +120,13 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
       const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
       const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
       const center = toCanvas(cx, cy);
-      ctx.fillStyle = '#fff';
-      ctx.font = 'bold 13px Courier New';
+      ctx.fillStyle = '#0f172a';
+      ctx.font = 'bold 13px sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      // Shadow for readability
-      ctx.shadowColor = 'rgba(0,0,0,0.5)';
-      ctx.shadowBlur = 3;
+      // White halo for readability against colored fills
+      ctx.shadowColor = 'rgba(255,255,255,0.85)';
+      ctx.shadowBlur = 4;
       ctx.fillText(String(draft.number), center.cx, center.cy);
       ctx.shadowBlur = 0;
     }

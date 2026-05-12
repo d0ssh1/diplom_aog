@@ -28,7 +28,7 @@
   cursor: pointer;
   letter-spacing: 0.03em;
   transition: border-color 0.15s, color 0.15s;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .backBtn:hover {
@@ -62,7 +62,7 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: border-color 0.15s, color 0.15s;
-  border-radius: 6px;
+  border-radius: 0;
   display: flex;
   align-items: center;
   gap: 0.375rem;
@@ -84,7 +84,7 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: border-color 0.15s, background 0.15s;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .editSchemeBtn:hover {
@@ -103,7 +103,7 @@
   letter-spacing: 0.03em;
   cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .saveBtn:hover:not(:disabled) {
@@ -128,7 +128,7 @@
   border-collapse: collapse;
   background: #ffffff;
   border: 1px solid #e1e4e8;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: hidden;
 }
 
@@ -205,7 +205,7 @@
   background: transparent;
   border: 1px solid #e1e4e8;
   color: #6b7280;
-  border-radius: 6px;
+  border-radius: 0;
   cursor: pointer;
   font-size: 0.8125rem;
   transition: border-color 0.15s, color 0.15s, background 0.15s;

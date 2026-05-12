@@ -35,7 +35,7 @@
   cursor: pointer;
   letter-spacing: 0.03em;
   transition: border-color 0.15s, color 0.15s;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .viewToggle:hover:not(:disabled) {

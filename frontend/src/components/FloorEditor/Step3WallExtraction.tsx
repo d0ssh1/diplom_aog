@@ -97,20 +97,20 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#161618';
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
     // Draw image watermark
     const img = imageRef.current;
     if (img) {
       const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-      ctx.globalAlpha = 0.3;
+      ctx.globalAlpha = 0.18;
       ctx.drawImage(img, dx, dy, dw, dh);
       ctx.globalAlpha = 1;
     }
 
     // Draw polygons
-    ctx.strokeStyle = '#333';
+    ctx.strokeStyle = '#1f2937';
     ctx.lineWidth = 2;
     for (const poly of localRef.current) {
       if (poly.length < 2) continue;
