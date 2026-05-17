@@ -129,6 +129,7 @@ class BuildingService:
                         FloorPublic(
                             id=floor.id,
                             number=floor.number,
+                            wall_polygons=floor.wall_polygons,
                             sections=published_sections,
                         )
                     )
