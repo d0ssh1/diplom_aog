@@ -20,19 +20,17 @@
 }
 
 .wallPolygon {
-  fill: none;
-  stroke: #888888;
-  stroke-width: 0.004;
-  stroke-linejoin: round;
+  /* Solid black wall mask, as it would render on the floor schema. */
+  fill: #0E0E0E;
+  stroke: none;
 }
 
 .sectionPolygon {
-  /* Subtle grey card fill so inactive sections read as bordered cards
-     even when the wall_polygons backdrop is empty.
-     Semi-transparent so any walls drawn underneath still bleed through. */
-  fill: rgba(245, 245, 245, 0.75);
-  stroke: #0E0E0E;
-  stroke-width: 0.006;
+  /* Light-grey card fill so the section reads against the black walls.
+     Sections are drawn ON TOP of the walls layer so they look like
+     "cleared" rooms inside the wall mask. */
+  fill: #ECECEC;
+  stroke: none;
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -43,12 +41,11 @@
 
 .sectionActive {
   fill: #F97316;
-  stroke: #F97316;
-  stroke-width: 0.006;
+  stroke: none;
 }
 
 .sectionHighlighted {
-  fill: #FFFFFF;
+  fill: #ECECEC;
   stroke: #F97316;
   stroke-width: 0.008;
 }

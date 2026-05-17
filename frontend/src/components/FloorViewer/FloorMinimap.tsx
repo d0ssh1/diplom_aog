@@ -27,6 +27,7 @@ function toSvgPoints(points: [number, number][]): string {
   return points.map(([px, py]) => `${px},${py}`).join(' ');
 }
 
+
 export const FloorMinimap: React.FC<FloorMinimapProps> = ({
   sections,
   wallPolygons,
