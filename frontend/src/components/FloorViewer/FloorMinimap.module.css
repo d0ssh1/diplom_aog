@@ -15,10 +15,22 @@
   display: block;
 }
 
+.wallsLayer {
+  pointer-events: none;
+}
+
+.wallPolygon {
+  fill: none;
+  stroke: #888888;
+  stroke-width: 0.004;
+  stroke-linejoin: round;
+}
+
 .sectionPolygon {
-  fill: #FFFFFF;
+  /* transparent fill so the walls layer underneath remains visible */
+  fill: rgba(255, 255, 255, 0);
   stroke: #0E0E0E;
-  stroke-width: 0.005;
+  stroke-width: 0.006;
   cursor: pointer;
   transition: opacity 0.15s;
 }
@@ -30,7 +42,7 @@
 .sectionActive {
   fill: #F97316;
   stroke: #F97316;
-  stroke-width: 0.005;
+  stroke-width: 0.006;
 }
 
 .sectionHighlighted {

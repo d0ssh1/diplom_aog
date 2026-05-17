@@ -67,10 +67,16 @@ const CarouselRow: React.FC<CarouselRowProps> = ({ label, items, activeId, onSel
               {item.label}
             </button>
           ))}
-          {/* Fill empty slots so layout stays consistent */}
+          {/* Disabled placeholder pills so the row always shows WINDOW_SIZE slots */}
           {visibleItems.length < WINDOW_SIZE &&
             Array.from({ length: WINDOW_SIZE - visibleItems.length }).map((_, i) => (
-              <div key={`empty-${i}`} className={styles.item} style={{ visibility: 'hidden' }} />
+              <div
+                key={`empty-${i}`}
+                className={`${styles.item} ${styles.itemPlaceholder}`}
+                aria-hidden="true"
+              >
+                —
+              </div>
             ))}
         </div>
         <button

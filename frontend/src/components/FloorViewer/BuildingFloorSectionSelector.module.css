@@ -92,3 +92,16 @@
 .itemActive:hover {
   background: #F97316;
 }
+
+.itemPlaceholder {
+  background: #FFFFFF;
+  color: #BBBBBB;
+  box-shadow: inset 0 0 0 1px #DDDDDD;
+  cursor: not-allowed;
+  pointer-events: none;
+  user-select: none;
+}
+
+.itemPlaceholder:hover {
+  background: #FFFFFF;
+}

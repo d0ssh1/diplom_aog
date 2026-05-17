@@ -152,6 +152,9 @@ export const FloorViewerPage: React.FC = () => {
           <div className={styles.minimapSection}>
             <FloorMinimap
               sections={visibleSections}
+              wallPolygons={
+                visibleFloors.find((f) => f.id === selectedFloorId)?.wall_polygons ?? null
+              }
               activeSectionId={selectedSectionId}
               highlightedSectionIds={highlightedSectionIds}
               onSelectSection={selectSection}
