@@ -148,7 +148,12 @@ async def test_list_published_returns_building_with_done_section():
     assert isinstance(result[0].floors[0], FloorPublic)
     assert len(result[0].floors[0].sections) == 1
     assert isinstance(result[0].floors[0].sections[0], SectionPublic)
-    assert result[0].floors[0].sections[0].mesh_url_glb == "/uploads/mesh-42.glb"
+    # URL is built from reconstruction_id, not from the raw mesh_file_id_glb value
+    # (matches build_mesh_url() in reconstruction_service.py and the static mount in main.py)
+    assert (
+        result[0].floors[0].sections[0].mesh_url_glb
+        == "/api/v1/uploads/models/reconstruction_42.glb"
+    )
 
 
 @pytest.mark.asyncio

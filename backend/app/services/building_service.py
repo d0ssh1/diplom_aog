@@ -109,7 +109,10 @@ class BuildingService:
                     if section.reconstruction and section.reconstruction.status == _STATUS_DONE:
                         mesh_url_glb: Optional[str] = None
                         if section.reconstruction.mesh_file_id_glb:
-                            mesh_url_glb = f"/uploads/{section.reconstruction.mesh_file_id_glb}"
+                            mesh_url_glb = (
+                                f"/api/v1/uploads/models/"
+                                f"reconstruction_{section.reconstruction.id}.glb"
+                            )
                         published_sections.append(
                             SectionPublic(
                                 id=section.id,
