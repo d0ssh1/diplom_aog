@@ -3,6 +3,7 @@ API routes for Building hierarchy (Phase 05).
 Thin router: validate → call service → return response.
 """
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -20,7 +21,10 @@ from app.services.building_service import BuildingService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/buildings", tags=["buildings-hierarchy"])
+# Strict bearer for admin endpoints — auto-returns 401 if header missing/invalid.
 security = HTTPBearer()
+# Optional bearer used only by list_buildings to allow public access for ?published=true.
+optional_security = HTTPBearer(auto_error=False)
 
 
 @router.post("", response_model=BuildingResponse, status_code=status.HTTP_201_CREATED)
@@ -42,17 +46,22 @@ async def create_building(
 @router.get("", response_model=list[BuildingResponse] | list[BuildingPublicResponse])
 async def list_buildings(
     published: bool = False,
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(optional_security),
     svc: BuildingService = Depends(get_building_service),
 ):
     """List buildings.
 
-    - published=false (default): admin mode — all buildings, requires auth.
     - published=true: public mode — only published buildings with nested floors/sections.
-      Still requires auth (ADR-18).
+      Auth is NOT required (ADR-1 of user-floor-viewer). Any provided token is ignored.
+    - published=false (default): admin mode — all buildings, requires auth (401 otherwise).
     """
     if published:
         return await svc.list_published()
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+        )
     return await svc.list_admin()
 
 

@@ -1,9 +1,11 @@
 .minimapWrapper {
   width: 100%;
-  aspect-ratio: 1;
-  background: #f5f5f5;
-  border: 1px solid #e0e0e0;
-  border-radius: 6px;
+  height: 200px;
+  background: #FFFFFF;
+  border: 1px solid #E5E5E5;
+  border-radius: 0;
+  padding: 12px;
+  box-sizing: border-box;
   overflow: hidden;
 }
 
@@ -14,32 +16,34 @@
 }
 
 .sectionPolygon {
-  fill: #d0d0d0;
-  stroke: #333;
-  stroke-width: 0.01;
+  fill: #FFFFFF;
+  stroke: #0E0E0E;
+  stroke-width: 0.005;
   cursor: pointer;
-  transition: fill 0.15s;
+  transition: opacity 0.15s;
 }
 
 .sectionPolygon:hover {
-  fill: #bbb;
+  opacity: 0.85;
 }
 
 .sectionActive {
-  fill: #f97316;
-  stroke: #333;
-  stroke-width: 0.01;
+  fill: #F97316;
+  stroke: #F97316;
+  stroke-width: 0.005;
 }
 
 .sectionHighlighted {
-  fill: #d0d0d0;
-  stroke: #f97316;
-  stroke-width: 0.02;
+  fill: #FFFFFF;
+  stroke: #F97316;
+  stroke-width: 0.008;
 }
 
 .sectionLabel {
   font-size: 0.06px;
-  fill: #222;
+  font-weight: 600;
+  font-family: system-ui, -apple-system, sans-serif;
+  fill: #0E0E0E;
   text-anchor: middle;
   dominant-baseline: central;
   pointer-events: none;
@@ -47,7 +51,7 @@
 }
 
 .sectionLabelActive {
-  fill: #fff;
+  fill: #FFFFFF;
 }
 
 .empty {
@@ -55,6 +59,6 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #aaa;
+  color: #888;
   font-size: 13px;
 }

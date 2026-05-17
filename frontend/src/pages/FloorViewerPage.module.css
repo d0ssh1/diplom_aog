@@ -4,17 +4,17 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: #eceff1;
+  background: #FFFFFF;
 }
 
 /* ─── Header ─── */
 .header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  background: #fff;
-  border-bottom: 1px solid #e0e0e0;
+  gap: 12px;
+  padding: 0 24px;
+  height: 56px;
+  background: #0E0E0E;
   flex-shrink: 0;
 }
 
@@ -22,27 +22,28 @@
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 14px;
-  color: #555;
-  padding: 4px 0;
+  font-size: 16px;
+  color: #FFFFFF;
+  padding: 4px 8px;
   display: flex;
   align-items: center;
   gap: 4px;
+  transition: background 0.15s;
 }
 
 .backBtn:hover {
-  color: #f97316;
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .headerSeparator {
-  color: #bbb;
+  color: #6B6B6B;
   font-size: 14px;
 }
 
 .headerTitle {
   font-size: 15px;
   font-weight: 600;
-  color: #222;
+  color: #FFFFFF;
 }
 
 /* ─── Body ─── */
@@ -55,10 +56,10 @@
 
 /* ─── Left panel ─── */
 .leftPanel {
-  width: 260px;
+  width: 280px;
   flex-shrink: 0;
-  background: #fff;
-  border-right: 1px solid #e0e0e0;
+  background: #FFFFFF;
+  border-right: 1px solid #E5E5E5;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -69,63 +70,6 @@
 .routeSection {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.routeTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.routeInput {
-  padding: 7px 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 13px;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.routeInput:focus {
-  outline: none;
-  border-color: #f97316;
-}
-
-.routeBtn {
-  padding: 8px 12px;
-  background: #f97316;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  width: 100%;
-  transition: background 0.15s;
-}
-
-.routeBtn:hover {
-  background: #ea6c0a;
-}
-
-.routeBtn:disabled {
-  background: #ccc;
-  cursor: not-allowed;
-}
-
-.routeError {
-  font-size: 12px;
-  color: #dc3545;
-  line-height: 1.4;
-}
-
-.divider {
-  height: 1px;
-  background: #e0e0e0;
-  margin: 0 -16px;
 }
 
 .selectorSection {
@@ -140,20 +84,13 @@
   gap: 6px;
 }
 
-.minimapTitle {
-  font-size: 12px;
-  font-weight: 600;
-  color: #888;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
 /* ─── Right panel (3D viewer) ─── */
 .rightPanel {
   flex: 1;
   position: relative;
   min-width: 0;
   min-height: 0;
+  background: #FFFFFF;
 }
 
 .viewerContainer {
@@ -166,7 +103,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #888;
+  color: #888888;
   font-size: 16px;
 }
 
@@ -175,7 +112,7 @@
   align-items: center;
   justify-content: center;
   height: 100%;
-  color: #888;
+  color: #888888;
   font-size: 16px;
   text-align: center;
   padding: 24px;
@@ -188,41 +125,12 @@
   left: 50%;
   transform: translateX(-50%);
   background: rgba(220, 53, 69, 0.92);
-  color: #fff;
+  color: #FFFFFF;
   padding: 8px 16px;
-  border-radius: 4px;
+  border-radius: 0;
   font-size: 14px;
   z-index: 10;
   pointer-events: none;
   white-space: nowrap;
 }
 
-/* ─── Zoom controls ─── */
-.zoomControls {
-  position: absolute;
-  bottom: 16px;
-  right: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  z-index: 5;
-}
-
-.zoomBtn {
-  width: 36px;
-  height: 36px;
-  border: 1px solid #ccc;
-  background: rgba(255, 255, 255, 0.95);
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-  color: #333;
-}
-
-.zoomBtn:hover {
-  background: #f0f0f0;
-}

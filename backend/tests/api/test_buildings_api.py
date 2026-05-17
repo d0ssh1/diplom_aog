@@ -159,10 +159,16 @@ async def test_list_buildings_published_filter_returns_only_complete(client, aut
 
 
 @pytest.mark.asyncio
-async def test_list_buildings_published_requires_user_auth(client):
-    """published=true still requires authentication (ADR-18)."""
-    resp = await client.get("/api/v1/buildings?published=true")
-    assert resp.status_code == 401
+async def test_list_buildings_published_no_auth_returns_200(client):
+    """published=true is public — no auth required (ADR-1 of user-floor-viewer)."""
+    mock_svc = _make_mock_svc()
+    mock_svc.list_published.return_value = []
+    app.dependency_overrides[get_building_service] = lambda: mock_svc
+    try:
+        resp = await client.get("/api/v1/buildings?published=true")
+        assert resp.status_code == 200
+    finally:
+        app.dependency_overrides.pop(get_building_service, None)
 
 
 # ── GET /api/v1/buildings/{id} ────────────────────────────────────────────────
