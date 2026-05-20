@@ -12,6 +12,7 @@ interface WizardShellProps {
   nextDisabled?: boolean;
   nextLabel?: string;
   hideFooter?: boolean;
+  hideHeader?: boolean;
   children: React.ReactNode;
 }
 
@@ -24,18 +25,21 @@ export const WizardShell: React.FC<WizardShellProps> = ({
   nextDisabled = false,
   nextLabel,
   hideFooter = false,
+  hideHeader = false,
   children,
 }) => {
   const resolvedNextLabel = nextLabel ?? (currentStep === totalSteps ? 'Сохранить' : '> Далее');
 
   return (
     <div className={styles.shell}>
-      <header className={styles.header}>
-        <StepIndicator totalSteps={totalSteps} currentStep={currentStep} />
-        <button type="button" className={styles.closeBtn} onClick={onClose} title="Закрыть">
-          <X size={20} />
-        </button>
-      </header>
+      {!hideHeader && (
+        <header className={styles.header}>
+          <StepIndicator totalSteps={totalSteps} currentStep={currentStep} />
+          <button type="button" className={styles.closeBtn} onClick={onClose} title="Закрыть">
+            <X size={20} />
+          </button>
+        </header>
+      )}
 
       <div className={styles.content}>{children}</div>
 

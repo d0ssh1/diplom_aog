@@ -4,6 +4,7 @@
 import { useState, useCallback } from 'react';
 import { floorsApi, sectionsApi } from '../api/buildingsApi';
 import { floorSchemaApi } from '../api/floorSchemaApi';
+import { toastApi } from './useToast';
 import type {
   CropBbox,
   SectionGeometry,
@@ -38,6 +39,9 @@ interface UseFloorEditorWizardReturn {
   schemaImageUrl: string | null;
   cropBbox: CropBbox | null;
   wallPolygons: Point2D[][] | null;
+  /** Blob URL of the user-edited mask from Step 3. Client-only; lives for
+   * the duration of the session and overrides /mask-preview on Step 4. */
+  editedMaskUrl: string | null;
   sectionDrafts: SectionDraft[];
   isDirty: boolean;
   isLoading: boolean;
@@ -55,6 +59,7 @@ interface UseFloorEditorWizardReturn {
   commitCropBbox: () => Promise<void>;
   triggerWallExtraction: () => Promise<void>;
   setWallPolygons: (polygons: Point2D[][]) => void;
+  setEditedMaskUrl: (url: string | null) => void;
   commitWallPolygons: () => Promise<void>;
 
   // Section management
@@ -63,6 +68,7 @@ interface UseFloorEditorWizardReturn {
   deleteSectionDraft: (idx: number) => void;
   bindReconstruction: (sectionIdx: number, reconstructionId: number | null) => void;
   saveAll: () => Promise<void>;
+  resetFloor: () => Promise<void>;
 }
 
 function normalizeToPoint2D(polygons: [number, number][][]): Point2D[][] {
@@ -77,6 +83,17 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
   const [schemaImageUrl, setSchemaImageUrl] = useState<string | null>(null);
   const [cropBbox, setCropBboxState] = useState<CropBbox | null>(null);
   const [wallPolygons, setWallPolygonsState] = useState<Point2D[][] | null>(null);
+  const [editedMaskUrl, setEditedMaskUrlState] = useState<string | null>(null);
+
+  const setEditedMaskUrl = useCallback((url: string | null) => {
+    setEditedMaskUrlState((prev) => {
+      // Revoke previous blob URL to avoid leaks
+      if (prev && prev.startsWith('blob:') && prev !== url) {
+        try { URL.revokeObjectURL(prev); } catch { /* ignore */ }
+      }
+      return url;
+    });
+  }, []);
   const [sectionDrafts, setSectionDrafts] = useState<SectionDraft[]>([]);
   const [isDirty, setIsDirty] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -229,6 +246,25 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     }
   }, [floorId, wallPolygons]);
 
+  const resetFloor = useCallback(async (): Promise<void> => {
+    if (floorId === null) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      await sectionsApi.replace(floorId, { sections: [] });
+      setSectionDrafts([]);
+      setIsDirty(false);
+      setCurrentStep(4);
+      setModeState('wizard');
+      toastApi.success('План отсеков удалён');
+    } catch {
+      // Show as toast, not full-page error — user can retry without losing state.
+      toastApi.error('Ошибка удаления плана отсеков');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [floorId]);
+
   const addSectionDraft = useCallback(
     (geometry: SectionGeometry, number: number) => {
       setSectionDrafts((prev) => [
@@ -269,6 +305,14 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
 
   const saveAll = useCallback(async (): Promise<void> => {
     if (floorId === null) return;
+    // Validation: every section needs a bound plan. Surface as a toast — this is
+    // a user-correctable input issue, not a fatal page error, so don't set the
+    // global `error` (which would replace the whole page with the retry fallback).
+    const unassigned = sectionDrafts.some((d) => d.reconstruction_id === null);
+    if (unassigned) {
+      toastApi.error('Не все отсеки имеют назначенный план');
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
@@ -292,9 +336,10 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
       setSectionDrafts(updatedDrafts);
       setIsDirty(false);
       setModeState('overview');
-    } catch {
-      setError('Ошибка сохранения секций');
-      throw new Error('Ошибка сохранения секций');
+      toastApi.success('Отсеки сохранены');
+    } catch (err: any) {
+      const msg = err?.message || 'Ошибка сохранения секций';
+      toastApi.error(msg);
     } finally {
       setIsLoading(false);
     }
@@ -308,6 +353,7 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     schemaImageUrl,
     cropBbox,
     wallPolygons,
+    editedMaskUrl,
     sectionDrafts,
     isDirty,
     isLoading,
@@ -322,11 +368,13 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     commitCropBbox,
     triggerWallExtraction,
     setWallPolygons,
+    setEditedMaskUrl,
     commitWallPolygons,
     addSectionDraft,
     updateSectionDraft,
     deleteSectionDraft,
     bindReconstruction,
     saveAll,
+    resetFloor,
   };
 };

@@ -259,3 +259,10 @@ class MaskService:
             block_size=request.block_size,
             threshold_c=request.threshold_c,
         )
+        return await self.preview_mask(
+            file_id=request.file_id,
+            crop=crop_dict,
+            rotation=request.rotation,
+            block_size=request.block_size,
+            threshold_c=request.threshold_c,
+        )

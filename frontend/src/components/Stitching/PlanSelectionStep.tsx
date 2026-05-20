@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Layers, ChevronDown, ImageIcon, Check, AlertTriangle, FileImage, ArrowRight } from 'lucide-react';
 import type { ReconstructionListItem } from '../../types/stitching';
 import { reconstructionApi } from '../../api/apiService';
+import type { ReconstructionListItem as ApiReconstructionListItem } from '../../api/apiService';
 import styles from './PlanSelectionStep.module.css';
 
 interface Building {
@@ -29,7 +30,20 @@ export const PlanSelectionStep: React.FC<PlanSelectionStepProps> = ({
     const loadBuildings = async () => {
       try {
         // Fetch all reconstructions to extract unique building_id values
-        const allReconstructions = await reconstructionApi.getReconstructions();
+        const apiResult = await reconstructionApi.getReconstructions();
+        // Cast to local stitching type — stitching feature uses its own shape
+        const allReconstructions = apiResult.map((r: ApiReconstructionListItem): ReconstructionListItem => ({
+          id: r.id,
+          name: r.name,
+          preview_url: r.preview_url,
+          rooms_count: 0,
+          walls_count: 0,
+          created_at: r.updated_at,
+          rotation_angle: 0,
+          building_id: r.floor?.building_code ?? null,
+          floor_number: r.floor?.number ?? null,
+          status: String(r.status),
+        }));
 
         // Extract unique building IDs
         const uniqueBuildings = new Map<string, string>();
@@ -95,7 +109,21 @@ export const PlanSelectionStep: React.FC<PlanSelectionStepProps> = ({
     const loadReconstructions = async () => {
       setIsLoading(true);
       try {
-        const data = await reconstructionApi.getReconstructions();
+        const apiData = await reconstructionApi.getReconstructions({
+          buildingCode: selectedBuildingId || undefined,
+        });
+        const data = apiData.map((r: ApiReconstructionListItem): ReconstructionListItem => ({
+          id: r.id,
+          name: r.name,
+          preview_url: r.preview_url,
+          rooms_count: 0,
+          walls_count: 0,
+          created_at: r.updated_at,
+          rotation_angle: 0,
+          building_id: r.floor?.building_code ?? null,
+          floor_number: r.floor?.number ?? null,
+          status: String(r.status),
+        }));
 
         // Filter by building and floor if available
         const filtered = data.filter((r: ReconstructionListItem) => {
@@ -242,6 +270,7 @@ export const PlanSelectionStep: React.FC<PlanSelectionStepProps> = ({
                           src={recon.preview_url}
                           alt={recon.name}
                           className={styles.planPreviewImage}
+                          style={recon.rotation_angle ? { transform: `rotate(${recon.rotation_angle}deg)` } : undefined}
                         />
                       ) : (
                         <ImageIcon size={24} className={styles.planPreviewIcon} />

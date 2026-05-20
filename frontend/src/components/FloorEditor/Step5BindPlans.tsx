@@ -1,12 +1,18 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import styles from './WizardStep.module.css';
 import step5Styles from './Step5BindPlans.module.css';
+import { reconstructionApi } from '../../api/apiService';
 import { PlanGalleryPicker } from './PlanGalleryPicker';
 import { getSectionColor } from './sectionColors';
+import { fitContain } from './croppedImage';
 import type { SectionDraft, Point2D } from '../../hooks/useFloorEditorWizard';
-import type { Building } from '../../types/hierarchy';
+import type { Building, CropBbox } from '../../types/hierarchy';
 
 interface Step5BindPlansProps {
+  schemaImageId: string | null;
+  schemaImageUrl: string | null;
+  cropBbox: CropBbox | null;
+  editedMaskUrl: string | null;
   sectionDrafts: SectionDraft[];
   wallPolygons: Point2D[][] | null;
   buildings: Building[];
@@ -18,8 +24,11 @@ interface Step5BindPlansProps {
 }
 
 export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
+  schemaImageId,
+  schemaImageUrl,
+  cropBbox,
+  editedMaskUrl,
   sectionDrafts,
-  wallPolygons,
   buildings,
   isLoading,
   onBind,
@@ -36,10 +45,26 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
     return c ? { w: c.clientWidth, h: c.clientHeight } : { w: 200, h: 200 };
   }, []);
 
+  const maskImgRef = useRef<HTMLImageElement | null>(null);
+  const [maskLoading, setMaskLoading] = useState(false);
+  const [maskError, setMaskError] = useState<string | null>(null);
+
+  const getImageParams = useCallback((cw: number, ch: number) => {
+    const m = maskImgRef.current;
+    const w = m?.naturalWidth ?? cw;
+    const h = m?.naturalHeight ?? ch;
+    return fitContain(w, h, cw, ch, 1);
+  }, []);
+
   const toCanvas = useCallback((nx: number, ny: number) => {
     const { w: cw, h: ch } = getCanvasSize();
-    return { cx: nx * cw, cy: ny * ch };
-  }, [getCanvasSize]);
+    const m = maskImgRef.current;
+    if (!m) {
+      return { cx: nx * cw, cy: ny * ch };
+    }
+    const { dx, dy, dw, dh } = getImageParams(cw, ch);
+    return { cx: dx + nx * dw, cy: dy + ny * dh };
+  }, [getCanvasSize, getImageParams]);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -53,33 +78,38 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Wall polygons
-    ctx.strokeStyle = '#888';
-    ctx.lineWidth = 1.5;
-    for (const poly of (wallPolygons ?? [])) {
-      if (poly.length < 2) continue;
-      ctx.beginPath();
-      const f = toCanvas(poly[0].x, poly[0].y);
-      ctx.moveTo(f.cx, f.cy);
-      for (let i = 1; i < poly.length; i++) {
-        const p = toCanvas(poly[i].x, poly[i].y);
-        ctx.lineTo(p.cx, p.cy);
+    // Draw the BINARY MASK inverted: walls become BLACK on WHITE background
+    // (the raw mask from the server is white walls on black; invert for the
+    // light final-look the user expects).
+    const m = maskImgRef.current;
+    if (m && m.naturalWidth > 0 && m.naturalHeight > 0) {
+      const { dx, dy, dw, dh } = getImageParams(cw, ch);
+      if (dw > 0 && dh > 0) {
+        ctx.save();
+        ctx.filter = 'invert(1)';
+        ctx.drawImage(m, dx, dy, dw, dh);
+        ctx.restore();
       }
-      ctx.stroke();
     }
 
-    // Active section — use palette color
-    if (activeIdx < sectionDrafts.length) {
-      const draft = sectionDrafts[activeIdx];
+    // Section drafts
+    sectionDrafts.forEach((draft, idx) => {
       const pts = draft.geometry.points;
-      const color = getSectionColor(activeIdx, draft.id);
-      ctx.fillStyle = `${color}55`;
-      ctx.strokeStyle = color;
+      if (!pts || pts.length < 3) return;
+
+      const isActive = idx === activeIdx;
+      
+      // Match primer colors:
+      // Active: fill #F05123, opacity 0.9.  Inactive: fill #F3F4F6
+      // Stroke is always #D1D5DB
+      ctx.fillStyle = isActive ? 'rgba(240, 81, 35, 0.9)' : '#f3f4f6';
+      ctx.strokeStyle = '#d1d5db';
       ctx.lineWidth = 2;
+
       ctx.beginPath();
       const f = toCanvas(pts[0][0], pts[0][1]);
       ctx.moveTo(f.cx, f.cy);
-      for (let i = 1; i < 4; i++) {
+      for (let i = 1; i < pts.length; i++) {
         const p = toCanvas(pts[i][0], pts[i][1]);
         ctx.lineTo(p.cx, p.cy);
       }
@@ -88,21 +118,103 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
       ctx.stroke();
 
       // Section number label
-      const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
-      const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
-      const center = toCanvas(cx, cy);
-      ctx.fillStyle = color;
-      ctx.font = 'bold 12px Courier New';
+      let avgX = 0, avgY = 0;
+      for (const [px, py] of pts) { avgX += px; avgY += py; }
+      avgX /= pts.length;
+      avgY /= pts.length;
+      const center = toCanvas(avgX, avgY);
+      
+      ctx.fillStyle = isActive ? '#ffffff' : '#6b7280';
+      ctx.font = 'bold 16px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(255,255,255,0.8)';
-      ctx.shadowBlur = 3;
       ctx.fillText(String(draft.number), center.cx, center.cy);
-      ctx.shadowBlur = 0;
-    }
-  }, [getCanvasSize, toCanvas, wallPolygons, sectionDrafts, activeIdx]);
+    });
+  }, [getCanvasSize, toCanvas, getImageParams, sectionDrafts, activeIdx]);
 
-  useEffect(() => { draw(); }, [draw]);
+  const drawRef = useRef(draw);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+  useEffect(() => { draw(); }, [draw, sectionDrafts]);
+
+  // Request the binary mask from the backend
+  const cropKey = cropBbox
+    ? `${cropBbox.x}|${cropBbox.y}|${cropBbox.width}|${cropBbox.height}|${cropBbox.rotation}`
+    : '';
+  useEffect(() => {
+    if (editedMaskUrl) {
+      let cancelled = false;
+      setMaskLoading(true);
+      setMaskError(null);
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        maskImgRef.current = img;
+        setMaskLoading(false);
+        drawRef.current();
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        maskImgRef.current = null;
+        setMaskError('Не удалось загрузить отредактированную маску');
+        setMaskLoading(false);
+      };
+      img.src = editedMaskUrl;
+      return () => { cancelled = true; };
+    }
+
+    if (!schemaImageId) {
+      maskImgRef.current = null;
+      setMaskError(schemaImageUrl ? 'Нет идентификатора фото' : 'Загрузите фото на шаге 1');
+      return;
+    }
+    let cancelled = false;
+    let objectUrl: string | null = null;
+    setMaskLoading(true);
+    setMaskError(null);
+
+    const cropPayload = cropBbox
+      ? { x: cropBbox.x, y: cropBbox.y, width: cropBbox.width, height: cropBbox.height }
+      : null;
+    const rotation = cropBbox?.rotation ?? 0;
+
+    reconstructionApi
+      .previewMask(schemaImageId, cropPayload, rotation)
+      .then((url) => {
+        if (cancelled) { URL.revokeObjectURL(url); return; }
+        objectUrl = url;
+        const img = new Image();
+        img.onload = () => {
+          if (cancelled) return;
+          if (img.naturalWidth === 0 || img.naturalHeight === 0) {
+            setMaskError('Не удалось обработать изображение');
+            maskImgRef.current = null;
+          } else {
+            maskImgRef.current = img;
+          }
+          setMaskLoading(false);
+          drawRef.current();
+        };
+        img.onerror = () => {
+          if (cancelled) return;
+          maskImgRef.current = null;
+          setMaskError('Не удалось загрузить превью');
+          setMaskLoading(false);
+        };
+        img.src = url;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        maskImgRef.current = null;
+        setMaskError('Ошибка генерации маски на сервере');
+        setMaskLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemaImageId, cropKey, editedMaskUrl]);
 
   // Cleanup canvas on unmount
   useEffect(() => {
@@ -122,7 +234,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
       <div className={step5Styles.body}>
         {/* Left: section list with colored chips */}
         <aside className={step5Styles.sectionsPanel}>
-          <div className={step5Styles.panelTitle}>Отсеки на схеме</div>
+          <div className={step5Styles.panelTitle}>ОТСЕКИ НА СХЕМЕ</div>
           <div className={step5Styles.sectionList}>
             {sectionDrafts.map((d, idx) => {
               const color = getSectionColor(idx, d.id);
@@ -136,8 +248,12 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
                   <span
                     className={step5Styles.sectionDot}
                     style={{ background: color }}
-                  />
-                  <span style={{ flex: 1 }}>Отсек {d.number}</span>
+                  >
+                    {d.number}
+                  </span>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                    <span style={{ fontWeight: 600 }}>Отсек {d.number}</span>
+                  </div>
                   {d.reconstruction_id !== null && (
                     <span className={step5Styles.checkmark}>✓</span>
                   )}
@@ -149,10 +265,10 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
 
         {/* Center: gallery */}
         <div className={step5Styles.galleryPanel}>
-          <div className={step5Styles.panelTitle}>Планы этого этажа</div>
           <PlanGalleryPicker
             buildings={buildings}
             selectedReconstructionId={selectedReconId}
+            assignedReconstructionIds={sectionDrafts.map(d => d.reconstruction_id).filter((id): id is number => id !== null)}
             onSelect={(id) => {
               const newId = id === selectedReconId ? null : id;
               onBind(activeIdx, newId);
@@ -162,38 +278,47 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
 
         {/* Right: preview */}
         <div className={step5Styles.previewPanel}>
-          <div className={step5Styles.panelTitle}>Превью отсека</div>
-          <div className={step5Styles.canvasWrap} ref={containerRef}>
+          <div className={step5Styles.canvasWrap} ref={containerRef} style={{ position: 'relative' }}>
             <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+            {maskLoading && (
+              <div className={styles.spinnerOverlay} style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className={styles.spinnerText}>Загрузка маски...</span>
+              </div>
+            )}
+            {!maskLoading && maskError && (
+              <div className={styles.spinnerOverlay} style={{ position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <span className={styles.spinnerText} style={{ color: '#9ca3af' }}>{maskError}</span>
+              </div>
+            )}
           </div>
-          {activeDraft && (
-            <p className={step5Styles.previewLabel}>Отсек {activeDraft.number}</p>
-          )}
         </div>
       </div>
 
-      <footer className={styles.footer}>
-        <button className={styles.btnBack} onClick={onBack} type="button">
+      <footer className={styles.footer} style={{ background: '#ffffff', borderTop: '1px solid #e5e7eb', padding: '0.75rem 1.5rem', justifyContent: 'space-between' }}>
+        <button className={styles.btnBack} onClick={onBack} type="button" style={{ color: '#374151', borderColor: '#d1d5db', background: '#ffffff', borderRadius: '0' }}>
           ← Назад
         </button>
         <span className={styles.footerHint} />
-        <button
-          className={styles.btnBack}
-          onClick={() => void onSaveAndExit()}
-          disabled={isLoading}
-          type="button"
-          style={{ borderColor: '#ff6b1f', color: '#ff6b1f' }}
-        >
-          Сохранить и выйти
-        </button>
-        <button
-          className={styles.btnSave}
-          onClick={() => void onSave()}
-          disabled={isLoading}
-          type="button"
-        >
-          Сохранить
-        </button>
+        <div style={{ display: 'flex', gap: '0.75rem' }}>
+          <button
+            className={styles.btnBack}
+            onClick={() => void onSaveAndExit()}
+            disabled={isLoading}
+            type="button"
+            style={{ color: '#374151', borderColor: '#d1d5db', background: '#ffffff', borderRadius: '0' }}
+          >
+            Сохранить и выйти
+          </button>
+          <button
+            className={styles.btnSave}
+            onClick={() => void onSave()}
+            disabled={isLoading}
+            type="button"
+            style={{ background: '#f05123', color: '#ffffff', border: 'none', borderRadius: '0' }}
+          >
+            Сохранить
+          </button>
+        </div>
       </footer>
     </div>
   );

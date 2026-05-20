@@ -8,6 +8,7 @@ interface UseWizardReturn {
   nextStep: () => void;
   prevStep: () => void;
   setPlanFile: (id: string, url: string) => void;
+  setPlanName: (name: string) => void;
   calculateMask: () => Promise<void>;
   setMaskFile: (id: string) => void;
   saveMaskAndAnnotations: (blob: Blob, rooms: RoomAnnotation[], doors: DoorAnnotation[], canvasState?: unknown) => Promise<string | null>;
@@ -28,6 +29,7 @@ const initialState: WizardState = {
   step: 1,
   planFileId: null,
   planUrl: null,
+  planName: '',
   maskFileId: null,
   editedMaskFileId: null,
   canvasState: null,
@@ -55,11 +57,15 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
     setState((s) => ({ ...s, step: Math.max(s.step - 1, 1) as WizardState['step'] }));
+  }, []);
+
+  const setPlanName = useCallback((name: string) => {
+    setState((s) => ({ ...s, planName: name }));
   }, []);
 
   const setPlanFile = useCallback((id: string, url: string) => {
@@ -198,6 +204,7 @@ export const useWizard = (): UseWizardReturn => {
     nextStep,
     prevStep,
     setPlanFile,
+    setPlanName,
     calculateMask,
     setMaskFile,
     saveMaskAndAnnotations,

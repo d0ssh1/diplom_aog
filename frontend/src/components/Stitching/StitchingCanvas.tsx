@@ -1,19 +1,22 @@
 import React, { useRef, useEffect } from 'react';
-import type { LayerData } from '../../types/stitching';
+import type { LayerData, StitchingSnapshot } from '../../types/stitching';
 import { useStitchingCanvas } from '../../hooks/useStitchingCanvas';
 import styles from './StitchingCanvas.module.css';
 
 interface StitchingCanvasProps {
   layers: LayerData[];
-  activeTool: "move" | "rotate" | "rect_crop" | "polygon_clip";
+  activeTool: 'move' | 'rotate' | 'rect_crop' | 'polygon_clip';
+  selectedLayerId: string | null;
   onLayerUpdate: (layerId: string, updates: Partial<LayerData>) => void;
-  onSnapshotPush: (snapshot: unknown) => void;
+  onSnapshotPush: (snapshot: StitchingSnapshot) => void;
   onUndo: () => void;
   onRedo: () => void;
 }
 
 export const StitchingCanvas: React.FC<StitchingCanvasProps> = ({
   layers,
+  activeTool,
+  selectedLayerId,
   onLayerUpdate,
   onSnapshotPush,
   onUndo,
@@ -24,6 +27,8 @@ export const StitchingCanvas: React.FC<StitchingCanvasProps> = ({
   const { loadPlanToCanvas } = useStitchingCanvas({
     containerRef,
     layers,
+    activeTool,
+    selectedLayerId,
     onLayerUpdate,
     onSnapshotPush,
   });
@@ -35,14 +40,14 @@ export const StitchingCanvas: React.FC<StitchingCanvasProps> = ({
         loadPlanToCanvas(layer);
       });
     }
-  }, [layers.length]); // Only trigger when number of layers changes
+  }, [layers.map((layer) => layer.reconstructionId).join(',')]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key === 'z' && !e.shiftKey) {
+      if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) {
         e.preventDefault();
         onUndo();
-      } else if (e.ctrlKey && e.shiftKey && e.key === 'Z') {
+      } else if (e.ctrlKey && e.shiftKey && e.code === 'KeyZ') {
         e.preventDefault();
         onRedo();
       }
@@ -54,7 +59,7 @@ export const StitchingCanvas: React.FC<StitchingCanvasProps> = ({
 
   return (
     <div ref={containerRef} className={styles.stitchingCanvasContainer}>
-      <canvas id="stitching-canvas" />
+      <canvas />
       <div className={styles.canvasHint}>
         Пробел + мышь = перемещение холста
       </div>

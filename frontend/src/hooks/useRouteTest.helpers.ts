@@ -49,9 +49,12 @@ export const parseSyntheticId = (
 /**
  * Build a flat global registry of rooms across multiple reconstructions.
  *
- * Display labels are shaped so duplicates are visually distinguishable:
- *   "1110 · Этаж 11 (A11_2)"
- *   "1110 · Этаж 11 (TEST-13-02)"
+ * Reconstructions without a floor binding (floor === null) are excluded.
+ *
+ * Display labels use the full hierarchy for disambiguation:
+ *   "<BuildingCode>-<FloorNumber>-<SectionNumber>__<RoomName>"
+ *   e.g. "A-11-2__1110"
+ *   Falls back to "?-?-?__<RoomName>" when fields are missing.
  *
  * Sort order: by name (natural), then by floor number, then by reconstruction name.
  */
@@ -61,11 +64,17 @@ export const buildRoomRegistry = (
   const out: RoomEntry[] = [];
   for (const b of bundles) {
     const r = b.reconstruction;
-    const floorPart =
-      r.floor_number != null ? `Этаж ${r.floor_number}` : r.name || `#${r.id}`;
+    // Exclude reconstructions not bound to a floor.
+    if (r.floor === null) continue;
+    const floorNumber = r.floor.number;
+    const buildingCode = r.floor.building_code;
+    const sectionNumber = r.section?.number ?? null;
     for (const room of b.rooms) {
       const rawName = (room.name && room.name.trim()) || `[${room.room_type}]`;
-      const displayLabel = `${rawName} · ${floorPart} (${r.name || `#${r.id}`})`;
+      const bPart = buildingCode ?? '?';
+      const fPart = String(floorNumber);
+      const sPart = sectionNumber != null ? String(sectionNumber) : '?';
+      const displayLabel = `${bPart}-${fPart}-${sPart}__${rawName}`;
       out.push({
         syntheticId: composeSyntheticId(r.id, room.id),
         realRoomId: room.id,
@@ -73,8 +82,8 @@ export const buildRoomRegistry = (
         displayLabel,
         reconstructionId: r.id,
         reconstructionName: r.name,
-        buildingId: r.building_id,
-        floorNumber: r.floor_number,
+        buildingId: buildingCode,
+        floorNumber,
         roomType: room.room_type,
       });
     }

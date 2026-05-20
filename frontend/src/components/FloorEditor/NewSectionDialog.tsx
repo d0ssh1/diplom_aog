@@ -16,7 +16,7 @@ interface NewSectionDialogProps {
   initialNumber: number | null;
   initialColor?: string;
   takenNumbers: number[];
-  onConfirm: (number: number, description: string, color: string) => void;
+  onConfirm: (number: number, color: string) => void;
   onCancel: () => void;
 }
 
@@ -29,14 +29,12 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   onCancel,
 }) => {
   const [value, setValue] = useState<string>(String(initialNumber ?? 1));
-  const [description, setDescription] = useState<string>('');
   const [color, setColor] = useState<string>(initialColor ?? SECTION_COLOR_PALETTE[0]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (open) {
       setValue(String(initialNumber ?? 1));
-      setDescription('');
       setColor(initialColor ?? SECTION_COLOR_PALETTE[0]);
       setTimeout(() => inputRef.current?.select(), 50);
     }
@@ -50,7 +48,7 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   const canConfirm = isValid && !isDuplicate;
 
   const handleConfirm = () => {
-    if (canConfirm) onConfirm(num, description, color);
+    if (canConfirm) onConfirm(num, color);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -59,8 +57,9 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
   };
 
   return (
-    <aside className={styles.panel} role="dialog" aria-label="Новый отсек">
-      <div className={styles.panelHeader}>
+    <div className={styles.overlay}>
+      <aside className={styles.panel} role="dialog" aria-label="Новый отсек">
+        <div className={styles.panelHeader}>
         <h3 className={styles.title}>Новый отсек</h3>
         <button
           className={styles.closeBtn}
@@ -89,20 +88,6 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
         {isDuplicate && (
           <p className={styles.error}>Отсек с номером {num} уже существует</p>
         )}
-      </div>
-
-      <div className={styles.field}>
-        <label className={styles.label} htmlFor="section-desc-input">
-          Описание <span className={styles.optional}>(необязательно)</span>
-        </label>
-        <textarea
-          id="section-desc-input"
-          className={styles.textarea}
-          rows={3}
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Например: Северный блок"
-        />
       </div>
 
       <div className={styles.field}>
@@ -136,5 +121,6 @@ export const NewSectionDialog: React.FC<NewSectionDialogProps> = ({
         </button>
       </div>
     </aside>
+    </div>
   );
 };

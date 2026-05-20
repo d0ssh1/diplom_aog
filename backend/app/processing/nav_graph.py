@@ -682,3 +682,251 @@ def transform_2d_to_3d(
         z_3d = (y_pix - mask_height) * scale_factor
         coords_3d.append([round(x_3d, 4), round(y_3d, 4), round(z_3d, 4)])
     return coords_3d
+
+
+# ---------------------------------------------------------------------------
+# Floor Transitions — multifloor graph merge and routing
+# ---------------------------------------------------------------------------
+
+from dataclasses import dataclass  # noqa: E402 (stdlib, safe here)
+
+FLOOR_HEIGHT_METERS: float = 3.5  # Height per floor for 3D coordinates
+
+
+@dataclass
+class FloorGraphData:
+    """Holds a single floor's graph plus metadata needed for merge/route."""
+
+    graph: nx.Graph
+    metadata: dict          # mask_width, mask_height, scale_factor
+    reconstruction_id: int
+    floor_number: int       # from Reconstruction.floor_number
+    floor_name: str         # from Reconstruction.name
+
+
+def _find_nearest_node(
+    G: nx.Graph,
+    recon_id: int,
+    target_px: float,
+    target_py: float,
+    max_distance_px: float = 200.0,
+) -> str | None:
+    """Return the prefixed node id closest to (target_px, target_py) within max_distance_px."""
+    best_node: str | None = None
+    best_dist = max_distance_px
+
+    prefix = f"{recon_id}:"
+    for node_id, data in G.nodes(data=True):
+        if not str(node_id).startswith(prefix):
+            continue
+        pos = data.get("pos")
+        if pos is None:
+            continue
+        dist = math.hypot(pos[0] - target_px, pos[1] - target_py)
+        if dist < best_dist:
+            best_dist = dist
+            best_node = node_id
+
+    return best_node
+
+
+def merge_floor_graphs(
+    floor_data: list[FloorGraphData],
+    transitions: list[dict],
+) -> tuple[nx.Graph, dict[int, FloorGraphData]]:
+    """
+    Merge N floor graphs into one, connecting them via transition edges.
+
+    Args:
+        floor_data: list of FloorGraphData (one per floor/reconstruction)
+        transitions: list of dicts from FloorTransition ORM —
+            keys: id, name, from_reconstruction_id, from_x, from_y,
+                  to_reconstruction_id, to_x, to_y
+
+    Returns:
+        (merged_graph, floor_data_by_recon_id)
+        All nodes are prefixed with "{recon_id}:{original_node_id}".
+    """
+    merged = nx.Graph()
+    floor_data_by_recon_id: dict[int, FloorGraphData] = {}
+
+    # Copy all nodes and edges with recon_id prefix
+    for fd in floor_data:
+        floor_data_by_recon_id[fd.reconstruction_id] = fd
+        prefix = f"{fd.reconstruction_id}:"
+        for node_id, data in fd.graph.nodes(data=True):
+            new_id = f"{prefix}{node_id}"
+            merged.add_node(new_id, recon_id=fd.reconstruction_id, **data)
+        for u, v, edge_data in fd.graph.edges(data=True):
+            merged.add_edge(f"{prefix}{u}", f"{prefix}{v}", **edge_data)
+
+    # Add transition edges
+    for t in transitions:
+        from_recon_id = t["from_reconstruction_id"]
+        to_recon_id = t["to_reconstruction_id"]
+        t_id = t["id"]
+        t_name = t["name"]
+
+        from_fd = floor_data_by_recon_id.get(from_recon_id)
+        to_fd = floor_data_by_recon_id.get(to_recon_id)
+        if from_fd is None or to_fd is None:
+            continue
+
+        from_meta = from_fd.metadata
+        to_meta = to_fd.metadata
+
+        from_px = t["from_x"] * from_meta.get("mask_width", 1)
+        from_py = t["from_y"] * from_meta.get("mask_height", 1)
+        to_px = t["to_x"] * to_meta.get("mask_width", 1)
+        to_py = t["to_y"] * to_meta.get("mask_height", 1)
+
+        nearest_from = _find_nearest_node(merged, from_recon_id, from_px, from_py)
+        nearest_to = _find_nearest_node(merged, to_recon_id, to_px, to_py)
+
+        if nearest_from is None or nearest_to is None:
+            logger.warning(
+                "merge_floor_graphs: cannot find nearest nodes for transition %d "
+                "(from_recon=%d nearest=%s, to_recon=%d nearest=%s)",
+                t_id, from_recon_id, nearest_from, to_recon_id, nearest_to,
+            )
+            continue
+
+        teleport_from = f"teleport_{t_id}_from"
+        teleport_to = f"teleport_{t_id}_to"
+
+        from_pos = merged.nodes[nearest_from].get("pos", (from_px, from_py))
+        to_pos = merged.nodes[nearest_to].get("pos", (to_px, to_py))
+
+        merged.add_node(
+            teleport_from,
+            type="teleport",
+            pos=from_pos,
+            recon_id=from_recon_id,
+            transition_id=t_id,
+            transition_name=t_name,
+        )
+        merged.add_node(
+            teleport_to,
+            type="teleport",
+            pos=to_pos,
+            recon_id=to_recon_id,
+            transition_id=t_id,
+            transition_name=t_name,
+        )
+
+        merged.add_edge(nearest_from, teleport_from, weight=5.0, type="teleport_approach")
+        merged.add_edge(
+            teleport_from, teleport_to,
+            weight=10.0,
+            type="floor_transition",
+            transition_name=t_name,
+            transition_id=t_id,
+        )
+        merged.add_edge(teleport_to, nearest_to, weight=5.0, type="teleport_approach")
+
+    return merged, floor_data_by_recon_id
+
+
+def find_multifloor_route_in_graph(
+    merged_graph: nx.Graph,
+    floor_data_by_recon_id: dict[int, FloorGraphData],
+    from_recon_id: int,
+    from_room_id: str,
+    to_recon_id: int,
+    to_room_id: str,
+) -> dict | None:
+    """
+    A* search in the merged graph between room nodes on (possibly different) floors.
+
+    Returns:
+        dict with keys: status, path_segments, transitions_used, total_distance_px
+        or None if no path found.
+
+    path_segments: list of {reconstruction_id, floor_number, floor_name, coords_2d}
+    transitions_used: list of {name, from_px, to_px, from_recon_id, to_recon_id}
+    """
+    from_node_id = f"{from_recon_id}:room_{from_room_id}"
+    to_node_id = f"{to_recon_id}:room_{to_room_id}"
+
+    if from_node_id not in merged_graph.nodes:
+        logger.warning("find_multifloor_route_in_graph: from node %s not in graph", from_node_id)
+        return None
+    if to_node_id not in merged_graph.nodes:
+        logger.warning("find_multifloor_route_in_graph: to node %s not in graph", to_node_id)
+        return None
+
+    if not nx.has_path(merged_graph, from_node_id, to_node_id):
+        return None
+
+    def heuristic(u: str, v: str) -> float:
+        u_pos = merged_graph.nodes[u].get("pos", (0.0, 0.0))
+        v_pos = merged_graph.nodes[v].get("pos", (0.0, 0.0))
+        return math.hypot(u_pos[0] - v_pos[0], u_pos[1] - v_pos[1])
+
+    try:
+        path_nodes = nx.astar_path(
+            merged_graph, from_node_id, to_node_id,
+            heuristic=heuristic, weight="weight",
+        )
+    except nx.NetworkXNoPath:
+        return None
+
+    # Compute total distance
+    total_distance_px = 0.0
+    for i in range(len(path_nodes) - 1):
+        edge_data = merged_graph.get_edge_data(path_nodes[i], path_nodes[i + 1]) or {}
+        total_distance_px += edge_data.get("weight", 0.0)
+
+    # Group nodes by recon_id into segments, collect transitions
+    segments: dict[int, list[tuple[float, float]]] = {}
+    segment_order: list[int] = []
+    transitions_used: list[dict] = []
+
+    for node_id in path_nodes:
+        node_data = merged_graph.nodes[node_id]
+        recon_id = node_data.get("recon_id")
+        if recon_id is None:
+            continue
+        pos = node_data.get("pos")
+        if pos is None:
+            continue
+        if recon_id not in segments:
+            segments[recon_id] = []
+            segment_order.append(recon_id)
+        segments[recon_id].append((float(pos[0]), float(pos[1])))
+
+    # Collect floor_transition edges
+    for i in range(len(path_nodes) - 1):
+        edge_data = merged_graph.get_edge_data(path_nodes[i], path_nodes[i + 1]) or {}
+        if edge_data.get("type") == "floor_transition":
+            from_pos = merged_graph.nodes[path_nodes[i]].get("pos", (0.0, 0.0))
+            to_pos = merged_graph.nodes[path_nodes[i + 1]].get("pos", (0.0, 0.0))
+            from_rid = merged_graph.nodes[path_nodes[i]].get("recon_id")
+            to_rid = merged_graph.nodes[path_nodes[i + 1]].get("recon_id")
+            transitions_used.append({
+                "name": edge_data.get("transition_name", ""),
+                "from_px": (float(from_pos[0]), float(from_pos[1])),
+                "to_px": (float(to_pos[0]), float(to_pos[1])),
+                "from_recon_id": from_rid,
+                "to_recon_id": to_rid,
+            })
+
+    # Build path_segments list
+    path_segments = []
+    for recon_id in segment_order:
+        fd = floor_data_by_recon_id.get(recon_id)
+        if fd is None:
+            continue
+        path_segments.append({
+            "reconstruction_id": recon_id,
+            "floor_number": fd.floor_number,
+            "floor_name": fd.floor_name,
+            "coords_2d": segments[recon_id],
+        })
+
+    return {
+        "status": "success",
+        "path_segments": path_segments,
+        "transitions_used": transitions_used,
+        "total_distance_px": total_distance_px,
+    }

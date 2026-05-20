@@ -37,9 +37,11 @@ export interface Floor {
   created_at: string;
 }
 
-// ADR-28: simplified — always 4-point polygon (rotated rectangle)
+// Polygon with 3–32 vertices in normalised [0,1] coordinates.
+// Historically ADR-28 fixed this to 4 points; relaxed for the Floor Editor's
+// polygon tool. The rectangle tool still produces 4 points.
 export interface SectionGeometry {
-  points: [[number, number], [number, number], [number, number], [number, number]];
+  points: [number, number][];
 }
 
 export interface CropBbox {

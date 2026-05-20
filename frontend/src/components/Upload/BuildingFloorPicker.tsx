@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useBuildings } from '../../hooks/useBuildings';
 import { useFloors } from '../../hooks/useFloors';
@@ -8,6 +8,8 @@ interface BuildingFloorPickerProps {
   selectedBuildingId: number | null;
   selectedFloorId: number | null;
   onChange: (data: { buildingId: number | null; floorId: number | null }) => void;
+  planName?: string;
+  onPlanNameChange?: (name: string) => void;
   disabled?: boolean;
 }
 
@@ -15,10 +17,33 @@ export const BuildingFloorPicker: React.FC<BuildingFloorPickerProps> = ({
   selectedBuildingId,
   selectedFloorId,
   onChange,
+  planName,
+  onPlanNameChange,
   disabled = false,
 }) => {
   const { buildings, isLoading: buildingsLoading } = useBuildings();
-  const { floors, isLoading: floorsLoading, loadForBuilding } = useFloors();
+  const { floors, isLoading: floorsLoading, loadForBuilding, createFloor } = useFloors();
+
+  const [newFloorNum, setNewFloorNum] = useState('');
+  const [isCreatingFloor, setIsCreatingFloor] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
+
+  const handleCreateFloor = async () => {
+    if (selectedBuildingId === null || !newFloorNum) return;
+    const num = parseInt(newFloorNum, 10);
+    if (isNaN(num)) return;
+    setIsCreatingFloor(true);
+    try {
+      const created = await createFloor(selectedBuildingId, num);
+      onChange({ buildingId: selectedBuildingId, floorId: created.id });
+      setNewFloorNum('');
+      setShowCreate(false);
+    } catch (e) {
+      console.error('Ошибка при создании этажа', e);
+    } finally {
+      setIsCreatingFloor(false);
+    }
+  };
 
   // Load floors when building changes
   useEffect(() => {
@@ -81,6 +106,7 @@ export const BuildingFloorPicker: React.FC<BuildingFloorPickerProps> = ({
         <label className={styles.label} htmlFor="bfp-floor">
           Этаж
         </label>
+        
         {selectedBuildingId === null ? (
           <select className={styles.select} disabled>
             <option value="">— сначала выберите корпус —</option>
@@ -89,30 +115,80 @@ export const BuildingFloorPicker: React.FC<BuildingFloorPickerProps> = ({
           <select className={styles.select} disabled>
             <option value="">Загрузка этажей...</option>
           </select>
-        ) : floors.length === 0 ? (
-          <div className={styles.empty}>
-            <span>Нет этажей в этом корпусе.</span>
-            <Link to="/admin/buildings" className={styles.createLink}>
-              Добавить этаж
-            </Link>
+        ) : floors.length === 0 || showCreate ? (
+          <div className={styles.createInline}>
+            <input
+              type="number"
+              placeholder="Номер этажа"
+              className={styles.inlineInput}
+              value={newFloorNum}
+              onChange={(e) => setNewFloorNum(e.target.value)}
+              disabled={isCreatingFloor}
+            />
+            <button
+              type="button"
+              className={styles.inlineBtn}
+              onClick={handleCreateFloor}
+              disabled={isCreatingFloor || !newFloorNum}
+            >
+              {isCreatingFloor ? '...' : 'Создать'}
+            </button>
+            {floors.length > 0 && (
+              <button
+                type="button"
+                className={styles.inlineBtnCancel}
+                onClick={() => setShowCreate(false)}
+              >
+                Отмена
+              </button>
+            )}
           </div>
         ) : (
-          <select
-            id="bfp-floor"
-            className={styles.select}
-            value={selectedFloorId ?? ''}
-            onChange={handleFloorChange}
-            disabled={disabled}
-          >
-            <option value="">— выберите этаж —</option>
-            {floors.map((f) => (
-              <option key={f.id} value={f.id}>
-                Этаж {f.number}
-              </option>
-            ))}
-          </select>
+          <div className={styles.selectWithAdd}>
+            <select
+              id="bfp-floor"
+              className={styles.select}
+              value={selectedFloorId ?? ''}
+              onChange={handleFloorChange}
+              disabled={disabled}
+              style={{ flex: 1 }}
+            >
+              <option value="">— выберите этаж —</option>
+              {floors.map((f) => (
+                <option key={f.id} value={f.id}>
+                  Этаж {f.number}
+                </option>
+              ))}
+            </select>
+            <button
+              type="button"
+              className={styles.addBtn}
+              onClick={() => setShowCreate(true)}
+              title="Создать новый этаж"
+              disabled={disabled}
+            >
+              +
+            </button>
+          </div>
         )}
       </div>
+
+      {planName !== undefined && onPlanNameChange && (
+        <div className={styles.field}>
+          <label className={styles.label} htmlFor="bfp-plan-name">
+            Название плана
+          </label>
+          <input
+            id="bfp-plan-name"
+            type="text"
+            className={styles.input}
+            value={planName}
+            onChange={(e) => onPlanNameChange(e.target.value)}
+            placeholder="Введите название плана"
+            disabled={disabled}
+          />
+        </div>
+      )}
     </div>
   );
 };

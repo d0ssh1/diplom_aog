@@ -81,6 +81,7 @@ class ReconstructionRepository(BaseRepository):
             select(Reconstruction)
             .options(joinedload(Reconstruction.plan_file))
             .options(joinedload(Reconstruction.mask_file))
+            .options(selectinload(Reconstruction.floor).selectinload(Floor.building))
             .where(Reconstruction.id == reconstruction_id)
         )
         return result.scalar_one_or_none()

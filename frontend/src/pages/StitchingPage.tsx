@@ -86,6 +86,7 @@ export const StitchingPage: React.FC = () => {
             <StitchingCanvas
               layers={state.layers}
               activeTool={state.activeTool}
+              selectedLayerId={state.selectedLayerId}
               onLayerUpdate={stitching.updateLayer}
               onSnapshotPush={(snapshot: unknown) => {
                 history.pushState(snapshot as StitchingSnapshot);
@@ -101,18 +102,7 @@ export const StitchingPage: React.FC = () => {
             selectedLayerId={state.selectedLayerId}
             onLayerSelect={stitching.setSelectedLayerId}
             onLayerMove={(id, direction) => {
-              const layerIndex = state.layers.findIndex((l) => l.reconstructionId === id);
-              if (layerIndex === -1) return;
-
-              const newIndex = direction === 'up' ? layerIndex + 1 : layerIndex - 1;
-              if (newIndex < 0 || newIndex >= state.layers.length) return;
-
-              const newLayers = [...state.layers];
-              [newLayers[layerIndex], newLayers[newIndex]] = [newLayers[newIndex], newLayers[layerIndex]];
-
-              newLayers.forEach((layer, idx) => {
-                stitching.updateLayer(layer.reconstructionId, { zIndex: idx });
-              });
+              stitching.reorderLayers(id, direction);
             }}
             onMaskOpacityChange={(id, opacity) => {
               stitching.updateLayer(id, { maskOpacity: opacity });

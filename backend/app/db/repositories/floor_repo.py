@@ -46,11 +46,12 @@ class FloorRepository(BaseRepository):
         return floor
 
     async def get_by_id(self, floor_id: int) -> Optional[Floor]:
-        """SELECT by PK with eager-loaded building. Returns None if not found."""
+        """SELECT by PK with eager-loaded building + schema_image. Returns None if not found."""
         logger.debug("get_by_id: floor_id=%d", floor_id)
         result = await self._session.execute(
             select(Floor)
             .options(selectinload(Floor.building))
+            .options(selectinload(Floor.schema_image))
             .where(Floor.id == floor_id)
         )
         return result.scalar_one_or_none()

@@ -40,6 +40,8 @@ class FloorPublic(BaseModel):
 
     id: int
     number: int
+    # Normalised [0,1] wall polygons of the floor schema (used by minimap backdrop)
+    wall_polygons: Optional[list[list[list[float]]]] = None
     sections: list[SectionPublic] = []
 
 

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.models.section import Section
+from app.db.models.reconstruction import Reconstruction
 from app.db.repositories.base_repository import BaseRepository
 
 logger = logging.getLogger(__name__)
@@ -26,7 +27,7 @@ class SectionRepository(BaseRepository):
         logger.debug("list_by_floor: floor_id=%d", floor_id)
         result = await self._session.execute(
             select(Section)
-            .options(selectinload(Section.reconstruction))
+            .options(selectinload(Section.reconstruction).selectinload(Reconstruction.plan_file))
             .where(Section.floor_id == floor_id)
             .order_by(Section.number)
         )
@@ -70,7 +71,7 @@ class SectionRepository(BaseRepository):
         logger.debug("get_by_id: section_id=%d", section_id)
         result = await self._session.execute(
             select(Section)
-            .options(selectinload(Section.reconstruction))
+            .options(selectinload(Section.reconstruction).selectinload(Reconstruction.plan_file))
             .where(Section.id == section_id)
         )
         return result.scalar_one_or_none()

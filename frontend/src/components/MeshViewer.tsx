@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef } from 'react';
+import { forwardRef, Suspense, useEffect, useImperativeHandle, useMemo, useRef } from 'react';
 import { Canvas, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import { OBJLoader } from 'three-stdlib';
@@ -9,8 +9,16 @@ import * as THREE from 'three';
    ──────────────────────────────────────────── */
 const COLORS = {
   wallFallback: '#BDBDBD',  // light grey для стен
-  background:   '#ECEFF1',  // светлый фон
+  background:   '#FFFFFF',  // белый фон
 };
+
+/* ────────────────────────────────────────────
+   Public handle for programmatic camera control
+   ──────────────────────────────────────────── */
+export interface MeshViewerHandle {
+  zoomIn: () => void;
+  zoomOut: () => void;
+}
 
 /* ────────────────────────────────────────────
    Camera: auto-fit to model, top-down isometric
@@ -70,7 +78,7 @@ function FloorPlane({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> })
   return (
     <mesh ref={meshRef} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
       <planeGeometry args={[1, 1]} />
-      <meshLambertMaterial color="#F5F0E8" />
+      <meshLambertMaterial color="#FFFFFF" />
     </mesh>
   );
 }
@@ -181,6 +189,49 @@ function GlbModel({ url }: { url: string }) {
 }
 
 /* ────────────────────────────────────────────
+   ControlsBridge — exposes camera zoom outward
+   via useImperativeHandle on the MeshViewer ref.
+
+   Approach B: move camera position along the
+   (camera - target) vector. Works regardless of
+   whether OrbitControls.dollyIn/Out is public.
+   ──────────────────────────────────────────── */
+const ZOOM_FACTOR = 1.15;
+
+interface ControlsBridgeProps {
+  handleRef: React.ForwardedRef<MeshViewerHandle>;
+}
+
+function ControlsBridge({ handleRef }: ControlsBridgeProps) {
+  const { camera, controls } = useThree();
+
+  useImperativeHandle(
+    handleRef,
+    () => ({
+      zoomIn: () => {
+        const ctrl = controls as unknown as { target: THREE.Vector3; update: () => void } | null;
+        const target = ctrl?.target ?? new THREE.Vector3(0, 0, 0);
+        const offset = new THREE.Vector3().subVectors(camera.position, target);
+        offset.multiplyScalar(1 / ZOOM_FACTOR);
+        camera.position.copy(target).add(offset);
+        ctrl?.update();
+      },
+      zoomOut: () => {
+        const ctrl = controls as unknown as { target: THREE.Vector3; update: () => void } | null;
+        const target = ctrl?.target ?? new THREE.Vector3(0, 0, 0);
+        const offset = new THREE.Vector3().subVectors(camera.position, target);
+        offset.multiplyScalar(ZOOM_FACTOR);
+        camera.position.copy(target).add(offset);
+        ctrl?.update();
+      },
+    }),
+    [camera, controls],
+  );
+
+  return null;
+}
+
+/* ────────────────────────────────────────────
    Main MeshViewer component
    ──────────────────────────────────────────── */
 interface MeshViewerProps {
@@ -189,7 +240,10 @@ interface MeshViewerProps {
   children?: React.ReactNode;
 }
 
-export default function MeshViewer({ url, format, children }: MeshViewerProps) {
+const MeshViewer = forwardRef<MeshViewerHandle, MeshViewerProps>(function MeshViewer(
+  { url, format, children },
+  ref,
+) {
   const modelFormat: 'obj' | 'glb' =
     format ?? (url.toLowerCase().endsWith('.glb') ? 'glb' : 'obj');
 
@@ -240,7 +294,11 @@ export default function MeshViewer({ url, format, children }: MeshViewerProps) {
         maxDistance={500}
       />
 
+      <ControlsBridge handleRef={ref} />
+
       {children}
     </Canvas>
   );
-}
+});
+
+export default MeshViewer;

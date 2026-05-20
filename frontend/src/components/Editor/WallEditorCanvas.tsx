@@ -251,6 +251,14 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
         const offsetX = (c.getWidth() - scaledW) / 2;
         const offsetY = (c.getHeight() - scaledH) / 2;
         img.set({ scaleX: scale, scaleY: scale, originX: 'left', originY: 'top', left: offsetX, top: offsetY });
+        // Clip all drawing to mask image bounds so eraser/brush can't draw outside
+        c.clipPath = new fabric.Rect({
+          left: offsetX,
+          top: offsetY,
+          width: scaledW,
+          height: scaledH,
+          absolutePositioned: true,
+        });
         c.setBackgroundImage(img, () => {
           setBgDims({ left: offsetX, top: offsetY, width: scaledW, height: scaledH });
           c.renderAll();

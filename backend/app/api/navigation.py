@@ -2,75 +2,65 @@
 API routes for navigation and route building
 """
 
-from typing import List
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.models import RouteRequest, RouteResponse, RoutePoint
+from app.api.deps import get_nav_service, get_floor_transition_repo, get_reconstruction_repo
+from app.core.exceptions import NavGraphNotFoundError
+from app.models import FindRouteRequest, FindRouteResponse
+from app.models.transition import MultiPlanRouteRequest, MultiPlanRouteResponse
+from app.models.floor_transition import MultifloorRouteRequest, MultifloorRouteResponse
+from app.services.nav_service import NavService
 
 router = APIRouter(prefix="/navigation", tags=["Navigation"])
 security = HTTPBearer()
 
 
-@router.post("/route", response_model=RouteResponse)
+@router.post("/multifloor-route", response_model=MultifloorRouteResponse)
+async def find_multifloor_route(
+    request: MultifloorRouteRequest,
+    nav_service: NavService = Depends(get_nav_service),
+    ft_repo=Depends(get_floor_transition_repo),
+    recon_repo=Depends(get_reconstruction_repo),
+) -> MultifloorRouteResponse:
+    """
+    Find a route between rooms, possibly spanning multiple floors.
+
+    Returns path segments per floor with 3D coordinates.
+    """
+    try:
+        result = await nav_service.find_multifloor_route(
+            building_id=request.building_id,
+            from_reconstruction_id=request.from_reconstruction_id,
+            from_room_id=request.from_room_id,
+            to_reconstruction_id=request.to_reconstruction_id,
+            to_room_id=request.to_room_id,
+            ft_repo=ft_repo,
+            recon_repo=recon_repo,
+        )
+        return result
+    except NavGraphNotFoundError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.post("/route", response_model=FindRouteResponse)
 async def build_route(
-    request: RouteRequest,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+    request: FindRouteRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
 ):
-    """
-    Построение оптимального маршрута
-    
-    Использует алгоритм A* для поиска кратчайшего пути
-    между двумя точками на навигационном графе
-    
-    Формат точек: буква_корпуса + номер_помещения (например, A304)
-    """
-    # Валидация формата точек
-    import re
-    pattern = r"^[A-Za-z]\d{3}[A-Za-z]?$"
-    
-    if not re.match(pattern, request.start_point):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неверный формат начальной точки: {request.start_point}"
-        )
-    
-    if not re.match(pattern, request.end_point):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Неверный формат конечной точки: {request.end_point}"
-        )
-    
-    # TODO: Вызвать сервис построения маршрута
-    # route_service = RouteService()
-    # result = await route_service.find_route(request.start_point, request.end_point)
-    
-    # Заглушка
-    return RouteResponse(
-        points=[
-            RoutePoint(x=0.0, y=0.0, z=3),
-            RoutePoint(x=10.0, y=0.0, z=3),
-            RoutePoint(x=10.0, y=15.0, z=3),
-        ],
-        total_distance=25.0,
-        estimated_time=0.5  # минут
+    result = await svc.find_route(
+        graph_id=request.graph_id,
+        from_room_id=request.from_room_id,
+        to_room_id=request.to_room_id,
     )
+    return FindRouteResponse(**result)
 
 
-@router.get("/buildings/{building_id}/floors/{floor_id}/graph")
-async def get_navigation_graph(
-    building_id: int,
-    floor_id: int,
-    credentials: HTTPAuthorizationCredentials = Depends(security)
+@router.post("/route/multi", response_model=MultiPlanRouteResponse)
+async def build_multi_route(
+    request: MultiPlanRouteRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
 ):
-    """
-    Получить навигационный граф для этажа
-    
-    Возвращает вершины и рёбра графа для визуализации
-    """
-    # TODO: Получить граф из БД
-    return {
-        "vertices": [],
-        "edges": []
-    }
+    return await svc.find_multi_plan_route(request)

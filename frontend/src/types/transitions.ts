@@ -81,9 +81,10 @@ export interface FloorListItem {
 }
 
 export interface BuildingListItem {
-  id: string;
+  id: number;
+  code: string;
   name: string;
-  floors: FloorListItem[];
+  floors?: FloorListItem[];
 }
 
 export interface TransitionGroupResponse {

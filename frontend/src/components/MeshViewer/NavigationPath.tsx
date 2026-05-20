@@ -8,24 +8,25 @@ interface NavigationPathProps {
   toRoom3D?: { position: [number, number, number]; size: [number, number, number] };
   fromRoomName?: string;
   toRoomName?: string;
+  segments?: Array<{ coordinates: number[][] }>;
 }
 
-export const NavigationPath: React.FC<NavigationPathProps> = ({ 
-  coordinates, 
-  fromRoom3D, 
+export const NavigationPath: React.FC<NavigationPathProps> = ({
+  coordinates,
+  fromRoom3D,
   toRoom3D,
   fromRoomName,
-  toRoomName
+  toRoomName,
+  segments,
 }) => {
   const curvePoints = useMemo(() => {
-    if (!coordinates || coordinates.length < 2) return null;
+    const activeCoordinates = segments?.[0]?.coordinates ?? coordinates;
+    if (!activeCoordinates || activeCoordinates.length < 2) return null;
 
-    // Lift path slightly above floor to avoid z-fighting,
-    // but keep depthTest ON so walls properly occlude the path
-    const vectors = coordinates.map(([x, y, z]) => new THREE.Vector3(x, (y ?? 0) + 0.15, z));
+    const vectors = activeCoordinates.map(([x, y, z]) => new THREE.Vector3(x, (y ?? 0) + 0.15, z));
     const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.1);
-    return curve.getPoints(Math.max(50, coordinates.length * 5));
-  }, [coordinates]);
+    return curve.getPoints(Math.max(50, activeCoordinates.length * 5));
+  }, [coordinates, segments]);
 
   if (!curvePoints) return null;
 
@@ -39,7 +40,6 @@ export const NavigationPath: React.FC<NavigationPathProps> = ({
         renderOrder={1}
       />
 
-      {/* Box at start room */}
       {fromRoom3D && (
         <group position={fromRoom3D.position}>
           <Box args={fromRoom3D.size}>
@@ -69,7 +69,6 @@ export const NavigationPath: React.FC<NavigationPathProps> = ({
         </group>
       )}
 
-      {/* Box at end room */}
       {toRoom3D && (
         <group position={toRoom3D.position}>
           <Box args={toRoom3D.size}>

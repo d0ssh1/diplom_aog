@@ -1,19 +1,23 @@
-import pytest
-import sys
 import os
+import sys
+
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("DATABASE_URL", "sqlite+aiosqlite:///:memory:")
 
 try:
     from httpx import AsyncClient, ASGITransport
-    from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-    from main import app
-    from app.core.database import Base
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+    import main as backend_main
     from app.api.deps import get_db
+    from app.core.database import Base
+    import app.db.base  # noqa: F401
+    app = backend_main.app
     _WEB_STACK_AVAILABLE = True
 except ImportError:
     _WEB_STACK_AVAILABLE = False
 
-# In-memory SQLite for tests
 TEST_DB_URL = "sqlite+aiosqlite:///:memory:"
 
 

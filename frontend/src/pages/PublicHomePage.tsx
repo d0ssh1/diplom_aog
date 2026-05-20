@@ -114,7 +114,7 @@ export const PublicHomePage: React.FC = () => {
 
           {isFocused && (
             <div className={styles.dropdown}>
-              <div className={styles.dropdownItem} onClick={() => navigate('/map')}>
+              <div className={styles.dropdownItem} onClick={() => navigate('/viewer')}>
                 <div className={styles.dropdownItemInfo}>
                   <span className={styles.dropdownItemName}>ДВФУ</span>
                   <span className={styles.dropdownItemMeta}>Кампус на о. Русский, 3D Модель</span>

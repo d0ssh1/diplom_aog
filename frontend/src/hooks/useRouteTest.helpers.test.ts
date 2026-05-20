@@ -16,18 +16,24 @@ import type { VectorRoom } from '../types/reconstructionVectors';
 import type { PathSegment3D, TransitionUsed3D } from '../types/transitions';
 
 const recon = (
-  patch: Partial<ReconstructionListItem> & { id: number; name: string },
-): ReconstructionListItem => ({
-  status: 'ready',
-  building_id: patch.building_id ?? 'A',
-  floor_number: patch.floor_number ?? 1,
-  preview_url: null,
-  rooms_count: 0,
-  walls_count: 0,
-  created_at: '2026-01-01',
-  rotation_angle: 0,
-  ...patch,
-});
+  patch: Partial<ReconstructionListItem> & {
+    id: number;
+    name: string;
+    building_id?: string;
+    floor_number?: number;
+  },
+): ReconstructionListItem => {
+  const buildingCode = patch.building_id ?? 'A';
+  const floorNumber = patch.floor_number ?? 1;
+  return {
+    status: 3,
+    preview_url: null,
+    floor: { id: floorNumber, number: floorNumber, building_code: buildingCode },
+    section: null,
+    updated_at: '2026-01-01',
+    ...patch,
+  };
+};
 
 const room = (id: string, name: string): VectorRoom => ({
   id,
@@ -83,7 +89,7 @@ describe('buildRoomRegistry', () => {
 
     const labels = registry.map((e) => e.displayLabel);
     // Both "1110" entries must be visually distinguishable.
-    expect(labels.filter((l) => l.startsWith('1110 ·'))).toHaveLength(2);
+    expect(labels.filter((l) => l.endsWith('__1110'))).toHaveLength(2);
     expect(new Set(labels).size).toBe(3);
 
     // Synthetic ids globally unique even when realRoomId clashes.
@@ -112,6 +118,46 @@ describe('buildRoomRegistry', () => {
     const reg = buildRoomRegistry(bundles);
     expect(reg[0].rawName).toBe('[corridor]');
     expect(reg[0].displayLabel).toContain('[corridor]');
+  });
+
+  it('test_useRouteTest_displayLabel_uses_hierarchy: label is BuildingCode-FloorNum-SectionNum__RoomName', () => {
+    const bundles: ReconstructionVectorsBundle[] = [
+      {
+        reconstruction: {
+          ...recon({ id: 1, name: 'S1', floor_number: 3, building_id: 'B' }),
+          section: { id: 5, number: 2 },
+        },
+        rooms: [room('r-301', '301')],
+      },
+    ];
+    const registry = buildRoomRegistry(bundles);
+    expect(registry).toHaveLength(1);
+    expect(registry[0].displayLabel).toBe('B-3-2__301');
+  });
+
+  it('test_useRouteTest_filters_reconstructions_without_floor: unbound reconstructions excluded', () => {
+    const bundles: ReconstructionVectorsBundle[] = [
+      {
+        reconstruction: recon({ id: 1, name: 'Bound', floor_number: 1 }),
+        rooms: [room('r-1', '101')],
+      },
+      {
+        reconstruction: {
+          id: 2,
+          name: 'Unbound',
+          status: 3,
+          preview_url: null,
+          floor: null,
+          section: null,
+          updated_at: '2026-01-01',
+        },
+        rooms: [room('r-2', '202')],
+      },
+    ];
+    const registry = buildRoomRegistry(bundles);
+    // Only rooms from the floor-bound reconstruction should appear.
+    expect(registry).toHaveLength(1);
+    expect(registry[0].reconstructionId).toBe(1);
   });
 });
 
@@ -143,8 +189,10 @@ describe('registryToAnnotations', () => {
       },
     ];
     const annotations = registryToAnnotations(buildRoomRegistry(bundles));
+    // New label format: "<BuildingCode>-<FloorNum>-<SectionNum>__<RoomName>"
+    // Extract room name as the part after the last '__'.
     const byName = Object.fromEntries(
-      annotations.map((a) => [a.name.split(' ·')[0], a.room_type]),
+      annotations.map((a) => [a.name.split('__').pop() ?? a.name, a.room_type]),
     );
     expect(byName['L1']).toBe('staircase');
     expect(byName['E1']).toBe('elevator');

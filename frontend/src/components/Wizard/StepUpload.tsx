@@ -11,6 +11,8 @@ interface StepUploadProps {
   isUploading: boolean;
   selectedBuildingId: number | null;
   selectedFloorId: number | null;
+  planName: string;
+  onPlanNameChange: (name: string) => void;
   onFloorChange: (data: { buildingId: number | null; floorId: number | null }) => void;
 }
 
@@ -51,6 +53,8 @@ export const StepUpload: React.FC<StepUploadProps> = ({
   isUploading,
   selectedBuildingId,
   selectedFloorId,
+  planName,
+  onPlanNameChange,
   onFloorChange,
 }) => {
   const [activeIndex, setActiveIndex] = useState(0);
@@ -107,8 +111,12 @@ export const StepUpload: React.FC<StepUploadProps> = ({
                 selectedBuildingId={selectedBuildingId}
                 selectedFloorId={selectedFloorId}
                 onChange={onFloorChange}
+                planName={planName}
+                onPlanNameChange={onPlanNameChange}
                 disabled={isUploading}
               />
+
+              
             </>
           ) : (
             <div className={styles.rightEmpty}>Загрузите файл</div>

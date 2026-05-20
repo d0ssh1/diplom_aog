@@ -24,7 +24,7 @@ export const useMeshViewer = (id: string): UseMeshViewerReturn => {
       try {
         const data = await reconstructionApi.getReconstructionById(parseInt(id, 10));
         if (!cancelled) {
-          setMeshData(data as ReconstructionDetail);
+          setMeshData(data as unknown as ReconstructionDetail);
         }
       } catch {
         if (!cancelled) {

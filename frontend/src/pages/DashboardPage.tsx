@@ -1,13 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Layout } from 'lucide-react';
-import { reconstructionApi } from '../api/apiService';
-import type { ReconstructionCard } from '../types/dashboard';
+import { reconstructionApi, type ReconstructionListItem } from '../api/apiService';
 import styles from './DashboardPage.module.css';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
-  const [reconstructions, setReconstructions] = useState<ReconstructionCard[]>([]);
+  const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -15,7 +14,8 @@ export const DashboardPage: React.FC = () => {
     const load = async () => {
       try {
         const data = await reconstructionApi.getReconstructions();
-        setReconstructions(data as ReconstructionCard[]);
+        setReconstructions(data);
+
       } catch {
         setError('Ошибка загрузки списка');
       } finally {
@@ -66,14 +66,18 @@ export const DashboardPage: React.FC = () => {
           <div
             key={r.id}
             className={styles.card}
-            onClick={() => navigate(`/admin/mesh/${r.id}`)}
+            onClick={() => navigate(`/admin/edit/${r.id}`)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === 'Enter' && navigate(`/admin/mesh/${r.id}`)}
+            onKeyDown={(e) => e.key === 'Enter' && navigate(`/admin/edit/${r.id}`)}
           >
             <div className={styles.preview}>
-              {r.url ? (
-                <img src={r.url} alt={r.name} className={styles.previewImg} />
+              {r.preview_url ? (
+                <img
+                  src={r.preview_url}
+                  alt={r.name}
+                  className={styles.previewImg}
+                />
               ) : (
                 <div className={styles.previewPlaceholder} />
               )}

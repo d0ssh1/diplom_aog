@@ -55,7 +55,7 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.6);
   color: #999;
-  font-family: 'Courier New', monospace;
+  
   font-size: 13px;
   z-index: 20;
 }
@@ -103,7 +103,7 @@
 }
 
 .statValue {
-  font-family: 'Courier New', monospace;
+  
   font-size: 24px;
   font-weight: 700;
   color: #FF4500;

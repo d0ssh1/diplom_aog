@@ -78,7 +78,7 @@
   border-radius: 0;
   transition: border-color 0.15s;
   outline: none;
-  font-family: 'Courier New', monospace;
+  
   font-size: 15px;
   text-align: left;
 }
@@ -234,7 +234,7 @@
 }
 
 .sliderValue {
-  font-family: 'Courier New', monospace;
+  
   font-size: 13px;
   color: #666;
   min-width: 40px;
@@ -243,7 +243,7 @@
 }
 
 .previewSpinner {
-  font-family: 'Courier New', monospace;
+  
   font-size: 11px;
   color: #FF5722;
   letter-spacing: 0.05em;

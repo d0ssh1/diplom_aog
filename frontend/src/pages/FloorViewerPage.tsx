@@ -1,25 +1,12 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MeshViewer from '../components/MeshViewer';
+import MeshViewer, { type MeshViewerHandle } from '../components/MeshViewer';
 import { BuildingFloorSectionSelector } from '../components/FloorViewer/BuildingFloorSectionSelector';
 import { FloorMinimap } from '../components/FloorViewer/FloorMinimap';
+import { RouteInputs } from '../components/FloorViewer/RouteInputs';
+import { ZoomControls } from '../components/FloorViewer/ZoomControls';
 import { useFloorViewer } from '../hooks/useFloorViewer';
 import styles from './FloorViewerPage.module.css';
-
-/** Simple zoom via Three.js camera: exposed via wheel events on container */
-const ZoomControls: React.FC<{
-  onZoomIn: () => void;
-  onZoomOut: () => void;
-}> = ({ onZoomIn, onZoomOut }) => (
-  <div className={styles.zoomControls}>
-    <button type="button" className={styles.zoomBtn} onClick={onZoomIn} title="Приблизить">
-      +
-    </button>
-    <button type="button" className={styles.zoomBtn} onClick={onZoomOut} title="Отдалить">
-      −
-    </button>
-  </div>
-);
 
 export const FloorViewerPage: React.FC = () => {
   const navigate = useNavigate();
@@ -69,34 +56,18 @@ export const FloorViewerPage: React.FC = () => {
     }
   }, [planRoute, startPoint, endPoint]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      if (e.key === 'Enter') void handlePlanRoute();
-    },
-    [handlePlanRoute],
-  );
-
-  // Zoom: simulate wheel events on the canvas container
-  const viewerRef = useRef<HTMLDivElement>(null);
-
-  const fireWheelEvent = useCallback((delta: number) => {
-    if (!viewerRef.current) return;
-    const canvas = viewerRef.current.querySelector('canvas');
-    if (!canvas) return;
-    const rect = canvas.getBoundingClientRect();
-    const event = new WheelEvent('wheel', {
-      bubbles: true,
-      cancelable: true,
-      clientX: rect.left + rect.width / 2,
-      clientY: rect.top + rect.height / 2,
-      deltaY: delta,
-      deltaMode: 0,
+  const handleSwap = useCallback(() => {
+    setStartPoint((prevStart) => {
+      const prevEnd = endPoint;
+      setEndPoint(prevStart);
+      return prevEnd;
     });
-    canvas.dispatchEvent(event);
-  }, []);
+  }, [endPoint]);
 
-  const handleZoomIn = useCallback(() => fireWheelEvent(-100), [fireWheelEvent]);
-  const handleZoomOut = useCallback(() => fireWheelEvent(100), [fireWheelEvent]);
+  // Zoom: programmatic via MeshViewer ref
+  const meshRef = useRef<MeshViewerHandle>(null);
+  const handleZoomIn = useCallback(() => meshRef.current?.zoomIn(), []);
+  const handleZoomOut = useCallback(() => meshRef.current?.zoomOut(), []);
 
   // Derive selected building code for header
   const selectedBuilding = catalog.find((b) => b.id === selectedBuildingId);
@@ -138,7 +109,7 @@ export const FloorViewerPage: React.FC = () => {
         </button>
         {selectedBuilding && (
           <>
-            <span className={styles.headerSeparator}>&gt;</span>
+            <span className={styles.headerSeparator}>›</span>
             <span className={styles.headerTitle}>Корпус {selectedBuilding.code}</span>
           </>
         )}
@@ -150,34 +121,17 @@ export const FloorViewerPage: React.FC = () => {
         <aside className={styles.leftPanel}>
           {/* Route inputs */}
           <div className={styles.routeSection}>
-            <span className={styles.routeTitle}>Маршрут</span>
-            <input
-              type="text"
-              className={styles.routeInput}
-              placeholder="Начальная точка (напр. D304)"
-              value={startPoint}
-              onChange={(e) => setStartPoint(e.target.value)}
-              onKeyDown={handleKeyDown}
+            <RouteInputs
+              start={startPoint}
+              end={endPoint}
+              onStartChange={setStartPoint}
+              onEndChange={setEndPoint}
+              onSwap={handleSwap}
+              onSubmit={() => void handlePlanRoute()}
+              disabled={isRouting}
+              error={null}
             />
-            <input
-              type="text"
-              className={styles.routeInput}
-              placeholder="Конечная точка (напр. D712)"
-              value={endPoint}
-              onChange={(e) => setEndPoint(e.target.value)}
-              onKeyDown={handleKeyDown}
-            />
-            <button
-              type="button"
-              className={styles.routeBtn}
-              onClick={() => void handlePlanRoute()}
-              disabled={isRouting || !startPoint.trim() || !endPoint.trim()}
-            >
-              {isRouting ? 'Поиск...' : 'Построить маршрут'}
-            </button>
           </div>
-
-          <div className={styles.divider} />
 
           {/* Building/Floor/Section selector */}
           <div className={styles.selectorSection}>
@@ -194,13 +148,13 @@ export const FloorViewerPage: React.FC = () => {
             />
           </div>
 
-          <div className={styles.divider} />
-
           {/* Minimap */}
           <div className={styles.minimapSection}>
-            <span className={styles.minimapTitle}>Схема этажа</span>
             <FloorMinimap
               sections={visibleSections}
+              wallPolygons={
+                visibleFloors.find((f) => f.id === selectedFloorId)?.wall_polygons ?? null
+              }
               activeSectionId={selectedSectionId}
               highlightedSectionIds={highlightedSectionIds}
               onSelectSection={selectSection}
@@ -210,9 +164,9 @@ export const FloorViewerPage: React.FC = () => {
 
         {/* Right panel (3D viewer) */}
         <main className={styles.rightPanel}>
-          <div className={styles.viewerContainer} ref={viewerRef}>
+          <div className={styles.viewerContainer}>
             {activeMeshUrl ? (
-              <MeshViewer url={activeMeshUrl} format="glb" />
+              <MeshViewer ref={meshRef} url={activeMeshUrl} format="glb" />
             ) : (
               <div className={styles.placeholder}>Выберите отсек</div>
             )}

@@ -4,6 +4,8 @@ import styles from './FloorMinimap.module.css';
 
 interface FloorMinimapProps {
   sections: SectionPublic[];
+  /** Normalized [0,1] wall polygons of the floor, drawn under sections as backdrop */
+  wallPolygons?: [number, number][][] | null;
   activeSectionId: number | null;
   highlightedSectionIds: number[];
   onSelectSection: (id: number) => void;
@@ -25,8 +27,10 @@ function toSvgPoints(points: [number, number][]): string {
   return points.map(([px, py]) => `${px},${py}`).join(' ');
 }
 
+
 export const FloorMinimap: React.FC<FloorMinimapProps> = ({
   sections,
+  wallPolygons,
   activeSectionId,
   highlightedSectionIds,
   onSelectSection,
@@ -46,6 +50,18 @@ export const FloorMinimap: React.FC<FloorMinimapProps> = ({
         viewBox="0 0 1 1"
         preserveAspectRatio="xMidYMid meet"
       >
+        {/* Floor walls as a backdrop (under sections) */}
+        {wallPolygons && wallPolygons.length > 0 && (
+          <g className={styles.wallsLayer}>
+            {wallPolygons.map((poly, idx) => (
+              <polygon
+                key={`wall-${idx}`}
+                className={styles.wallPolygon}
+                points={toSvgPoints(poly as [number, number][])}
+              />
+            ))}
+          </g>
+        )}
         {sections.map((section) => {
           const points = section.geometry.points as [number, number][];
           const c = centroid(points);

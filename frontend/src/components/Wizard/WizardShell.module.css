@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  background: #0A0A0A;
 }
 
 .header {
@@ -10,7 +11,8 @@
   justify-content: center;
   position: relative;
   height: 56px;
-  background: var(--color-header-bg);
+  background: #0A0A0A;
+  border-bottom: 1px solid #27272a;
   flex-shrink: 0;
   padding: 0 24px;
 }
@@ -22,11 +24,16 @@
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: var(--color-text-white);
+  color: #9ca3af;
   cursor: pointer;
   font-size: 20px;
   line-height: 1;
   padding: 4px;
+  transition: color 0.2s;
+}
+
+.closeBtn:hover {
+  color: white;
 }
 
 .content {

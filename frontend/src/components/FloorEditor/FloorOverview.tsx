@@ -5,7 +5,9 @@ import { CanvasControls } from './CanvasControls';
 import { SectionContextMenu } from './SectionContextMenu';
 import { NewSectionDialog } from './NewSectionDialog';
 import { getSectionColor } from './sectionColors';
+import { reconstructionApi } from '../../api/apiService';
 import type { SectionDraft, Point2D } from '../../hooks/useFloorEditorWizard';
+import type { CropBbox } from '../../types/hierarchy';
 
 interface ContextMenuState {
   x: number;
@@ -15,6 +17,13 @@ interface ContextMenuState {
 
 interface FloorOverviewProps {
   schemaImageUrl: string | null;
+  /** Id of the uploaded schema file — needed to refetch the binary mask from the
+   * backend when no editedMaskUrl is present (e.g. after reopening the editor). */
+  schemaImageId?: string | null;
+  /** Crop bbox so the refetched mask matches the section coordinate system. */
+  cropBbox?: CropBbox | null;
+  /** Edited mask blob URL from Step 3/4. When present, shown as dark background. */
+  editedMaskUrl?: string | null;
   wallPolygons: Point2D[][] | null;
   sectionDrafts: SectionDraft[];
   isDirty: boolean;
@@ -22,31 +31,38 @@ interface FloorOverviewProps {
   onUpdateSectionDraft: (idx: number, partial: Partial<SectionDraft>) => void;
   onDeleteSectionDraft: (idx: number) => void;
   onSave: () => Promise<void>;
+  onClearAll?: () => Promise<void>;
   onSwitchToTable: () => void;
   onSwitchToWizard: () => void;
 }
 
 export const FloorOverview: React.FC<FloorOverviewProps> = ({
   schemaImageUrl,
-  wallPolygons,
+  schemaImageId,
+  cropBbox,
+  editedMaskUrl,
+  wallPolygons: _wallPolygons,
   sectionDrafts,
   isDirty,
   isLoading,
   onUpdateSectionDraft,
   onDeleteSectionDraft,
   onSave,
+  onClearAll,
   onSwitchToTable,
   onSwitchToWizard,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement | null>(null);
+  const maskImgRef = useRef<HTMLImageElement | null>(null);
 
   const [zoom, setZoom] = useState(1);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
   const [renameDialogOpen, setRenameDialogOpen] = useState(false);
   const [renameTargetIdx, setRenameTargetIdx] = useState<number | null>(null);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   // Increment this to force re-render when localStorage colors change
   const [colorVersion, setColorVersion] = useState(0);
 
@@ -68,7 +84,10 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
   }, [zoom]);
 
   const toCanvas = useCallback((nx: number, ny: number) => {
-    const img = imageRef.current;
+    // Section polygons are normalised against the CROPPED+ROTATED region (i.e.
+    // the binary mask), not the raw uploaded photo. Always anchor to the mask
+    // when available so polygons stay aligned with the visible walls.
+    const img = maskImgRef.current ?? imageRef.current;
     const { w: cw, h: ch } = getCanvasSize();
     if (!img) {
       return { cx: nx * cw, cy: ny * ch };
@@ -86,55 +105,38 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     canvas.width = cw;
     canvas.height = ch;
     ctx.clearRect(0, 0, cw, ch);
-    // Light background
-    ctx.fillStyle = '#f9fafb';
+
+    // White background — same as Step 5 final preview
+    ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    // Background image
-    const img = imageRef.current;
-    if (img) {
-      const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-      ctx.globalAlpha = 0.2;
-      ctx.drawImage(img, dx, dy, dw, dh);
-      ctx.globalAlpha = 1;
+    // Mask: inverted (black walls on white). Only render once the cropped mask
+    // is loaded — falling back to the raw uploaded photo would give the wrong
+    // aspect ratio (sections are normalised to the cropped region).
+    const src = maskImgRef.current;
+    if (src && src.naturalWidth > 0) {
+      const { dx, dy, dw, dh } = getImageParams(src.naturalWidth, src.naturalHeight, cw, ch);
+      ctx.save();
+      ctx.filter = 'invert(1)';
+      ctx.drawImage(src, dx, dy, dw, dh);
+      ctx.restore();
     }
 
-    // Wall polygons — dark on light background
-    ctx.strokeStyle = '#374151';
-    ctx.lineWidth = 1.5;
-    for (const poly of (wallPolygons ?? [])) {
-      if (poly.length < 2) continue;
-      ctx.beginPath();
-      const f = toCanvas(poly[0].x, poly[0].y);
-      ctx.moveTo(f.cx, f.cy);
-      for (let i = 1; i < poly.length; i++) {
-        const p = toCanvas(poly[i].x, poly[i].y);
-        ctx.lineTo(p.cx, p.cy);
-      }
-      ctx.stroke();
-    }
-
-    // Sections — each has its palette color
+    // Sections — same look as Step 5: active = orange #F05123 @ 0.9, inactive = #f3f4f6
     for (let idx = 0; idx < draftsRef.current.length; idx++) {
       const draft = draftsRef.current[idx];
       const pts = draft.geometry.points;
+      if (!pts || pts.length < 3) continue;
       const isActive = idx === activeIdx;
-      const color = getSectionColor(idx, draft.id);
 
-      if (isActive) {
-        ctx.fillStyle = `${color}66`; // ~40% opacity for active
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 2.5;
-      } else {
-        ctx.fillStyle = `${color}33`; // ~20% opacity for inactive
-        ctx.strokeStyle = color;
-        ctx.lineWidth = 1.5;
-      }
+      ctx.fillStyle = isActive ? 'rgba(240, 81, 35, 0.9)' : '#f3f4f6';
+      ctx.strokeStyle = '#d1d5db';
+      ctx.lineWidth = 2;
 
       ctx.beginPath();
       const f = toCanvas(pts[0][0], pts[0][1]);
       ctx.moveTo(f.cx, f.cy);
-      for (let i = 1; i < 4; i++) {
+      for (let i = 1; i < pts.length; i++) {
         const p = toCanvas(pts[i][0], pts[i][1]);
         ctx.lineTo(p.cx, p.cy);
       }
@@ -143,19 +145,18 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       ctx.stroke();
 
       // Centered number label
-      const cx = (pts[0][0] + pts[1][0] + pts[2][0] + pts[3][0]) / 4;
-      const cy = (pts[0][1] + pts[1][1] + pts[2][1] + pts[3][1]) / 4;
-      const center = toCanvas(cx, cy);
-      ctx.fillStyle = color;
-      ctx.font = `${isActive ? 'bold ' : ''}13px Courier New`;
+      let avgX = 0, avgY = 0;
+      for (const [px, py] of pts) { avgX += px; avgY += py; }
+      avgX /= pts.length;
+      avgY /= pts.length;
+      const center = toCanvas(avgX, avgY);
+      ctx.fillStyle = isActive ? '#ffffff' : '#6b7280';
+      ctx.font = 'bold 16px Inter, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.shadowColor = 'rgba(255,255,255,0.9)';
-      ctx.shadowBlur = 4;
       ctx.fillText(String(draft.number), center.cx, center.cy);
-      ctx.shadowBlur = 0;
     }
-  }, [getCanvasSize, getImageParams, toCanvas, wallPolygons, activeIdx, colorVersion]); // colorVersion forces redraw
+  }, [getCanvasSize, getImageParams, toCanvas, activeIdx, colorVersion]); // colorVersion forces redraw
 
   useEffect(() => { draw(); }, [draw, sectionDrafts, activeIdx]);
 
@@ -167,6 +168,65 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     }
     return () => { imageRef.current = null; };
   }, [schemaImageUrl, draw]);
+
+  // Load the cropped+rotated binary mask. Prefer the in-session edited mask blob;
+  // otherwise refetch from backend so coordinates match the section polygons
+  // (which are normalised to the cropped region, not the raw uploaded photo).
+  const cropKey = cropBbox
+    ? `${cropBbox.x}|${cropBbox.y}|${cropBbox.width}|${cropBbox.height}|${cropBbox.rotation}`
+    : '';
+  useEffect(() => {
+    let cancelled = false;
+    let objectUrl: string | null = null;
+
+    const loadFromUrl = (url: string) => {
+      const img = new Image();
+      img.onload = () => {
+        if (cancelled) return;
+        maskImgRef.current = img;
+        draw();
+      };
+      img.onerror = () => {
+        if (cancelled) return;
+        maskImgRef.current = null;
+        draw();
+      };
+      img.src = url;
+    };
+
+    if (editedMaskUrl) {
+      loadFromUrl(editedMaskUrl);
+      return () => { cancelled = true; };
+    }
+
+    if (schemaImageId) {
+      const cropPayload = cropBbox
+        ? { x: cropBbox.x, y: cropBbox.y, width: cropBbox.width, height: cropBbox.height }
+        : null;
+      const rotation = cropBbox?.rotation ?? 0;
+      reconstructionApi
+        .previewMask(schemaImageId, cropPayload, rotation)
+        .then((url) => {
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          objectUrl = url;
+          loadFromUrl(url);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          maskImgRef.current = null;
+          draw();
+        });
+      return () => {
+        cancelled = true;
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
+      };
+    }
+
+    maskImgRef.current = null;
+    draw();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editedMaskUrl, schemaImageId, cropKey]);
 
   // Hit test: find section under canvas coordinates
   const hitSection = useCallback((canvX: number, canvY: number): number | null => {
@@ -226,7 +286,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
     setContextMenu(null);
   };
 
-  const handleRenameConfirm = (num: number, _description: string, _color: string) => {
+  const handleRenameConfirm = (num: number, _color: string) => {
     if (renameTargetIdx !== null) {
       onUpdateSectionDraft(renameTargetIdx, { number: num });
     }
@@ -328,26 +388,39 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       </div>
 
       {/* Footer */}
-      <footer className={styles.footer}>
-        <button className={styles.btnBack} onClick={onSwitchToWizard} type="button">
-          ← Назад
-        </button>
-        <div className={styles.statsRow}>
-          <span className={styles.statItem}>
-            Всего отсеков: <strong className={styles.statValue}>{sectionDrafts.length}</strong>
-          </span>
-          <span className={styles.statItem}>
-            Привязано: <strong className={styles.statValue}>{boundCount}</strong>
-          </span>
+      <footer className={styles.footer} style={{ justifyContent: 'space-between', padding: '0.75rem 1.5rem' }}>
+        <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+          <button className={styles.btnBack} onClick={onSwitchToWizard} type="button">
+            ← Назад
+          </button>
+          <div className={styles.statsRow}>
+            <span className={styles.statItem}>
+              Всего отсеков: <strong className={styles.statValue}>{sectionDrafts.length}</strong>
+            </span>
+            <span className={styles.statItem}>
+              Привязано: <strong className={styles.statValue}>{boundCount}</strong>
+            </span>
+          </div>
         </div>
-        <button
-          className={styles.btnSave}
-          onClick={() => void onSave()}
-          disabled={isLoading || !isDirty}
-          type="button"
-        >
-          Сохранить изменения
-        </button>
+
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <button
+            className={`${styles.btnBack} ${styles.btnDanger}`}
+            style={{ color: '#ef4444', borderColor: '#ef4444' }}
+            onClick={() => setDeleteModalOpen(true)}
+            type="button"
+          >
+            Удалить план отсеков
+          </button>
+          <button
+            className={styles.btnSave}
+            onClick={() => void onSave()}
+            disabled={isLoading || !isDirty}
+            type="button"
+          >
+            Сохранить изменения
+          </button>
+        </div>
       </footer>
 
       {/* Context menu */}
@@ -373,6 +446,45 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
         onConfirm={handleRenameConfirm}
         onCancel={() => { setRenameDialogOpen(false); setRenameTargetIdx(null); }}
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }} onClick={() => setDeleteModalOpen(false)}>
+          <div style={{ background: '#fff', padding: '2rem', maxWidth: '420px', width: '100%', borderRadius: '0', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 1rem', fontSize: '1.25rem', fontWeight: 600, color: '#0f172a' }}>Удалить план отсеков?</h3>
+            <p style={{ margin: '0 0 2rem', fontSize: '0.9375rem', color: '#64748b', lineHeight: 1.5 }}>
+              Все отсеки и их привязки к планам будут удалены. Загруженная схема этажа и стены сохранятся — вы сможете заново разметить отсеки. Действие нельзя отменить.
+            </p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                className={styles.btnBack}
+                style={{ borderRadius: '0', background: '#ffffff', color: '#374151', border: '1px solid #d1d5db', padding: '0.625rem 1.25rem' }}
+                onClick={() => setDeleteModalOpen(false)}
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                className={`${styles.btnBack} ${styles.btnDanger}`}
+                style={{ borderRadius: '0', background: '#ef4444', color: '#ffffff', border: 'none', padding: '0.625rem 1.25rem' }}
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  if (onClearAll) {
+                    void onClearAll();
+                  } else {
+                    for (let i = sectionDrafts.length - 1; i >= 0; i--) {
+                      onDeleteSectionDraft(i);
+                    }
+                  }
+                }}
+              >
+                Удалить
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

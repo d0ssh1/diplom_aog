@@ -8,25 +8,27 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { reconstructionApi, type ReconstructionListItem } from '../../api/apiService';
-import type { Building } from '../../types/hierarchy';
+import type { Building, BuildingDetail } from '../../types/hierarchy';
 import styles from './PlanGalleryPicker.module.css';
 
-type PlanFilter = 'all' | 'bound' | 'unbound';
+
 
 interface PlanGalleryPickerProps {
-  /** Passed through for any future use; not used for filtering directly */
-  buildings: Building[];
+  buildings: BuildingDetail[] | Building[];
   selectedReconstructionId: number | null;
+  assignedReconstructionIds?: number[];
   onSelect: (id: number) => void;
 }
 
 export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
-  buildings: _buildings,
+  buildings,
   selectedReconstructionId,
+  assignedReconstructionIds = [],
   onSelect,
 }) => {
   const [search, setSearch] = useState('');
-  const [planFilter, setPlanFilter] = useState<PlanFilter>('all');
+  const [selectedBuildingId, setSelectedBuildingId] = useState<number | ''>('');
+  const [selectedFloorId, setSelectedFloorId] = useState<number | ''>('');
   const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
 
@@ -50,31 +52,56 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
     void fetchRecons();
   }, [fetchRecons]);
 
-  // Client-side filter by bound/unbound status relative to current selection
+  // Client-side filtering by building and floor
+  const selectedBuilding = buildings.find(b => b.id === Number(selectedBuildingId));
+
   const filtered = reconstructions.filter((r) => {
-    if (planFilter === 'bound') return r.id === selectedReconstructionId;
+    if (selectedBuildingId !== '') {
+      if (!r.floor || !selectedBuilding || r.floor.building_code !== selectedBuilding.code) return false;
+    }
+    if (selectedFloorId !== '') {
+      if (!r.floor || r.floor.id !== Number(selectedFloorId)) return false;
+    }
     return true;
   });
 
   return (
     <div className={styles.wrap}>
-      {/* Filters: search + single status dropdown */}
-      <div className={styles.filters}>
+      <div className={styles.header}>
+        <h2 className={styles.headerTitle}>ПЛАНЫ ЭТОГО ЭТАЖА</h2>
         <input
           className={styles.searchInput}
           type="text"
-          placeholder="Поиск по названию..."
+          placeholder="Поиск..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <select
-          className={styles.filterSelect}
-          value={planFilter}
-          onChange={(e) => setPlanFilter(e.target.value as PlanFilter)}
-        >
-          <option value="all">Все планы</option>
-          <option value="bound">Привязанные</option>
-        </select>
+        <div className={styles.filters}>
+          <select
+            className={styles.filterSelect}
+            value={selectedBuildingId}
+            onChange={(e) => {
+              setSelectedBuildingId(e.target.value === '' ? '' : Number(e.target.value));
+              setSelectedFloorId(''); // reset floor
+            }}
+          >
+            <option value="">Все здания</option>
+            {buildings.map(b => (
+              <option key={b.id} value={b.id}>{b.name}</option>
+            ))}
+          </select>
+          <select
+            className={styles.filterSelect}
+            value={selectedFloorId}
+            disabled={selectedBuildingId === ''}
+            onChange={(e) => setSelectedFloorId(e.target.value === '' ? '' : Number(e.target.value))}
+          >
+            <option value="">Все этажи</option>
+            {((selectedBuilding as BuildingDetail)?.floors || []).map((f: { id: number; number: number }) => (
+              <option key={f.id} value={f.id}>Этаж {f.number}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Gallery */}
@@ -83,39 +110,51 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
       ) : filtered.length === 0 ? (
         <div className={styles.empty}>Нет планов</div>
       ) : (
-        <div className={styles.grid}>
-          {filtered.map((r) => {
-            const isSelected = r.id === selectedReconstructionId;
-            // Build card label like "A11.5 — Этаж 11"
-            const label = r.floor
-              ? `${r.floor.building_code} — Этаж ${r.floor.number}`
-              : r.name ?? '—';
-            return (
-              <button
-                key={r.id}
-                className={`${styles.card} ${isSelected ? styles.cardSelected : ''}`}
-                onClick={() => onSelect(r.id)}
-                type="button"
-              >
-                {r.preview_url ? (
-                  <img
-                    src={r.preview_url}
-                    alt={r.name ?? 'Plan'}
-                    className={styles.cardThumb}
-                  />
-                ) : (
-                  <div className={styles.cardThumbEmpty}>🖼</div>
-                )}
-                <div className={styles.cardInfo}>
-                  <span className={styles.cardName}>{r.name ?? label}</span>
-                  {r.floor && (
-                    <span className={styles.cardFloor}>{label}</span>
-                  )}
-                </div>
-                {isSelected && <span className={styles.checkmark}>✓</span>}
-              </button>
-            );
-          })}
+        <div className={styles.gridWrap}>
+          <div className={styles.grid}>
+            {filtered.map((r) => {
+              const isSelected = r.id === selectedReconstructionId;
+              const isAssignedElsewhere = assignedReconstructionIds.includes(r.id) && !isSelected;
+              // Build card label like "A11.5 — Этаж 11"
+              const label = r.floor
+                ? `${r.floor.building_code} — Этаж ${r.floor.number}`
+                : r.name ?? '—';
+              return (
+                <button
+                  key={r.id}
+                  className={`${styles.card} ${isSelected ? styles.cardSelected : ''} ${isAssignedElsewhere ? styles.cardAssigned : ''}`}
+                  onClick={() => {
+                    if (!isAssignedElsewhere) {
+                      onSelect(r.id);
+                    }
+                  }}
+                  type="button"
+                  disabled={isAssignedElsewhere}
+                  title={isAssignedElsewhere ? "Этот план уже назначен другому отсеку" : ""}
+                >
+                  <div className={styles.cardThumbWrap}>
+                    {r.preview_url ? (
+                      <img
+                        src={r.preview_url}
+                        alt={r.name ?? 'Plan'}
+                        className={styles.cardThumb}
+                      />
+                    ) : (
+                      <div className={styles.cardThumbEmpty}>🖼</div>
+                    )}
+                    {isSelected && <div className={styles.cardOverlay} />}
+                  </div>
+                  <div className={styles.cardInfo}>
+                    <span className={styles.cardName}>{r.name ?? label}</span>
+                    {r.floor && (
+                      <span className={styles.cardFloor}>{label}</span>
+                    )}
+                  </div>
+                  {isSelected && <span className={styles.checkmark}>✓</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

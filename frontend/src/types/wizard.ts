@@ -5,7 +5,7 @@ export interface CropRect {
   height: number;
 }
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
+export type WizardStep = 1 | 2 | 3 | 4 | 5;
 
 export interface RoomAnnotation {
   id: string;
@@ -15,6 +15,9 @@ export interface RoomAnnotation {
   y: number;
   width: number;
   height: number; // normalized [0,1]
+  polygon?: {x: number, y: number}[];
+  center?: {x: number, y: number};
+  area_normalized?: number;
 }
 
 export interface DoorAnnotation {
@@ -36,6 +39,7 @@ export interface WizardState {
   step: WizardStep;
   planFileId: string | null;
   planUrl: string | null;
+  planName: string;
   maskFileId: string | null;
   editedMaskFileId: string | null;
   canvasState: any | null;

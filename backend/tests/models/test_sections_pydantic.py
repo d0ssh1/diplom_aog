@@ -22,11 +22,17 @@ def test_section_geometry_too_few_points():
         SectionGeometry(points=[[0.1, 0.1], [0.4, 0.1], [0.4, 0.5]])
 
 
+def test_section_geometry_five_points_allowed():
+    # Floor Editor's polygon tool can produce N>4 vertices.
+    geom = SectionGeometry(
+        points=[[0.1, 0.1], [0.4, 0.1], [0.4, 0.5], [0.25, 0.6], [0.1, 0.5]]
+    )
+    assert len(geom.points) == 5
+
+
 def test_section_geometry_too_many_points():
     with pytest.raises(ValidationError):
-        SectionGeometry(
-            points=[[0.1, 0.1], [0.4, 0.1], [0.4, 0.5], [0.1, 0.5], [0.0, 0.0]]
-        )
+        SectionGeometry(points=[[i / 100, 0.5] for i in range(33)])
 
 
 def test_section_geometry_point_out_of_range():

@@ -2,6 +2,11 @@ import glob
 import json
 import logging
 import os
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from app.db.repositories.floor_transition_repo import FloorTransitionRepository
+    from app.db.repositories.reconstruction_repo import ReconstructionRepository
 
 import cv2
 import numpy as np
@@ -17,8 +22,19 @@ from app.processing.nav_graph import (
     prune_dendrites,
     serialize_nav_graph,
     transform_2d_to_3d,
+    merge_floor_graphs,
+    find_multifloor_route_in_graph,
+    FloorGraphData,
+    FLOOR_HEIGHT_METERS,
 )
 from app.processing.pipeline import compute_scale_factor, compute_wall_thickness
+from app.models.floor_transition import (
+    MultifloorRouteResponse,
+    PathSegment3D,
+    TransitionUsed3D,
+    Room3DInfo,
+)
+from app.core.exceptions import NavGraphNotFoundError
 
 logger = logging.getLogger(__name__)
 
@@ -199,6 +215,196 @@ class NavService:
             "from_room_3d": from_room_3d,
             "to_room_3d": to_room_3d,
         }
+
+    async def find_multifloor_route(
+        self,
+        building_id: str,
+        from_reconstruction_id: int,
+        from_room_id: str,
+        to_reconstruction_id: int,
+        to_room_id: str,
+        ft_repo: "FloorTransitionRepository",
+        recon_repo: "ReconstructionRepository",
+    ) -> MultifloorRouteResponse:
+        """
+        Find a route between rooms, possibly across multiple floors.
+
+        Delegates to single-floor find_route() when from == to reconstruction.
+        Raises NavGraphNotFoundError if a required nav graph file is missing.
+        Returns MultifloorRouteResponse.
+        """
+        # Same floor — delegate to existing single-floor logic
+        if from_reconstruction_id == to_reconstruction_id:
+            recon = await recon_repo.get_by_id(from_reconstruction_id)
+            if recon is None:
+                return MultifloorRouteResponse(
+                    status="no_path",
+                    message=f"Reconstruction {from_reconstruction_id} not found",
+                )
+            result = await self.find_route(
+                graph_id=recon.mask_file_id,
+                from_room_id=from_room_id,
+                to_room_id=to_room_id,
+            )
+            if result.get("status") != "success":
+                return MultifloorRouteResponse(
+                    status=result.get("status", "no_path"),
+                    message=result.get("message"),
+                )
+            floor_number = recon.floor_number or 0
+            y_offset = floor_number * FLOOR_HEIGHT_METERS + 0.1
+            coords_3d = result.get("coordinates", [])
+            segment = PathSegment3D(
+                reconstruction_id=from_reconstruction_id,
+                floor_number=floor_number,
+                floor_name=recon.name or str(from_reconstruction_id),
+                coordinates_3d=coords_3d,
+            )
+            from_room_3d = None
+            to_room_3d = None
+            if result.get("from_room_3d"):
+                r = result["from_room_3d"]
+                from_room_3d = Room3DInfo(position=r["position"], size=r["size"])
+            if result.get("to_room_3d"):
+                r = result["to_room_3d"]
+                to_room_3d = Room3DInfo(position=r["position"], size=r["size"])
+            return MultifloorRouteResponse(
+                status="success",
+                total_distance_meters=result.get("total_distance_meters"),
+                estimated_time_seconds=result.get("estimated_time_seconds"),
+                path_segments=[segment],
+                transitions_used=[],
+                from_room_3d=from_room_3d,
+                to_room_3d=to_room_3d,
+            )
+
+        # Multi-floor path
+        transitions = await ft_repo.get_by_building(building_id)
+        transitions_dicts = [
+            {
+                "id": t.id,
+                "name": t.name,
+                "from_reconstruction_id": t.from_reconstruction_id,
+                "from_x": t.from_x,
+                "from_y": t.from_y,
+                "to_reconstruction_id": t.to_reconstruction_id,
+                "to_x": t.to_x,
+                "to_y": t.to_y,
+            }
+            for t in transitions
+        ]
+
+        # Collect all unique reconstruction ids to load
+        recon_ids: set[int] = {from_reconstruction_id, to_reconstruction_id}
+        for t in transitions_dicts:
+            recon_ids.add(t["from_reconstruction_id"])
+            recon_ids.add(t["to_reconstruction_id"])
+
+        floor_data_list: list[FloorGraphData] = []
+        for recon_id in recon_ids:
+            recon = await recon_repo.get_by_id(recon_id)
+            if recon is None or not recon.mask_file_id:
+                continue
+            try:
+                nav_data = self.load_graph(recon.mask_file_id)
+            except FileNotFoundError:
+                if recon_id in (from_reconstruction_id, to_reconstruction_id):
+                    raise NavGraphNotFoundError(recon_id)
+                continue
+            G, metadata = deserialize_nav_graph(nav_data)
+            floor_data_list.append(FloorGraphData(
+                graph=G,
+                metadata=metadata,
+                reconstruction_id=recon_id,
+                floor_number=recon.floor_number or 0,
+                floor_name=recon.name or str(recon_id),
+            ))
+
+        merged_graph, floor_data_by_recon_id = merge_floor_graphs(
+            floor_data_list, transitions_dicts
+        )
+
+        route = find_multifloor_route_in_graph(
+            merged_graph,
+            floor_data_by_recon_id,
+            from_reconstruction_id,
+            from_room_id,
+            to_reconstruction_id,
+            to_room_id,
+        )
+
+        if route is None:
+            return MultifloorRouteResponse(
+                status="no_path",
+                message="No path found between rooms",
+            )
+
+        # Build 3D path segments
+        path_segments_3d: list[PathSegment3D] = []
+        for seg in route["path_segments"]:
+            fd = floor_data_by_recon_id.get(seg["reconstruction_id"])
+            if fd is None:
+                continue
+            y_offset = fd.floor_number * FLOOR_HEIGHT_METERS + 0.1
+            coords_3d = transform_2d_to_3d(
+                seg["coords_2d"],
+                fd.metadata.get("mask_width", 1000),
+                fd.metadata.get("mask_height", 500),
+                fd.metadata.get("scale_factor", 0.02),
+                y_offset=y_offset,
+            )
+            path_segments_3d.append(PathSegment3D(
+                reconstruction_id=seg["reconstruction_id"],
+                floor_number=seg["floor_number"],
+                floor_name=seg["floor_name"],
+                coordinates_3d=coords_3d,
+            ))
+
+        # Build 3D transitions
+        transitions_used_3d: list[TransitionUsed3D] = []
+        for tu in route["transitions_used"]:
+            from_fd = floor_data_by_recon_id.get(tu.get("from_recon_id"))
+            to_fd = floor_data_by_recon_id.get(tu.get("to_recon_id"))
+            if from_fd is None or to_fd is None:
+                continue
+            from_y = from_fd.floor_number * FLOOR_HEIGHT_METERS + 0.1
+            to_y = to_fd.floor_number * FLOOR_HEIGHT_METERS + 0.1
+            from_px, from_py = tu["from_px"]
+            to_px, to_py = tu["to_px"]
+            from_3d = transform_2d_to_3d(
+                [(from_px, from_py)],
+                from_fd.metadata.get("mask_width", 1000),
+                from_fd.metadata.get("mask_height", 500),
+                from_fd.metadata.get("scale_factor", 0.02),
+                y_offset=from_y,
+            )[0]
+            to_3d = transform_2d_to_3d(
+                [(to_px, to_py)],
+                to_fd.metadata.get("mask_width", 1000),
+                to_fd.metadata.get("mask_height", 500),
+                to_fd.metadata.get("scale_factor", 0.02),
+                y_offset=to_y,
+            )[0]
+            transitions_used_3d.append(TransitionUsed3D(
+                name=tu["name"],
+                from_3d=from_3d,
+                to_3d=to_3d,
+            ))
+
+        total_distance_px = route.get("total_distance_px", 0.0)
+        # Use scale_factor from the from-floor for distance estimation
+        from_fd = floor_data_by_recon_id.get(from_reconstruction_id)
+        scale = from_fd.metadata.get("scale_factor", 0.02) if from_fd else 0.02
+        distance_meters = round(total_distance_px * scale, 1)
+        estimated_time = round(distance_meters / 1.2)
+
+        return MultifloorRouteResponse(
+            status="success",
+            total_distance_meters=distance_meters,
+            estimated_time_seconds=estimated_time,
+            path_segments=path_segments_3d,
+            transitions_used=transitions_used_3d,
+        )
 
     async def build_graph_endpoint(self, request) -> dict:
         """Endpoint wrapper for build_graph. Returns BuildNavGraphResponse."""

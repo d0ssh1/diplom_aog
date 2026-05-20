@@ -15,13 +15,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class SectionGeometry(BaseModel):
-    """4-point polygon [[x,y]×4] in normalised [0,1] coordinates.
+    """Polygon [[x,y]×N] in normalised [0,1] coordinates.
 
-    ADR-28: simplified geometry — always exactly 4 points (rotated rectangle).
+    Historically ADR-28 fixed this to a 4-point rotated rectangle. The Floor
+    Editor's polygon tool needs richer shapes, so the constraint is relaxed
+    to 3–32 vertices. 4-point quads remain valid and the common case.
     All coordinate values must be in [0.0, 1.0].
     """
 
-    points: list[list[float]] = Field(..., min_length=4, max_length=4)
+    points: list[list[float]] = Field(..., min_length=3, max_length=32)
 
     @field_validator("points")
     @classmethod

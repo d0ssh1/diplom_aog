@@ -97,28 +97,54 @@ export const Step2CropRotate: React.FC<Step2CropRotateProps> = ({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    const { dx, dy, dw, dh } = getImageDrawParams(img.naturalWidth, img.naturalHeight, cw, ch);
-    ctx.drawImage(img, dx, dy, dw, dh);
-
-    // Draw crop overlay
     const cr = cropRef.current;
+    const rot = cr.rotation;
+
+    // Effective display dimensions after rotation (90/270 swap width/height)
+    const dispW = (rot === 90 || rot === 270) ? img.naturalHeight : img.naturalWidth;
+    const dispH = (rot === 90 || rot === 270) ? img.naturalWidth : img.naturalHeight;
+    const { dx, dy, dw, dh } = getImageDrawParams(dispW, dispH, cw, ch);
+
+    // Helper: draw image with rotation centered at (dx, dy, dw, dh)
+    const drawRotated = () => {
+      ctx.save();
+      ctx.translate(dx + dw / 2, dy + dh / 2);
+      ctx.rotate(rot * Math.PI / 180);
+      if (rot === 90 || rot === 270) {
+        ctx.drawImage(img, -dh / 2, -dw / 2, dh, dw);
+      } else {
+        ctx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+      }
+      ctx.restore();
+    };
+
+    // 1. Draw full rotated image
+    drawRotated();
+
+    // 2. Crop overlay
     const rx = dx + cr.x * dw;
     const ry = dy + cr.y * dh;
     const rw = cr.w * dw;
     const rh = cr.h * dh;
 
-    // Darken outside
+    // Darken everything outside crop rect
     ctx.fillStyle = 'rgba(0,0,0,0.5)';
     ctx.fillRect(dx, dy, dw, dh);
-    ctx.clearRect(rx, ry, rw, rh);
-    ctx.drawImage(img, cr.x * img.naturalWidth, cr.y * img.naturalHeight, cr.w * img.naturalWidth, cr.h * img.naturalHeight, rx, ry, rw, rh);
 
-    // Crop border
+    // 3. Re-draw crop area bright (clip to crop rect)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(rx, ry, rw, rh);
+    ctx.clip();
+    drawRotated();
+    ctx.restore();
+
+    // 4. Crop border
     ctx.strokeStyle = '#ff4500';
     ctx.lineWidth = 2;
     ctx.strokeRect(rx, ry, rw, rh);
 
-    // Handles
+    // 5. Handles
     const handles = getHandlePositions(rx, ry, rw, rh);
     ctx.fillStyle = '#ff4500';
     for (const pos of Object.values(handles)) {
@@ -164,7 +190,10 @@ export const Step2CropRotate: React.FC<Step2CropRotateProps> = ({
     const img = imageRef.current;
     if (!canvas || !img) return { nx: 0, ny: 0 };
     const { w: cw, h: ch } = getCanvasSize();
-    const { dx, dy, dw, dh } = getImageDrawParams(img.naturalWidth, img.naturalHeight, cw, ch);
+    const rot = cropRef.current.rotation;
+    const dispW = (rot === 90 || rot === 270) ? img.naturalHeight : img.naturalWidth;
+    const dispH = (rot === 90 || rot === 270) ? img.naturalWidth : img.naturalHeight;
+    const { dx, dy, dw, dh } = getImageDrawParams(dispW, dispH, cw, ch);
     return { nx: (cx - dx) / dw, ny: (cy - dy) / dh };
   }, [getCanvasSize, getImageDrawParams]);
 
@@ -178,7 +207,10 @@ export const Step2CropRotate: React.FC<Step2CropRotateProps> = ({
     const img = imageRef.current;
     if (!img) return null;
     const { w: cw, h: ch } = getCanvasSize();
-    const { dx, dy, dw, dh } = getImageDrawParams(img.naturalWidth, img.naturalHeight, cw, ch);
+    const rot = cr.rotation;
+    const dispW = (rot === 90 || rot === 270) ? img.naturalHeight : img.naturalWidth;
+    const dispH = (rot === 90 || rot === 270) ? img.naturalWidth : img.naturalHeight;
+    const { dx, dy, dw, dh } = getImageDrawParams(dispW, dispH, cw, ch);
     const rx = dx + cr.x * dw;
     const ry = dy + cr.y * dh;
     const rw = cr.w * dw;
@@ -300,9 +332,6 @@ export const Step2CropRotate: React.FC<Step2CropRotateProps> = ({
             onMouseLeave={handleMouseUp}
             style={{ cursor: 'crosshair' }}
           />
-          <span className={styles.canvasHint}>
-            Выделите область с отсеком и нажмите Далее
-          </span>
           <CanvasControls
             onZoomIn={() => setZoom((z) => Math.min(z + 0.25, 4))}
             onZoomOut={() => setZoom((z) => Math.max(z - 0.25, 0.25))}

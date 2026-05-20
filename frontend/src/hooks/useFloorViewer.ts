@@ -4,6 +4,9 @@ import { navigationApi } from '../api/apiService';
 import type { PublicBuilding } from '../types/hierarchy';
 import type { PathSegment3D } from '../types/transitions';
 
+// Format: building code (Latin/Cyrillic letters) + room number digits, e.g. "D304", "Д304"
+const ROOM_REF_RE = /^[A-Za-zА-Яа-яЁё]+\d+$/;
+
 // ---- Derived types for the catalog (denormalized) ----
 export interface FloorPublic {
   id: number;
@@ -16,7 +19,7 @@ export interface FloorPublic {
 export interface SectionPublic {
   id: number;
   number: number;
-  geometry: { points: [[number, number], [number, number], [number, number], [number, number]] };
+  geometry: { points: [number, number][] };
   reconstruction_id: number;
   mesh_url_glb: string;
   section_type: number;
@@ -187,6 +190,14 @@ export const useFloorViewer = (): UseFloorViewerReturn => {
       setRouteSegments(null);
       setHighlightedSectionIds([]);
 
+      const startTrim = start.trim();
+      const endTrim = end.trim();
+
+      if (!ROOM_REF_RE.test(startTrim) || !ROOM_REF_RE.test(endTrim)) {
+        setRouteError('Формат: код корпуса + номер комнаты, например D304');
+        return;
+      }
+
       // Find building for start
       // "D304" → building code "D", room id "304"
       // We find the building code by looking through the catalog for a matching section
@@ -214,8 +225,8 @@ export const useFloorViewer = (): UseFloorViewerReturn => {
         return null;
       };
 
-      const fromInfo = findReconAndRoomByLabel(start);
-      const toInfo = findReconAndRoomByLabel(end);
+      const fromInfo = findReconAndRoomByLabel(startTrim);
+      const toInfo = findReconAndRoomByLabel(endTrim);
 
       if (!fromInfo || !toInfo) {
         setRouteError('Не удалось определить комнаты. Формат: "<Корпус><Комната>" (например D304)');

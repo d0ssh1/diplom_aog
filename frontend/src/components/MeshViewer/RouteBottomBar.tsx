@@ -14,6 +14,13 @@ interface RouteBottomBarProps {
   onPrev: () => void;
   onNext: () => void;
   isNextDisabled: boolean;
+  // Optional multifloor props
+  multifloorMode?: boolean;
+  availablePlans?: Array<{ id: number; name: string }>;
+  fromReconId?: number;
+  toReconId?: number;
+  onFromReconChange?: (id: number) => void;
+  onToReconChange?: (id: number) => void;
 }
 
 export const RouteBottomBar: React.FC<RouteBottomBarProps> = ({
@@ -27,6 +34,12 @@ export const RouteBottomBar: React.FC<RouteBottomBarProps> = ({
   onPrev,
   onNext,
   isNextDisabled,
+  multifloorMode,
+  availablePlans,
+  fromReconId,
+  toReconId,
+  onFromReconChange,
+  onToReconChange,
 }) => {
   const [fromSearch, setFromSearch] = React.useState('');
   const [toSearch, setToSearch] = React.useState('');
@@ -108,6 +121,36 @@ export const RouteBottomBar: React.FC<RouteBottomBarProps> = ({
       </button>
 
       <div className={styles.centerControls}>
+        {multifloorMode && availablePlans && availablePlans.length > 0 && (
+          <>
+            <div className={styles.fieldGroup}>
+              <span className={styles.label}>Этаж от:</span>
+              <select
+                className={styles.select}
+                value={fromReconId ?? ''}
+                onChange={(e) => onFromReconChange?.(Number(e.target.value))}
+              >
+                {availablePlans.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.line} />
+            <div className={styles.fieldGroup}>
+              <span className={styles.label}>Этаж до:</span>
+              <select
+                className={styles.select}
+                value={toReconId ?? ''}
+                onChange={(e) => onToReconChange?.(Number(e.target.value))}
+              >
+                {availablePlans.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className={styles.line} />
+          </>
+        )}
         <div className={styles.fieldGroup}>
           <span className={styles.label}>От:</span>
           <input
@@ -121,11 +164,11 @@ export const RouteBottomBar: React.FC<RouteBottomBarProps> = ({
         </div>
 
         <div className={styles.line} />
-        
+
         <button type="button" className={styles.swapBtn} onClick={handleSwap} title="Поменять местами">
           <ArrowLeftRight size={16} />
         </button>
-        
+
         <div className={styles.line} />
 
         <div className={styles.fieldGroup}>

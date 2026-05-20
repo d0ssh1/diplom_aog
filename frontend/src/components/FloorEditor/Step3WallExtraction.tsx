@@ -1,305 +1,323 @@
-import React, { useRef, useEffect, useCallback, useState } from 'react';
-import styles from './WizardStep.module.css';
-import { CanvasControls } from './CanvasControls';
+/**
+ * Step 3 — Обработка отсека (выделение стен)
+ *
+ * Reuses the proven WallEditorCanvas from the existing wizard so editing
+ * tools (wall pen, eraser, brush size, opacity slider, photo overlay,
+ * mask sensitivity / contrast sliders) work identically to the
+ * "Загрузить изображение" flow.
+ *
+ * Mask preview comes from the same backend endpoint as the existing
+ * wizard: POST /reconstruction/mask-preview.
+ */
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
+import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
+import { reconstructionApi } from '../../api/apiService';
+import wizStyles from './WizardStep.module.css';
+import styles from './Step3WallExtraction.module.css';
 import type { Point2D } from '../../hooks/useFloorEditorWizard';
+import type { CropBbox } from '../../types/hierarchy';
 
-type DrawingTool = 'pen' | 'rect';
+type Tool = 'wall' | 'eraser';
 
 interface Step3WallExtractionProps {
+  schemaImageId: string | null;
   schemaImageUrl: string | null;
+  cropBbox: CropBbox | null;
   wallPolygons: Point2D[][] | null;
   isLoading: boolean;
   onTriggerExtraction: () => Promise<void>;
-  onSetWallPolygons: (polygons: Point2D[][]) => void;
+  onSetEditedMaskUrl?: (url: string | null) => void;
   onNext: () => Promise<void>;
   onBack: () => void;
 }
 
+const DEFAULT_BLOCK_SIZE = 15;
+const DEFAULT_THRESHOLD_C = 10;
+
 export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
+  schemaImageId,
   schemaImageUrl,
-  wallPolygons,
+  cropBbox,
   isLoading,
-  onTriggerExtraction,
-  onSetWallPolygons,
+  onSetEditedMaskUrl,
   onNext,
   onBack,
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement | null>(null);
+  const canvasRef = useRef<WallEditorCanvasRef>(null);
 
-  const [tool, setTool] = useState<DrawingTool>('pen');
-  const [zoom, setZoom] = useState(1);
-  const [offset] = useState({ x: 0, y: 0 });
-  const [localPolygons, setLocalPolygons] = useState<Point2D[][]>(wallPolygons ?? []);
-  const [currentPoints, setCurrentPoints] = useState<Point2D[]>([]);
-  const [dragStart, setDragStart] = useState<Point2D | null>(null);
-  const [dragCur, setDragCur] = useState<Point2D | null>(null);
+  const [activeTool, setActiveTool] = useState<Tool>('wall');
+  const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
+  const [brushSize, setBrushSize] = useState(6);
+  const [blockSize, setBlockSize] = useState(DEFAULT_BLOCK_SIZE);
+  const [thresholdC, setThresholdC] = useState(DEFAULT_THRESHOLD_C);
+  const [overlayEnabled, setOverlayEnabled] = useState(true);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.4);
+  const [maskUrl, setMaskUrl] = useState<string>('');
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
 
-  const localRef = useRef(localPolygons);
-  useEffect(() => { localRef.current = localPolygons; }, [localPolygons]);
-  const curRef = useRef(currentPoints);
-  useEffect(() => { curRef.current = currentPoints; }, [currentPoints]);
+  const cropForApi = cropBbox
+    ? { x: cropBbox.x, y: cropBbox.y, width: cropBbox.width, height: cropBbox.height }
+    : null;
+  const rotation = cropBbox?.rotation ?? 0;
 
-  // Sync from props when server returns polygons
+  // Fetch mask preview whenever inputs change (debounced)
   useEffect(() => {
-    if (wallPolygons !== null) {
-      setLocalPolygons(wallPolygons);
+    if (!schemaImageId) {
+      setMaskUrl('');
+      setPreviewError(schemaImageUrl ? 'Нет идентификатора фото' : 'Загрузите фото на шаге 1');
+      return;
     }
-  }, [wallPolygons]);
+    let cancelled = false;
+    setPreviewLoading(true);
+    setPreviewError(null);
 
-  // Auto-trigger extraction on mount if no polygons
-  const extractionStarted = useRef(false);
-  useEffect(() => {
-    if (wallPolygons === null && !extractionStarted.current) {
-      extractionStarted.current = true;
-      void onTriggerExtraction();
-    }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    const timer = setTimeout(async () => {
+      try {
+        const url = await reconstructionApi.previewMask(
+          schemaImageId, cropForApi, rotation, blockSize, thresholdC,
+        );
+        if (cancelled) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = url;
+        setMaskUrl(url);
+      } catch {
+        if (!cancelled) setPreviewError('Ошибка генерации маски на сервере');
+      } finally {
+        if (!cancelled) setPreviewLoading(false);
+      }
+    }, 250);
 
-  const getCanvasSize = useCallback(() => {
-    const c = containerRef.current;
-    if (!c) return { w: 800, h: 600 };
-    return { w: c.clientWidth, h: c.clientHeight };
+    return () => { cancelled = true; clearTimeout(timer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schemaImageId, cropBbox, blockSize, thresholdC]);
+
+  // Cleanup last blob URL on unmount
+  useEffect(() => () => {
+    if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
   }, []);
 
-  const getImageParams = useCallback((imgW: number, imgH: number, cw: number, ch: number) => {
-    const scale = Math.min((cw * zoom) / imgW, (ch * zoom) / imgH);
-    const dw = imgW * scale;
-    const dh = imgH * scale;
-    const dx = (cw - dw) / 2 + offset.x;
-    const dy = (ch - dh) / 2 + offset.y;
-    return { dx, dy, dw, dh };
-  }, [zoom, offset]);
-
-  const toCanvas = useCallback((nx: number, ny: number) => {
-    const img = imageRef.current;
-    if (!img) return { cx: 0, cy: 0 };
-    const { w: cw, h: ch } = getCanvasSize();
-    const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-    return { cx: dx + nx * dw, cy: dy + ny * dh };
-  }, [getCanvasSize, getImageParams]);
-
-  const toNorm = useCallback((cx: number, cy: number) => {
-    const img = imageRef.current;
-    if (!img) return { nx: 0, ny: 0 };
-    const { w: cw, h: ch } = getCanvasSize();
-    const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-    return { nx: (cx - dx) / dw, ny: (cy - dy) / dh };
-  }, [getCanvasSize, getImageParams]);
-
-  const draw = useCallback(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-    const { w: cw, h: ch } = getCanvasSize();
-    canvas.width = cw;
-    canvas.height = ch;
-    ctx.clearRect(0, 0, cw, ch);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, cw, ch);
-
-    // Draw image watermark
-    const img = imageRef.current;
-    if (img) {
-      const { dx, dy, dw, dh } = getImageParams(img.naturalWidth, img.naturalHeight, cw, ch);
-      ctx.globalAlpha = 0.18;
-      ctx.drawImage(img, dx, dy, dw, dh);
-      ctx.globalAlpha = 1;
-    }
-
-    // Draw polygons
-    ctx.strokeStyle = '#1f2937';
-    ctx.lineWidth = 2;
-    for (const poly of localRef.current) {
-      if (poly.length < 2) continue;
-      ctx.beginPath();
-      const first = toCanvas(poly[0].x, poly[0].y);
-      ctx.moveTo(first.cx, first.cy);
-      for (let i = 1; i < poly.length; i++) {
-        const p = toCanvas(poly[i].x, poly[i].y);
-        ctx.lineTo(p.cx, p.cy);
+  const handleNext = useCallback(async () => {
+    // Capture edited mask from the fabric.js canvas so Step 4 can show
+    // the result of all manual edits (brush walls, eraser strokes, etc.)
+    // instead of refetching a raw /mask-preview.
+    if (onSetEditedMaskUrl && canvasRef.current) {
+      try {
+        const blob = await canvasRef.current.getBlob();
+        if (blob && blob.size > 0) {
+          const url = URL.createObjectURL(blob);
+          onSetEditedMaskUrl(url);
+        }
+      } catch {
+        // Fall back silently — Step 4 will use /mask-preview.
       }
-      ctx.stroke();
     }
+    await onNext();
+  }, [onNext, onSetEditedMaskUrl]);
 
-    // Draw in-progress line or rect
-    if (curRef.current.length > 0) {
-      ctx.strokeStyle = '#ff4500';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      const f = toCanvas(curRef.current[0].x, curRef.current[0].y);
-      ctx.moveTo(f.cx, f.cy);
-      for (let i = 1; i < curRef.current.length; i++) {
-        const p = toCanvas(curRef.current[i].x, curRef.current[i].y);
-        ctx.lineTo(p.cx, p.cy);
-      }
-      ctx.stroke();
-    }
-
-    // Rect preview
-    if (dragStart && dragCur) {
-      const s = toCanvas(dragStart.x, dragStart.y);
-      const e = toCanvas(dragCur.x, dragCur.y);
-      ctx.strokeStyle = '#ff4500';
-      ctx.lineWidth = 2;
-      ctx.setLineDash([4, 4]);
-      ctx.strokeRect(s.cx, s.cy, e.cx - s.cx, e.cy - s.cy);
-      ctx.setLineDash([]);
-    }
-  }, [getCanvasSize, getImageParams, toCanvas, dragStart, dragCur]);
-
-  useEffect(() => { draw(); }, [draw, localPolygons, currentPoints]);
-
-  useEffect(() => {
-    if (schemaImageUrl) {
-      const img = new Image();
-      img.src = schemaImageUrl;
-      img.onload = () => { imageRef.current = img; draw(); };
-    }
-    return () => {
-      if (canvasRef.current) {
-        const ctx = canvasRef.current.getContext('2d');
-        ctx?.clearRect(0, 0, canvasRef.current.width, canvasRef.current.height);
-      }
-    };
-  }, [schemaImageUrl, draw]);
-
-  const getPos = (e: React.MouseEvent<HTMLCanvasElement>): Point2D => {
-    const rect = canvasRef.current!.getBoundingClientRect();
-    const { nx, ny } = toNorm(e.clientX - rect.left, e.clientY - rect.top);
-    return { x: Math.max(0, Math.min(1, nx)), y: Math.max(0, Math.min(1, ny)) };
-  };
-
-  const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool !== 'pen') return;
-    const pt = getPos(e);
-    setCurrentPoints((prev) => [...prev, pt]);
-  };
-
-  const handleCanvasDblClick = () => {
-    if (tool !== 'pen' || currentPoints.length < 2) return;
-    const newPoly = [...currentPoints];
-    const updated = [...localPolygons, newPoly];
-    setLocalPolygons(updated);
-    onSetWallPolygons(updated);
-    setCurrentPoints([]);
-  };
-
-  const handleMouseDown = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool !== 'rect') return;
-    const pt = getPos(e);
-    setDragStart(pt);
-    setDragCur(pt);
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool === 'rect' && dragStart) {
-      setDragCur(getPos(e));
-    }
-  };
-
-  const handleMouseUp = (e: React.MouseEvent<HTMLCanvasElement>) => {
-    if (tool === 'rect' && dragStart) {
-      const end = getPos(e);
-      const x1 = Math.min(dragStart.x, end.x);
-      const y1 = Math.min(dragStart.y, end.y);
-      const x2 = Math.max(dragStart.x, end.x);
-      const y2 = Math.max(dragStart.y, end.y);
-      if (Math.abs(x2 - x1) > 0.01 && Math.abs(y2 - y1) > 0.01) {
-        const rect: Point2D[] = [
-          { x: x1, y: y1 }, { x: x2, y: y1 },
-          { x: x2, y: y2 }, { x: x1, y: y2 }, { x: x1, y: y1 },
-        ];
-        const updated = [...localPolygons, rect];
-        setLocalPolygons(updated);
-        onSetWallPolygons(updated);
-      }
-      setDragStart(null);
-      setDragCur(null);
-    }
-  };
-
-  const handleClearAll = () => {
-    if (window.confirm('Очистить все стены?')) {
-      setLocalPolygons([]);
-      onSetWallPolygons([]);
-    }
-  };
+  // The WallEditorCanvas requires a popup handler; floor editor doesn't use
+  // room/door annotations, so we provide a no-op.
+  const noopPopup = useCallback(() => { /* unused on this step */ }, []);
 
   return (
-    <div className={styles.layout}>
-      <div className={styles.body}>
-        <aside className={styles.sidebar}>
-          <h3 className={styles.sidebarTitle}>Инструменты</h3>
+    <div className={wizStyles.layout}>
+      <div className={wizStyles.body}>
+        {/* Left tools sidebar */}
+        <aside className={wizStyles.sidebar}>
+          <h3 className={wizStyles.sidebarTitle}>// Редактор стен</h3>
+
           <button
-            className={`${styles.toolBtn} ${tool === 'pen' ? styles.toolBtnActive : ''}`}
-            onClick={() => setTool('pen')}
             type="button"
+            className={`${wizStyles.toolBtn} ${activeTool === 'wall' ? wizStyles.toolBtnActive : ''}`}
+            onClick={() => setActiveTool('wall')}
           >
-            Выделение стен
+            Нарисовать стену
           </button>
+          {activeTool === 'wall' && (
+            <div className={styles.inlineParam}>
+              <span className={styles.paramLabel}>Толщина линии</span>
+              <div className={styles.sliderRow}>
+                <input
+                  type="range"
+                  className={styles.slider}
+                  min={1} max={30} step={1}
+                  value={brushSize}
+                  onChange={(e) => setBrushSize(Number(e.target.value))}
+                />
+                <span className={styles.sliderValue}>{brushSize} px</span>
+              </div>
+            </div>
+          )}
+
           <button
-            className={`${styles.toolBtn} ${tool === 'rect' ? styles.toolBtnActive : ''}`}
-            onClick={() => { setTool('rect'); setCurrentPoints([]); }}
             type="button"
+            className={`${wizStyles.toolBtn} ${activeTool === 'eraser' ? wizStyles.toolBtnActive : ''}`}
+            onClick={() => setActiveTool('eraser')}
           >
-            Прямоугольник
+            Стереть
           </button>
-          <button
-            className={`${styles.toolBtn} ${styles.toolBtnDanger}`}
-            onClick={handleClearAll}
-            type="button"
-          >
-            Очистить всё
-          </button>
+          {activeTool === 'eraser' && (
+            <div className={styles.paramSection}>
+              <div className={styles.paramRow} style={{ marginBottom: '1rem' }}>
+                <span className={styles.paramLabel} style={{ marginBottom: '0.5rem', display: 'block' }}>Режим</span>
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button
+                    type="button"
+                    onClick={() => setEraserMode('brush')}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      border: '1px solid #e5e7eb',
+                      background: eraserMode === 'brush' ? '#ff6b1f' : '#fff',
+                      color: eraserMode === 'brush' ? '#fff' : '#374151',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Кисть
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEraserMode('select')}
+                    style={{
+                      flex: 1,
+                      padding: '0.5rem',
+                      border: '1px solid #e5e7eb',
+                      background: eraserMode === 'select' ? '#ff6b1f' : '#fff',
+                      color: eraserMode === 'select' ? '#fff' : '#374151',
+                      fontSize: '0.875rem',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    Прямоуг.
+                  </button>
+                </div>
+              </div>
+              {eraserMode === 'brush' && (
+                <div className={styles.inlineParam}>
+                  <span className={styles.paramLabel}>Размер кисти</span>
+                  <div className={styles.sliderRow}>
+                    <input
+                      type="range"
+                      className={styles.slider}
+                      min={1} max={60} step={1}
+                      value={brushSize}
+                      onChange={(e) => setBrushSize(Number(e.target.value))}
+                    />
+                    <span className={styles.sliderValue}>{brushSize} px</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className={styles.sectionDivider} />
+
+          <h3 className={wizStyles.sidebarTitle}>// Параметры маски</h3>
+          <div className={styles.paramSection}>
+            <div className={styles.paramRow}>
+              <span className={styles.paramLabel}>Чувствительность</span>
+              <div className={styles.sliderRow}>
+                <input
+                  type="range"
+                  className={styles.slider}
+                  min={7} max={51} step={2}
+                  value={blockSize}
+                  onChange={(e) => setBlockSize(Number(e.target.value))}
+                />
+                <span className={styles.sliderValue}>{blockSize}</span>
+              </div>
+            </div>
+            <div className={styles.paramRow}>
+              <span className={styles.paramLabel}>Контраст</span>
+              <div className={styles.sliderRow}>
+                <input
+                  type="range"
+                  className={styles.slider}
+                  min={2} max={20} step={1}
+                  value={thresholdC}
+                  onChange={(e) => setThresholdC(Number(e.target.value))}
+                />
+                <span className={styles.sliderValue}>{thresholdC}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className={styles.sectionDivider} />
+
+          <h3 className={wizStyles.sidebarTitle}>// Наложение</h3>
+          <div className={styles.paramSection}>
+            <label className={styles.toggleRow}>
+              <span className={styles.paramLabel}>Показать оригинал</span>
+              <input
+                type="checkbox"
+                checked={overlayEnabled}
+                onChange={(e) => setOverlayEnabled(e.target.checked)}
+              />
+            </label>
+            {overlayEnabled && (
+              <div className={styles.paramRow}>
+                <span className={styles.paramLabel}>Прозрачность</span>
+                <div className={styles.sliderRow}>
+                  <input
+                    type="range"
+                    className={styles.slider}
+                    min={5} max={95} step={5}
+                    value={Math.round(overlayOpacity * 100)}
+                    onChange={(e) => setOverlayOpacity(Number(e.target.value) / 100)}
+                  />
+                  <span className={styles.sliderValue}>{Math.round(overlayOpacity * 100)}%</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className={styles.sectionDivider} />
         </aside>
 
-        <div className={styles.canvasArea} ref={containerRef}>
-          <canvas
-            ref={canvasRef}
-            className={styles.canvas}
-            onClick={handleCanvasClick}
-            onDoubleClick={handleCanvasDblClick}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            style={{ cursor: tool === 'pen' ? 'crosshair' : 'crosshair' }}
-          />
-          {tool === 'pen' && currentPoints.length > 0 && (
-            <span className={styles.canvasHint}>
-              Двойной клик для завершения полигона
-            </span>
-          )}
-          {tool === 'rect' && (
-            <span className={styles.canvasHint}>
-              Нарисуйте прямоугольник мышью
-            </span>
-          )}
-          <CanvasControls
-            onZoomIn={() => setZoom((z) => Math.min(z + 0.25, 4))}
-            onZoomOut={() => setZoom((z) => Math.max(z - 0.25, 0.25))}
-            onReset={() => setZoom(1)}
-          />
-          {isLoading && (
-            <div className={styles.spinnerOverlay}>
-              <div className={styles.spinner} />
-              <span className={styles.spinnerText}>Извлечение стен...</span>
+        {/* Canvas */}
+        <div className={wizStyles.canvasArea}>
+          {maskUrl ? (
+            <WallEditorCanvas
+              ref={canvasRef}
+              maskUrl={maskUrl}
+              activeTool={activeTool}
+              brushSize={brushSize}
+              eraserMode={eraserMode}
+              onRoomPopupRequest={noopPopup}
+              planUrl={schemaImageUrl ?? undefined}
+              planCropRect={cropForApi}
+              planRotation={rotation}
+              overlayEnabled={overlayEnabled}
+              overlayOpacity={overlayOpacity}
+            />
+          ) : (
+            <div className={wizStyles.spinnerOverlay}>
+              <span className={wizStyles.spinnerText}>
+                {previewError ?? 'Загрузка...'}
+              </span>
             </div>
+          )}
+          {(previewLoading || isLoading) && maskUrl && (
+            <div className={styles.refreshChip}>Обновление...</div>
           )}
         </div>
       </div>
 
-      <footer className={styles.footer}>
-        <button className={styles.btnBack} onClick={onBack} type="button">
+      <footer className={wizStyles.footer}>
+        <button className={wizStyles.btnBack} onClick={onBack} type="button">
           ← Назад
         </button>
-        <span className={styles.footerHint}>Выделите стены отсека</span>
+        <span className={wizStyles.footerHint}>Выделите стены отсека</span>
         <button
-          className={styles.btnNext}
-          onClick={() => void onNext()}
-          disabled={isLoading}
+          className={wizStyles.btnNext}
+          onClick={handleNext}
+          disabled={isLoading || !maskUrl}
           type="button"
         >
           Далее →

@@ -8,7 +8,6 @@ import { StepPreprocess } from '../components/Wizard/StepPreprocess';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
 import { StepNavGraph } from '../components/Wizard/StepNavGraph';
 import { StepView3D } from '../components/Wizard/StepView3D';
-import { StepSave } from '../components/Wizard/StepSave';
 import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas';
 
 export const WizardPage: React.FC = () => {
@@ -38,7 +37,7 @@ export const WizardPage: React.FC = () => {
     } else if (state.step === 4) {
       await wizard.buildMesh(state.editedMaskFileId ?? state.maskFileId ?? undefined);
     } else if (state.step === 5) {
-      wizard.nextStep();
+      await wizard.save(state.planName);
     }
   };
 
@@ -54,12 +53,13 @@ export const WizardPage: React.FC = () => {
   };
 
   const isNextDisabled =
-    (state.step === 1 && (upload.files.length === 0 || wizard.selectedFloorId === null)) ||
+    (state.step === 1 && (upload.files.length === 0 || wizard.selectedFloorId === null || !state.planName.trim())) ||
     state.isLoading;
 
   const nextLabel =
     state.step === 3 ? '> ПОСТРОИТЬ ГРАФ' :
     state.step === 4 ? '> ПОСТРОИТЬ 3D' :
+    state.step === 5 ? 'СОХРАНИТЬ И ВЫЙТИ' :
     undefined;
 
   const maskUrl = `/api/v1/uploads/masks/${state.editedMaskFileId ?? state.maskFileId}.png`;
@@ -75,6 +75,8 @@ export const WizardPage: React.FC = () => {
             isUploading={upload.isUploading}
             selectedBuildingId={wizard.selectedBuildingId}
             selectedFloorId={wizard.selectedFloorId}
+            planName={state.planName}
+            onPlanNameChange={wizard.setPlanName}
             onFloorChange={({ buildingId, floorId }) => { void wizard.setFloor(buildingId, floorId); }}
           />
         );
@@ -126,8 +128,7 @@ export const WizardPage: React.FC = () => {
             isNextDisabled={isNextDisabled}
           />
         );
-      case 6:
-        return <StepSave onSave={wizard.save} isLoading={state.isLoading} />;
+      
       default:
         return null;
     }
@@ -136,7 +137,7 @@ export const WizardPage: React.FC = () => {
   return (
     <WizardShell
       currentStep={state.step}
-      totalSteps={6}
+      totalSteps={5}
       onNext={handleNext}
       onPrev={handlePrev}
       onClose={() => navigate('/admin')}

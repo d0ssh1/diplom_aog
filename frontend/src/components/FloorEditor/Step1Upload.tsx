@@ -23,7 +23,7 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(schemaImageUrl);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -98,21 +98,30 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             onKeyDown={(e) => e.key === 'Enter' && fileInputRef.current?.click()}
             aria-label="Загрузить файл"
           >
-            <span className={styles.dropZoneIcon}>📁</span>
-            <span className={styles.dropZoneText}>
+            <span className={styles.dropZoneIcon}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ width: '32px', height: '32px', marginBottom: '8px' }}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="17 8 12 3 7 8" />
+                <line x1="12" y1="3" x2="12" y2="15" />
+              </svg>
+            </span>
+            <span className={styles.dropZoneText} style={{ marginBottom: '4px' }}>
               {busy ? 'Загрузка...' : 'Загрузите изображение плана этажа'}
             </span>
-            <span className={styles.dropZoneHint}>JPG, PNG, PDF</span>
+            <span className={styles.dropZoneHint} style={{ marginBottom: '16px' }}>JPG, PNG, PDF</span>
+            <button
+              className={styles.uploadSelectBtn}
+              onClick={(e) => {
+                e.stopPropagation();
+                fileInputRef.current?.click();
+              }}
+              disabled={busy}
+              type="button"
+              style={{ marginTop: '0', width: '80%' }}
+            >
+              Выбрать файл
+            </button>
           </div>
-
-          <button
-            className={styles.uploadSelectBtn}
-            onClick={() => fileInputRef.current?.click()}
-            disabled={busy}
-            type="button"
-          >
-            Выбрать файл
-          </button>
 
           {localError && (
             <p style={{ color: '#cc3300', fontSize: '0.75rem', marginTop: '0.5rem' }}>
@@ -124,6 +133,12 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
             Рекомендуем загружать качественные фото или сканы схемы этажа
           </p>
 
+          <div style={{ marginTop: 'auto', paddingTop: '1rem' }}>
+            <button className={styles.btnBack} onClick={onBack} type="button">
+              ← Назад
+            </button>
+          </div>
+
           <input
             ref={fileInputRef}
             type="file"
@@ -134,14 +149,17 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
         </div>
 
         {/* Center: preview */}
-        <div className={styles.uploadPanelCenter}>
+        <div className={styles.uploadPanelCenter} style={{ position: 'relative' }}>
           {previewUrl ? (
             <div className={styles.uploadPreview}>
-              <img
-                src={previewUrl}
-                alt="Схема этажа"
-                className={styles.uploadPreviewImg}
-              />
+              <div className={styles.uploadPreviewCard}>
+                <img
+                  src={previewUrl}
+                  alt="Схема этажа"
+                  className={styles.uploadPreviewImg}
+                  onError={() => setPreviewUrl(null)}
+                />
+              </div>
               {fileName && <span className={styles.uploadPreviewName}>{fileName}</span>}
             </div>
           ) : (
@@ -150,23 +168,18 @@ export const Step1Upload: React.FC<Step1UploadProps> = ({
               <span className={styles.uploadHint}>Загрузите изображение плана этажа</span>
             </div>
           )}
+
+          <button
+            className={styles.btnNext}
+            onClick={onNext}
+            disabled={!canNext}
+            type="button"
+            style={{ position: 'absolute', bottom: '1.5rem', right: '1.5rem' }}
+          >
+            Далее →
+          </button>
         </div>
       </div>
-
-      <footer className={styles.footer}>
-        <button className={styles.btnBack} onClick={onBack} type="button">
-          ← Назад
-        </button>
-        <span className={styles.footerHint}>Загрузите изображение плана этажа</span>
-        <button
-          className={styles.btnNext}
-          onClick={onNext}
-          disabled={!canNext}
-          type="button"
-        >
-          Далее →
-        </button>
-      </footer>
     </div>
   );
 };

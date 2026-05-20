@@ -13,13 +13,7 @@ import { FloorOverview } from '../components/FloorEditor/FloorOverview';
 import { FloorSectionsTable } from '../components/FloorEditor/FloorSectionsTable';
 import { Toaster } from '../components/Toast/Toaster';
 
-const STEP_LABELS: Record<number, string> = {
-  1: 'Загрузка плана этажа',
-  2: 'Кадрирование и выбор отсека',
-  3: 'Обработка отсека (выделение стен)',
-  4: 'Выделение отсека и присвоение номера',
-  5: 'Сопоставление отсека с планами этажа',
-};
+const TOTAL_STEPS = 5;
 
 export const FloorEditorPage: React.FC = () => {
   const navigate = useNavigate();
@@ -50,18 +44,33 @@ export const FloorEditorPage: React.FC = () => {
   }, [wizard]);
 
   // ─── Header ────────────────────────────────────────────────────────────────
-  const stepBadge = (step: number) => (
-    <div className={styles.stepBadge}>
-      <span className={styles.stepBadgeNum}>{step}</span>
-      <span className={styles.stepBadgeLabel}>{STEP_LABELS[step] ?? ''}</span>
+  const stepDots = (currentStep: number) => (
+    <div className={styles.stepDots}>
+      {Array.from({ length: TOTAL_STEPS }, (_, i) => {
+        const step = i + 1;
+        const cls = [
+          styles.stepDot,
+          step === currentStep ? styles.stepDotActive : '',
+          step < currentStep ? styles.stepDotPassed : '',
+        ].filter(Boolean).join(' ');
+        return <span key={step} className={cls} />;
+      })}
     </div>
   );
+
+  const handleHeaderBack = useCallback(() => {
+    if (wizard.mode === 'wizard' && wizard.currentStep > 1) {
+      wizard.prevStep();
+    } else {
+      navigate('/admin');
+    }
+  }, [wizard, navigate]);
 
   const header = (
     <header className={styles.header}>
       <button
         className={styles.backBtn}
-        onClick={() => navigate('/admin')}
+        onClick={handleHeaderBack}
         type="button"
         title="Назад"
       >
@@ -70,12 +79,18 @@ export const FloorEditorPage: React.FC = () => {
           <polyline points="12 19 5 12 12 5" />
         </svg>
       </button>
-      <div className={styles.breadcrumb}>
-        <span className={styles.breadcrumbBase}>ДВФУ</span>
-        <span className={styles.breadcrumbSep}>&gt;</span>
-        <span className={styles.breadcrumbCurrent}>Редактор отсеков</span>
-      </div>
-      {wizard.mode === 'wizard' && stepBadge(wizard.currentStep)}
+      {wizard.mode === 'wizard' && stepDots(wizard.currentStep)}
+      <button
+        className={styles.closeBtn}
+        onClick={() => navigate('/admin')}
+        type="button"
+        title="Закрыть"
+      >
+        <svg viewBox="0 0 24 24" width="18" height="18" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
     </header>
   );
 
@@ -169,11 +184,13 @@ export const FloorEditorPage: React.FC = () => {
       case 3:
         return (
           <Step3WallExtraction
+            schemaImageId={wizard.schemaImageId}
             schemaImageUrl={wizard.schemaImageUrl}
+            cropBbox={wizard.cropBbox}
             wallPolygons={wizard.wallPolygons}
             isLoading={wizard.isLoading}
             onTriggerExtraction={wizard.triggerWallExtraction}
-            onSetWallPolygons={wizard.setWallPolygons}
+            onSetEditedMaskUrl={wizard.setEditedMaskUrl}
             onNext={async () => {
               await wizard.commitWallPolygons();
               wizard.nextStep();
@@ -184,7 +201,11 @@ export const FloorEditorPage: React.FC = () => {
       case 4:
         return (
           <Step4MarkSections
+            schemaImageId={wizard.schemaImageId}
+            schemaImageUrl={wizard.schemaImageUrl}
+            cropBbox={wizard.cropBbox}
             wallPolygons={wizard.wallPolygons}
+            editedMaskUrl={wizard.editedMaskUrl}
             sectionDrafts={wizard.sectionDrafts}
             onAddSectionDraft={wizard.addSectionDraft}
             onDeleteSectionDraft={wizard.deleteSectionDraft}
@@ -197,6 +218,10 @@ export const FloorEditorPage: React.FC = () => {
       case 5:
         return (
           <Step5BindPlans
+            schemaImageId={wizard.schemaImageId}
+            schemaImageUrl={wizard.schemaImageUrl}
+            cropBbox={wizard.cropBbox}
+            editedMaskUrl={wizard.editedMaskUrl}
             sectionDrafts={wizard.sectionDrafts}
             wallPolygons={wizard.wallPolygons}
             buildings={[]}
@@ -225,12 +250,16 @@ export const FloorEditorPage: React.FC = () => {
       {wizard.mode === 'overview' && (
         <FloorOverview
           schemaImageUrl={wizard.schemaImageUrl}
+          schemaImageId={wizard.schemaImageId}
+          cropBbox={wizard.cropBbox}
+          editedMaskUrl={wizard.editedMaskUrl}
           wallPolygons={wizard.wallPolygons}
           sectionDrafts={wizard.sectionDrafts}
           isDirty={wizard.isDirty}
           isLoading={wizard.isLoading}
           onUpdateSectionDraft={wizard.updateSectionDraft}
           onDeleteSectionDraft={wizard.deleteSectionDraft}
+          onClearAll={wizard.resetFloor}
           onSave={wizard.saveAll}
           onSwitchToTable={() => wizard.setMode('table')}
           onSwitchToWizard={() => wizard.goToStep(1)}

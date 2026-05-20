@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import type { StitchingState, LayerData, StitchingRequest } from '../types/stitching';
+import type { StitchingState, LayerData, StitchingRequest, VectorModel, Wall, Room, Door } from '../types/stitching';
+import type { ReconstructionResponse } from '../api/apiService';
 import { reconstructionApi } from '../api/apiService';
 
 interface UseStitchingReturn {
@@ -12,6 +13,7 @@ interface UseStitchingReturn {
   updateLayer: (layerId: string, updates: Partial<LayerData>) => void;
   setActiveTool: (tool: 'move' | 'rotate' | 'rect_crop' | 'polygon_clip') => void;
   setSelectedLayerId: (id: string | null) => void;
+  reorderLayers: (layerId: string, direction: 'up' | 'down') => void;
   restoreCanvasFromSnapshot: (snapshot: unknown) => void;
   submitStitching: (name: string) => Promise<void>;
 }
@@ -33,9 +35,8 @@ export const useStitching = (): UseStitchingReturn => {
   const loadReconstructions = useCallback(async (buildingId: string, floorNumber: number) => {
     setState((prev) => ({ ...prev, isLoading: true, error: null }));
     try {
-      const reconstructions = await reconstructionApi.getReadyReconstructions(buildingId, floorNumber);
+      await reconstructionApi.getReadyReconstructions(buildingId, floorNumber);
       setState((prev) => ({ ...prev, isLoading: false }));
-      return reconstructions;
     } catch (error) {
       setState((prev) => ({ ...prev, isLoading: false, error: String(error) }));
       throw error;
@@ -66,31 +67,49 @@ export const useStitching = (): UseStitchingReturn => {
             return { ...rec, vector_model: { walls: [], rooms: [], doors: [] } };
           }
         })
-      );
+      ) as Array<ReconstructionResponse & { vector_model: { rotation_angle?: number; walls: Wall[]; rooms: Room[]; doors: Door[] } }>;
 
       // Convert to LayerData format
       const colors = ['#FF4500', '#00CED1', '#FFD700', '#FF69B4', '#32CD32'];
-      const layers: LayerData[] = reconstructions.map((rec, index) => ({
-        reconstructionId: String(rec.id),
-        name: rec.name || `План ${index + 1}`,
-        imageUrl: rec.preview_url || rec.original_image_url,
-        vectorModel: rec.vector_model || { walls: [], rooms: [], doors: [] },
-        transform: {
-          translate_x: index * 50,
-          translate_y: index * 50,
-          scale_x: 1,
-          scale_y: 1,
-          rotation_deg: rec.vector_model?.rotation_angle ?? 0,
-        },
-        clipPolygons: [],
-        rectCrop: null,
-        imageWidth: rec.image_width || 1000,
-        imageHeight: rec.image_height || 1000,
-        zIndex: index,
-        color: colors[index % colors.length],
-        maskOpacity: 0.7,
-        showMask: true,
-      }));
+      const layers: LayerData[] = reconstructions.map((rec, index) => {
+        const vectorData = (rec.vector_model || { walls: [], rooms: [], doors: [] }) as VectorModel & {
+          image_size_cropped?: [number, number];
+          image_size_original?: [number, number];
+        };
+
+        let w = 1000;
+        let h = 1000;
+        if (vectorData.image_size_cropped && vectorData.image_size_cropped[0] > 0) {
+          w = vectorData.image_size_cropped[0];
+          h = vectorData.image_size_cropped[1];
+        } else if (vectorData.image_size_original && vectorData.image_size_original[0] > 0) {
+          w = vectorData.image_size_original[0];
+          h = vectorData.image_size_original[1];
+        }
+
+        return {
+          reconstructionId: String(rec.id),
+          name: rec.name || `План ${index + 1}`,
+          originalImageUrl: rec.original_image_url || '',
+          previewUrl: rec.preview_url || '',
+          vectorModel: vectorData,
+          transform: {
+            translate_x: index * 50,
+            translate_y: index * 50,
+            scale_x: 1,
+            scale_y: 1,
+            rotation_deg: 0, // Prevent double rotation, vector is relative to already rotated mask
+          },
+          clipPolygons: [],
+          rectCrop: null,
+          imageWidth: w,
+          imageHeight: h,
+          zIndex: index,
+          color: colors[index % colors.length],
+          maskOpacity: 0.4,
+          showMask: true,
+        };
+      });
 
       setState((prev) => ({
         ...prev,
@@ -132,6 +151,27 @@ export const useStitching = (): UseStitchingReturn => {
     setState((prev) => ({ ...prev, selectedLayerId: id }));
   }, []);
 
+  const reorderLayers = useCallback((layerId: string, direction: 'up' | 'down') => {
+    setState((prev) => {
+      const layerIndex = prev.layers.findIndex((l) => l.reconstructionId === layerId);
+      if (layerIndex === -1) return prev;
+
+      // In LayerPanel, index 0 is top. 'up' means index - 1 (higher visually).
+      const newIndex = direction === 'up' ? layerIndex - 1 : layerIndex + 1;
+      if (newIndex < 0 || newIndex >= prev.layers.length) return prev;
+
+      const newLayers = [...prev.layers];
+      [newLayers[layerIndex], newLayers[newIndex]] = [newLayers[newIndex], newLayers[layerIndex]];
+
+      // Reassign zIndex to strictly match array order!
+      // Render components should use array order directly, but since canvas uses zIndex:
+      return {
+        ...prev,
+        layers: newLayers.map((layer, idx) => ({ ...layer, zIndex: idx })),
+      };
+    });
+  }, []);
+
   const restoreCanvasFromSnapshot = useCallback((_snapshot: unknown) => {
     return;
   }, []);
@@ -157,7 +197,7 @@ export const useStitching = (): UseStitchingReturn => {
 
       const response = await reconstructionApi.postStitching(request);
 
-      navigate(`/admin/mesh/${response.id}`);
+      navigate(`/admin/edit/${response.id}`);
     } catch (error) {
       setState((prev) => ({ ...prev, isLoading: false, error: String(error) }));
       throw error;
@@ -173,6 +213,7 @@ export const useStitching = (): UseStitchingReturn => {
     updateLayer,
     setActiveTool,
     setSelectedLayerId,
+    reorderLayers,
     restoreCanvasFromSnapshot,
     submitStitching,
   };

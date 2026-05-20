@@ -48,8 +48,10 @@ export const RouteTestPage: React.FC = () => {
   const isLast = currentSegmentIndex === Math.max(0, totalSegments - 1);
 
   // Resolve from/to room display names from the synthetic-id-keyed list.
-  const fromRoomLabel = rooms.find((r) => r.id === fromRoom)?.name?.split(' ·')[0];
-  const toRoomLabel = rooms.find((r) => r.id === toRoom)?.name?.split(' ·')[0];
+  // Label format: "<BuildingCode>-<FloorNum>-<SectionNum>__<RoomName>"
+  // Extract the room name portion after the last '__'.
+  const fromRoomLabel = rooms.find((r) => r.id === fromRoom)?.name?.split('__').pop();
+  const toRoomLabel = rooms.find((r) => r.id === toRoom)?.name?.split('__').pop();
 
   return (
     <div className={styles.page}>

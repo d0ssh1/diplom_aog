@@ -115,7 +115,7 @@
 }
 
 .routeValue {
-  font-family: 'Courier New', monospace;
+  
   font-size: 14px;
   color: #FF4500;
   font-weight: 700;
@@ -135,7 +135,7 @@
 }
 
 .metricValue {
-  font-family: 'Courier New', monospace;
+  
   font-size: 28px;
   font-weight: 700;
   color: #FF4500;

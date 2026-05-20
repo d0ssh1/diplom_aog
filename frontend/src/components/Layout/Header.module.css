@@ -14,7 +14,7 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--color-black);
-  font-family: 'Courier New', monospace;
+  
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -24,7 +24,7 @@
   padding: 0 32px;
   background: var(--color-black);
   color: var(--color-white);
-  font-family: 'Courier New', monospace;
+  
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.05em;

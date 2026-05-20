@@ -110,10 +110,10 @@ class FloorService:
             name=building.name,
         )
 
-        # Build schema_image_url if schema_image_id is set
+        # Build schema_image_url from the UploadedFile.url (which includes extension)
         schema_image_url = None
-        if floor.schema_image_id:
-            schema_image_url = f"/uploads/{floor.schema_image_id}"
+        if floor.schema_image_id and floor.schema_image is not None:
+            schema_image_url = floor.schema_image.url
 
         # Parse crop bbox from JSON dict
         schema_crop_bbox = None
