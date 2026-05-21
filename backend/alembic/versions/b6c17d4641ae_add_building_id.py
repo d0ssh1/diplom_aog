@@ -21,7 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     op.execute("UPDATE users SET full_name = 'Admin User' WHERE full_name IS NULL")
     op.execute("UPDATE users SET birth_date = '2000-01-01' WHERE birth_date IS NULL")
-    op.execute("UPDATE users SET can_approve_users = 0 WHERE can_approve_users IS NULL")
+    op.execute("UPDATE users SET can_approve_users = FALSE WHERE can_approve_users IS NULL")
 
     with op.batch_alter_table('users') as batch_op:
         batch_op.alter_column('full_name',
@@ -35,7 +35,7 @@ def upgrade() -> None:
         batch_op.alter_column('can_approve_users',
                    existing_type=sa.BOOLEAN(),
                    nullable=False,
-                   existing_server_default=sa.text('0'))
+                   existing_server_default=sa.text('false'))
     # ### end Alembic commands ###
 
 
@@ -46,7 +46,7 @@ def downgrade() -> None:
         batch_op.alter_column('can_approve_users',
                    existing_type=sa.BOOLEAN(),
                    nullable=True,
-                   existing_server_default=sa.text('0'))
+                   existing_server_default=sa.text('false'))
         batch_op.alter_column('birth_date',
                    existing_type=sa.DATE(),
                    nullable=True,

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react';
 import { Pencil, Eraser, Square, ArrowUpDown, ArrowUp, DoorOpen, Trash2 } from 'lucide-react';
 import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
@@ -61,6 +61,18 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
   const [brushSize, setBrushSize] = useState(6);
   const [popupState, setPopupState] = useState<PopupState | null>(null);
   const [currentMaskUrl, setCurrentMaskUrl] = useState(maskUrl);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+  const showBrushCursor = activeTool === 'eraser' && eraserMode === 'brush';
+
+  const handleCanvasMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    setCursorPos(null);
+  }, []);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
   const [overlayEnabled, setOverlayEnabled] = useState(true);
   const [overlayOpacity, setOverlayOpacity] = useState(0.4);
@@ -139,13 +151,18 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
     <div className={styles.step}>
       <div className={styles.canvasArea}>
         <div className={styles.gridBg} />
-        <div className={styles.canvasBox}>
+        <div
+          className={`${styles.canvasBox} ${showBrushCursor ? styles.brushActive : ''}`}
+          onMouseMove={showBrushCursor ? handleCanvasMouseMove : undefined}
+          onMouseLeave={showBrushCursor ? handleCanvasMouseLeave : undefined}
+        >
           <WallEditorCanvas
             ref={canvasRef}
             maskUrl={currentMaskUrl}
             activeTool={activeTool}
             brushSize={brushSize}
             eraserMode={eraserMode}
+            hideCursor={showBrushCursor}
             onRoomPopupRequest={handleRoomPopupRequest}
             planUrl={planUrl}
             planCropRect={cropRect}
@@ -161,6 +178,17 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
               roomType={popupState.roomType}
               onConfirm={handlePopupConfirm}
               onCancel={handlePopupCancel}
+            />
+          )}
+          {showBrushCursor && cursorPos && (
+            <div
+              className={styles.brushCursor}
+              style={{
+                left: cursorPos.x,
+                top: cursorPos.y,
+                width: brushSize,
+                height: brushSize,
+              }}
             />
           )}
         </div>

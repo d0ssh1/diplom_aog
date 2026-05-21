@@ -148,8 +148,8 @@
 
 .deleteBtn {
   position: absolute;
-  top: -8px;
-  right: -8px;
+  top: 8px;
+  right: 8px;
   width: 24px;
   height: 24px;
   background: var(--color-orange);
@@ -188,5 +188,74 @@
   font-size: 13px;
   color: var(--color-error);
   margin-bottom: 16px;
-  
+
+}
+
+/* Confirmation dialog */
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.confirmDialog {
+  background: var(--color-white);
+  border: 2px solid var(--color-black);
+  box-shadow: var(--shadow-hard);
+  padding: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 360px;
+  width: 100%;
+}
+
+.confirmText {
+  font-size: 14px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-black);
+  text-align: center;
+}
+
+.confirmActions {
+  display: flex;
+  gap: 12px;
+}
+
+.confirmYes,
+.confirmNo {
+  flex: 1;
+  padding: 12px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border: 2px solid var(--color-black);
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.confirmYes {
+  background: var(--color-black);
+  color: var(--color-white);
+}
+
+.confirmYes:hover {
+  background: var(--color-orange);
+  border-color: var(--color-orange);
+}
+
+.confirmNo {
+  background: var(--color-white);
+  color: var(--color-black);
+}
+
+.confirmNo:hover {
+  background: var(--color-grey-medium);
 }

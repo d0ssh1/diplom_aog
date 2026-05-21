@@ -271,3 +271,18 @@
   background: #FF5722;
   border-color: #FF5722;
 }
+
+.brushActive,
+.brushActive * {
+  cursor: none !important;
+}
+
+.brushCursor {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 87, 34, 0.9);
+  background: rgba(255, 87, 34, 0.1);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 20;
+}

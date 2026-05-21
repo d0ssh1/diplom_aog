@@ -251,7 +251,7 @@ class NavService:
                     status=result.get("status", "no_path"),
                     message=result.get("message"),
                 )
-            floor_number = recon.floor_number or 0
+            floor_number = recon.floor.number if recon.floor else 0
             y_offset = floor_number * FLOOR_HEIGHT_METERS + 0.1
             coords_3d = result.get("coordinates", [])
             segment = PathSegment3D(
@@ -316,7 +316,7 @@ class NavService:
                 graph=G,
                 metadata=metadata,
                 reconstruction_id=recon_id,
-                floor_number=recon.floor_number or 0,
+                floor_number=recon.floor.number if recon.floor else 0,
                 floor_name=recon.name or str(recon_id),
             ))
 

@@ -38,7 +38,7 @@ export const TeleportParamsModal: React.FC<TeleportParamsModalProps> = ({
   return (
     <div className={styles.overlay} onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className={styles.card} onKeyDown={handleKeyDown}>
-        <h2 className={styles.cardTitle}>Новый телепорт</h2>
+        <h2 className={styles.cardTitle}>Новый переход</h2>
 
         <div className={styles.field}>
           <label className={styles.label}>Имя узла</label>

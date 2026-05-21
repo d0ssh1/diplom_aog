@@ -9,7 +9,7 @@
  * Mask preview comes from the same backend endpoint as the existing
  * wizard: POST /reconstruction/mask-preview.
  */
-import React, { useEffect, useRef, useState, useCallback } from 'react';
+import React, { useEffect, useRef, useState, useCallback, type MouseEvent } from 'react';
 import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
 import { reconstructionApi } from '../../api/apiService';
@@ -57,6 +57,18 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const previewUrlRef = useRef<string | null>(null);
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+
+  const showBrushCursor = activeTool === 'eraser' && eraserMode === 'brush';
+
+  const handleCanvasMouseMove = useCallback((e: MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setCursorPos({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+  }, []);
+
+  const handleCanvasMouseLeave = useCallback(() => {
+    setCursorPos(null);
+  }, []);
 
   const cropForApi = cropBbox
     ? { x: cropBbox.x, y: cropBbox.y, width: cropBbox.width, height: cropBbox.height }
@@ -281,7 +293,11 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
         </aside>
 
         {/* Canvas */}
-        <div className={wizStyles.canvasArea}>
+        <div
+          className={`${wizStyles.canvasArea} ${showBrushCursor ? styles.brushActive : ''}`}
+          onMouseMove={showBrushCursor ? handleCanvasMouseMove : undefined}
+          onMouseLeave={showBrushCursor ? handleCanvasMouseLeave : undefined}
+        >
           {maskUrl ? (
             <WallEditorCanvas
               ref={canvasRef}
@@ -289,6 +305,7 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
               activeTool={activeTool}
               brushSize={brushSize}
               eraserMode={eraserMode}
+              hideCursor={showBrushCursor}
               onRoomPopupRequest={noopPopup}
               planUrl={schemaImageUrl ?? undefined}
               planCropRect={cropForApi}
@@ -305,6 +322,17 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
           )}
           {(previewLoading || isLoading) && maskUrl && (
             <div className={styles.refreshChip}>Обновление...</div>
+          )}
+          {showBrushCursor && cursorPos && (
+            <div
+              className={styles.brushCursor}
+              style={{
+                left: cursorPos.x,
+                top: cursorPos.y,
+                width: brushSize,
+                height: brushSize,
+              }}
+            />
           )}
         </div>
       </div>

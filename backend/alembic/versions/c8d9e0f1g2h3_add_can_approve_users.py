@@ -19,7 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.add_column('users', sa.Column('can_approve_users', sa.Boolean(), nullable=False, server_default='0'))
+    op.add_column('users', sa.Column('can_approve_users', sa.Boolean(), nullable=False, server_default='false'))
     # Remove server default after adding column
     op.alter_column('users', 'can_approve_users', server_default=None)
 

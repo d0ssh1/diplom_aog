@@ -97,6 +97,21 @@
   accent-color: #ff6b1f;
 }
 
+.brushActive,
+.brushActive * {
+  cursor: none !important;
+}
+
+.brushCursor {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 107, 31, 0.9);
+  background: rgba(255, 107, 31, 0.08);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
+}
+
 .refreshChip {
   position: absolute;
   top: 0.75rem;

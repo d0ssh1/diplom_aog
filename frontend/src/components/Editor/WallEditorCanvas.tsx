@@ -28,6 +28,7 @@ interface WallEditorCanvasProps {
   overlayOpacity?: number;
   initialRooms?: RoomAnnotation[];
   initialDoors?: DoorAnnotation[];
+  hideCursor?: boolean;
 }
 
 const ROOM_FILL: Record<string, string> = {
@@ -58,6 +59,7 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
     overlayOpacity = 0.4,
     initialRooms,
     initialDoors,
+    hideCursor = false,
   } = props;
 
   const canvasElRef = useRef<HTMLCanvasElement>(null);
@@ -275,9 +277,11 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
   const activeToolRef = useRef(activeTool);
   const brushSizeRef = useRef(brushSize);
   const eraserModeRef = useRef(eraserMode);
+  const hideCursorRef = useRef(hideCursor);
   useEffect(() => { activeToolRef.current = activeTool; }, [activeTool]);
   useEffect(() => { brushSizeRef.current = brushSize; }, [brushSize]);
   useEffect(() => { eraserModeRef.current = eraserMode; }, [eraserMode]);
+  useEffect(() => { hideCursorRef.current = hideCursor; }, [hideCursor]);
 
   const setEraseSelectionRef = useRef(setEraseSelection);
   useEffect(() => { setEraseSelectionRef.current = setEraseSelection; }, []);
@@ -324,6 +328,7 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
     if (tool === 'eraser') {
       if (eraserModeRef.current === 'brush') {
         canvas.isDrawingMode = true;
+        canvas.freeDrawingCursor = hideCursorRef.current ? 'none' : 'crosshair';
         canvas.freeDrawingBrush = new fabric.PencilBrush(canvas);
         canvas.freeDrawingBrush.color = 'black';
         canvas.freeDrawingBrush.width = brushSizeRef.current;

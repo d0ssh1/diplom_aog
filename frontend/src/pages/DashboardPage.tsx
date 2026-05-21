@@ -9,6 +9,7 @@ export const DashboardPage: React.FC = () => {
   const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -31,6 +32,8 @@ export const DashboardPage: React.FC = () => {
       setReconstructions((prev) => prev.filter((r) => r.id !== id));
     } catch {
       setError('Ошибка удаления');
+    } finally {
+      setConfirmDeleteId(null);
     }
   };
 
@@ -84,7 +87,7 @@ export const DashboardPage: React.FC = () => {
               <button
                 type="button"
                 className={styles.deleteBtn}
-                onClick={(e) => { e.stopPropagation(); handleDelete(r.id); }}
+                onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(r.id); }}
                 title="Удалить"
               >
                 <X size={14} />
@@ -94,6 +97,30 @@ export const DashboardPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {confirmDeleteId !== null && (
+        <div className={styles.overlay} onClick={() => setConfirmDeleteId(null)}>
+          <div className={styles.confirmDialog} onClick={(e) => e.stopPropagation()}>
+            <p className={styles.confirmText}>Вы действительно хотите удалить план?</p>
+            <div className={styles.confirmActions}>
+              <button
+                type="button"
+                className={styles.confirmYes}
+                onClick={() => handleDelete(confirmDeleteId)}
+              >
+                Да
+              </button>
+              <button
+                type="button"
+                className={styles.confirmNo}
+                onClick={() => setConfirmDeleteId(null)}
+              >
+                Нет
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

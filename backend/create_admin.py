@@ -2,6 +2,7 @@
 import asyncio
 import sys
 import os
+from datetime import date
 
 # Добавляем путь к приложению
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -29,7 +30,9 @@ async def create_admin(username="admin", password="admin", email="admin@example.
             is_active=True,
             is_staff=True,
             is_superuser=True,
-            display_name="Administrator"
+            display_name="Administrator",
+            birth_date=date(1990, 1, 1),
+            full_name="Administrator",
         )
         
         session.add(new_user)
@@ -43,6 +46,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create superuser")
     parser.add_argument("--username", default="admin", help="Admin username")
     parser.add_argument("--password", default="admin", help="Admin password")
+    parser.add_argument("--full_name", default="Administrator")
     
     args = parser.parse_args()
     

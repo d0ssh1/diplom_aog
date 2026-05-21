@@ -152,7 +152,7 @@ export const TransitionsPage: React.FC = () => {
   };
 
   const getModeHint = (): string => {
-    if (mode.type === 'placing_from') return `Шаг 1/2 — кликните точку FROM (телепорт: "${mode.name}")`;
+    if (mode.type === 'placing_from') return `Шаг 1/2 — кликните точку FROM (переход: "${mode.name}")`;
     if (mode.type === 'placing_to') return 'Шаг 2/2 — выберите план назначения и кликните точку TO';
     return '';
   };
@@ -182,7 +182,7 @@ export const TransitionsPage: React.FC = () => {
       <header className={styles.header}>
         <button
           className={styles.headerCloseBtn}
-          onClick={() => navigate('/dashboard')}
+          onClick={() => navigate('/admin')}
           title="Закрыть"
         >
           ×
@@ -309,10 +309,10 @@ export const TransitionsPage: React.FC = () => {
               {selectedPlanId !== null && (
                 <div className={styles.teleportList}>
                   <div className={styles.teleportListHeader}>
-                    Телепорты{selectedPlan ? ` — ${selectedPlan.name}` : ''}
+                    Переходы{selectedPlan ? ` — ${selectedPlan.name}` : ''}
                   </div>
                   {visibleTransitions.length === 0 ? (
-                    <div className={styles.sidebarEmpty}>Нет телепортов</div>
+                    <div className={styles.sidebarEmpty}>Нет переходов</div>
                   ) : (
                     visibleTransitions.map((t) => (
                       <div key={t.id} className={styles.teleportItem}>
@@ -353,7 +353,7 @@ export const TransitionsPage: React.FC = () => {
             disabled={selectedPlanId === null}
           >
             <span className={styles.toolBtnIcon}>⬡</span>
-            Добавить телепорт
+            Добавить переход
           </button>
           <div className={styles.toolSep} />
           <button
@@ -364,7 +364,7 @@ export const TransitionsPage: React.FC = () => {
             Удалить
           </button>
         </div>
-        <button className={styles.finishBtn} onClick={() => navigate('/dashboard')}>
+        <button className={styles.finishBtn} onClick={() => navigate('/admin')}>
           Завершить работу
         </button>
       </footer>

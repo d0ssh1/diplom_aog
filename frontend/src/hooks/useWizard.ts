@@ -189,7 +189,7 @@ export const useWizard = (): UseWizardReturn => {
       setState((s) => ({ ...s, isLoading: true, error: null }));
       try {
         await reconstructionApi.saveReconstruction(state.reconstructionId, name, floorId);
-        navigate('/');
+        navigate('/admin');
       } catch {
         setState((s) => ({ ...s, isLoading: false, error: 'Ошибка сохранения' }));
       }
