@@ -36,7 +36,16 @@ export const RoomOverlay: React.FC<RoomOverlayProps> = ({
       setComputed([]);
       return;
     }
-    const box = new THREE.Box3().setFromObject(modelRef.current);
+    // Force world matrix update before computing bounds — the cloned processedScene
+    // may not have had updateWorldMatrix called since its last Three.js render frame.
+    modelRef.current.updateWorldMatrix(true, true);
+    // precise=true reads vertex positions directly instead of relying on cached
+    // geometry.boundingBox, which may be null on freshly cloned geometries.
+    const box = new THREE.Box3().setFromObject(modelRef.current, true);
+    if (box.isEmpty()) {
+      setComputed([]);
+      return;
+    }
     const rangeX = box.max.x - box.min.x;
     const rangeZ = box.max.z - box.min.z;
 
@@ -66,7 +75,7 @@ export const RoomOverlay: React.FC<RoomOverlayProps> = ({
             <meshStandardMaterial
               color={r.color}
               transparent
-              opacity={0.15}
+              opacity={0.4}
               depthWrite={false}
               side={THREE.DoubleSide}
             />
