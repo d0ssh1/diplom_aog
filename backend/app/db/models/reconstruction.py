@@ -97,7 +97,7 @@ class Room(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     reconstruction_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("reconstructions.id"), nullable=False
+        Integer, ForeignKey("reconstructions.id", ondelete="CASCADE"), nullable=False
     )
 
     number: Mapped[str] = mapped_column(String(20), nullable=False)

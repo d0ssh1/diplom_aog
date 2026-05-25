@@ -33,13 +33,7 @@ export const Sidebar: React.FC = () => {
         >
           <span className={styles.arrow}>&gt;</span> Редактировать план
         </button>
-        <button
-          className={`${styles.item} ${isActive('/upload') ? styles.active : ''}`}
-          onClick={() => navigate('/upload')}
-          type="button"
-        >
-          <span className={styles.arrow}>&gt;</span> Загрузить изображение
-        </button>
+        
         <button
           className={`${styles.item} ${isActive('/admin/buildings') ? styles.active : ''}`}
           onClick={() => navigate('/admin/buildings')}

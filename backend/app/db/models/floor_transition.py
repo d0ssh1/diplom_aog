@@ -20,13 +20,13 @@ class FloorTransition(Base):
     building_id: Mapped[Optional[str]] = mapped_column(String(50), nullable=True, index=True)
 
     from_reconstruction_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("reconstructions.id"), nullable=False
+        Integer, ForeignKey("reconstructions.id", ondelete="CASCADE"), nullable=False
     )
     from_x: Mapped[float] = mapped_column(Float, nullable=False)
     from_y: Mapped[float] = mapped_column(Float, nullable=False)
 
     to_reconstruction_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("reconstructions.id"), nullable=False
+        Integer, ForeignKey("reconstructions.id", ondelete="CASCADE"), nullable=False
     )
     to_x: Mapped[float] = mapped_column(Float, nullable=False)
     to_y: Mapped[float] = mapped_column(Float, nullable=False)

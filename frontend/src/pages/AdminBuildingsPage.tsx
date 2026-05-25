@@ -2,11 +2,12 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Building2, Layers, Plus, Edit2, Trash2, Eye,
   ChevronDown, X, AlertTriangle, CheckCircle, AlertCircle,
-  MoreVertical, GripVertical, Check,
+  MoreVertical, MoreHorizontal, GripVertical, Check, Map as MapIcon, ImageOff,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useBuildings } from '../hooks/useBuildings';
 import { useFloors } from '../hooks/useFloors';
+import { reconstructionApi, type ReconstructionListItem } from '../api/apiService';
 import type { Building, Floor } from '../types/hierarchy';
 import styles from './AdminBuildingsPage.module.css';
 
@@ -57,6 +58,15 @@ const getPluralFloors = (count: number) => {
   return `${count} этажей`;
 };
 
+const getPluralSections = (count: number) => {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  if (mod100 >= 11 && mod100 <= 19) return `${count} отсеков`;
+  if (mod10 === 1) return `${count} отсек`;
+  if (mod10 >= 2 && mod10 <= 4) return `${count} отсека`;
+  return `${count} отсеков`;
+};
+
 // ========================================================
 // Toast hook
 // ========================================================
@@ -82,10 +92,12 @@ interface BuildingCardProps {
   onDelete: (b: Building) => void;
   onAddFloor: (b: Building) => void;
   onDeleteFloor: (f: Floor, b: Building) => void;
+  /** When this changes and matches building.id, the card reloads its floors. */
+  floorRefreshSignal: { buildingId: number; tick: number } | null;
 }
 
 const BuildingCard: React.FC<BuildingCardProps> = ({
-  building, onEdit, onDelete, onAddFloor, onDeleteFloor,
+  building, onEdit, onDelete, onAddFloor, onDeleteFloor, floorRefreshSignal,
 }) => {
   const navigate = useNavigate();
   const [expanded, setExpanded] = useState(false);
@@ -113,6 +125,15 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [floors.length]);
 
+  // Reload floors when parent signals a change for this building (create/delete)
+  useEffect(() => {
+    if (floorRefreshSignal !== null && floorRefreshSignal.buildingId === building.id) {
+      setExpanded(true);
+      void loadForBuilding(building.id);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [floorRefreshSignal]);
+
   const startEditBuilding = () => {
     setEditing({ type: 'building', id: building.id, value: building.name });
     setActiveDropdown(false);
@@ -135,6 +156,33 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
           <Building2 size={20} className={styles.buildingIcon} />
         </div>
 
+        {!editing && (
+          <div className={`${styles.dropdownWrap} ${styles.dropdownWrapLeft}`}>
+            <button
+              className={styles.dropdownTrigger}
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setActiveDropdown(!activeDropdown); }}
+              aria-label="Меню корпуса"
+            >
+              <MoreVertical size={18} />
+            </button>
+            {activeDropdown && (
+              <div className={`${styles.dropdownMenu} ${styles.dropdownMenuLeft}`}>
+                <button className={styles.dropdownItem} type="button" onClick={() => { setActiveDropdown(false); onAddFloor(building); }}>
+                  <Plus size={16} /> Добавить этаж
+                </button>
+                <button className={styles.dropdownItem} type="button" onClick={startEditBuilding}>
+                  <Edit2 size={16} /> Редактировать корпус
+                </button>
+                <div className={styles.dropdownDivider} />
+                <button className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`} type="button" onClick={() => { setActiveDropdown(false); onDelete(building); }}>
+                  <Trash2 size={16} /> Удалить корпус
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {isEditingBuilding ? (
           <div className={styles.inlineEdit}>
             <input
@@ -156,29 +204,6 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
             <span className={styles.floorsBadge}>
               <Layers size={14} /> {getPluralFloors(building.floors_count)}
             </span>
-            <div className={styles.dropdownWrap}>
-              <button
-                className={styles.dropdownTrigger}
-                type="button"
-                onClick={(e) => { e.stopPropagation(); setActiveDropdown(!activeDropdown); }}
-              >
-                <MoreVertical size={18} />
-              </button>
-              {activeDropdown && (
-                <div className={styles.dropdownMenu}>
-                  <button className={styles.dropdownItem} type="button" onClick={() => { setActiveDropdown(false); onAddFloor(building); }}>
-                    <Plus size={16} /> Добавить этаж
-                  </button>
-                  <button className={styles.dropdownItem} type="button" onClick={startEditBuilding}>
-                    <Edit2 size={16} /> Редактировать корпус
-                  </button>
-                  <div className={styles.dropdownDivider} />
-                  <button className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`} type="button" onClick={() => { setActiveDropdown(false); onDelete(building); }}>
-                    <Trash2 size={16} /> Удалить корпус
-                  </button>
-                </div>
-              )}
-            </div>
             <button className={styles.btnGhost} onClick={handleExpand} type="button" aria-label={expanded ? 'Свернуть' : 'Развернуть'}>
               <ChevronDown size={18} style={{ transition: 'transform 0.2s', transform: expanded ? 'rotate(180deg)' : 'none' }} />
             </button>
@@ -195,50 +220,21 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
             </div>
           )}
 
-          {!floorsLoading && floors.map((floor) => {
-            const isEditingFloor = editing?.type === 'floor' && editing.id === floor.id;
-            return (
-              <div key={floor.id} className={styles.floorWrap}>
-                <div className={styles.treeLine} />
-                <div className={styles.treeLineH} />
-                <div className={`${styles.floorRow} ${isEditingFloor ? styles.floorRowEditing : ''}`}>
-                  <div className={styles.floorRowIcons}>
-                    <GripVertical size={16} className={styles.gripIcon} />
-                    <Layers size={16} style={{ color: '#6b7280' }} />
-                  </div>
-
-                  {isEditingFloor ? (
-                    <div className={styles.inlineEdit}>
-                      <input
-                        className={styles.inlineInput}
-                        value={editing!.value}
-                        onChange={(e) => setEditing({ ...editing!, value: e.target.value })}
-                        autoFocus
-                        onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(null); }}
-                      />
-                      <button className={styles.inlineSave} onClick={saveEdit} type="button"><Check size={16} /></button>
-                      <button className={styles.inlineCancel} onClick={() => setEditing(null)} type="button"><X size={16} /></button>
-                    </div>
-                  ) : (
-                    <div className={styles.floorName}>
-                      <span className={styles.floorNameText}>Этаж {floor.number}</span>
-                    </div>
-                  )}
-
-                  {!editing && (
-                    <div className={styles.floorActions}>
-                      <button className={styles.btnGhost} type="button" title="Открыть редактор" onClick={() => navigate(`/admin/floor-editor?floor_id=${floor.id}`)}>
-                        <Eye size={16} />
-                      </button>
-                      <button className={`${styles.btnGhost} ${styles.btnGhostDanger}`} type="button" title="Удалить этаж" onClick={() => onDeleteFloor(floor, building)}>
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {!floorsLoading && floors.map((floor) => (
+            <FloorRow
+              key={floor.id}
+              floor={floor}
+              building={building}
+              isEditing={editing?.type === 'floor' && editing.id === floor.id}
+              editingValue={editing?.type === 'floor' && editing.id === floor.id ? editing.value : null}
+              onEditingChange={(value) => editing && setEditing({ ...editing, value })}
+              onSaveEdit={saveEdit}
+              onCancelEdit={() => setEditing(null)}
+              onDeleteFloor={onDeleteFloor}
+              navigate={navigate}
+              anySiblingEditing={editing !== null}
+            />
+          ))}
 
           {/* Add floor button */}
           <div className={styles.addFloorWrap}>
@@ -252,6 +248,260 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ========================================================
+// FloorRow — single floor row with expandable sections grid
+// ========================================================
+interface FloorRowProps {
+  floor: Floor;
+  building: Building;
+  isEditing: boolean;
+  editingValue: string | null;
+  onEditingChange: (value: string) => void;
+  onSaveEdit: () => void;
+  onCancelEdit: () => void;
+  onDeleteFloor: (f: Floor, b: Building) => void;
+  navigate: ReturnType<typeof useNavigate>;
+  /** True if any row in the parent card is in inline-edit mode (suppresses hover actions). */
+  anySiblingEditing: boolean;
+}
+
+const FloorRow: React.FC<FloorRowProps> = ({
+  floor, building, isEditing, editingValue, onEditingChange,
+  onSaveEdit, onCancelEdit, onDeleteFloor, navigate, anySiblingEditing,
+}) => {
+  const [expanded, setExpanded] = useState(false);
+  // The grid shows reconstructions bound to this floor (i.e. plans uploaded via
+  // /upload?floor_id=N), NOT geometric Section entities — those only exist once
+  // the admin draws them in the floor editor.
+  const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
+  const [recsLoading, setRecsLoading] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<ReconstructionListItem | null>(null);
+
+  const loadReconstructions = useCallback(async () => {
+    setRecsLoading(true);
+    try {
+      const items = await reconstructionApi.getReconstructions({ floorId: floor.id });
+      setReconstructions(items);
+    } catch {
+      // Non-fatal: leave grid empty, user can collapse/re-expand to retry
+    } finally {
+      setRecsLoading(false);
+    }
+  }, [floor.id]);
+
+  // Eager load: the sections counter shows reconstructions.length, which must be
+  // populated before the user expands the row. One GET per floor on mount.
+  useEffect(() => {
+    void loadReconstructions();
+  }, [loadReconstructions]);
+
+  const toggleExpand = useCallback(() => {
+    setExpanded((v) => !v);
+  }, []);
+
+  const handleAddSection = useCallback(() => {
+    navigate(`/upload?building_id=${building.id}&floor_id=${floor.id}`);
+  }, [navigate, building.id, floor.id]);
+
+  const handleEditReconstruction = useCallback((rec: ReconstructionListItem) => {
+    navigate(`/admin/edit/${rec.id}`);
+  }, [navigate]);
+
+  const handleConfirmDelete = useCallback(async () => {
+    if (pendingDelete === null) return;
+    try {
+      await reconstructionApi.deleteReconstruction(pendingDelete.id);
+      setReconstructions((prev) => prev.filter((r) => r.id !== pendingDelete.id));
+    } finally {
+      setPendingDelete(null);
+    }
+  }, [pendingDelete]);
+
+  return (
+    <div className={styles.floorWrap}>
+      <div className={styles.treeLine} />
+      <div className={styles.treeLineH} />
+      <div className={`${styles.floorRow} ${isEditing ? styles.floorRowEditing : ''}`}>
+        <div className={styles.floorRowIcons}>
+          <GripVertical size={16} className={styles.gripIcon} />
+          <button
+            type="button"
+            className={styles.floorExpandBtn}
+            onClick={toggleExpand}
+            aria-label={expanded ? 'Свернуть отсеки' : 'Развернуть отсеки'}
+            title={expanded ? 'Свернуть отсеки' : 'Показать отсеки'}
+          >
+            <ChevronDown
+              size={16}
+              style={{ transition: 'transform 0.2s', transform: expanded ? 'rotate(180deg)' : 'none' }}
+            />
+          </button>
+          <Layers size={16} style={{ color: '#6b7280' }} />
+        </div>
+
+        {isEditing ? (
+          <div className={styles.inlineEdit}>
+            <input
+              className={styles.inlineInput}
+              value={editingValue ?? ''}
+              onChange={(e) => onEditingChange(e.target.value)}
+              autoFocus
+              onKeyDown={(e) => { if (e.key === 'Enter') onSaveEdit(); if (e.key === 'Escape') onCancelEdit(); }}
+            />
+            <button className={styles.inlineSave} onClick={onSaveEdit} type="button"><Check size={16} /></button>
+            <button className={styles.inlineCancel} onClick={onCancelEdit} type="button"><X size={16} /></button>
+          </div>
+        ) : (
+          <div className={styles.floorName}>
+            <span className={styles.floorNameText}>Этаж {floor.number}</span>
+            {floor.sections_count === 0 && (
+              <button
+                type="button"
+                className={styles.btnCreateMap}
+                onClick={() => navigate(`/admin/floor-editor?floor_id=${floor.id}`)}
+                title="Создать карту отсеков для этого этажа"
+              >
+                <MapIcon size={14} /> Создать карту отсеков
+              </button>
+            )}
+            <span className={styles.sectionsCountBadge} title="Количество отсеков на этаже">
+              <Layers size={12} /> {getPluralSections(reconstructions.length)}
+            </span>
+          </div>
+        )}
+
+        {!anySiblingEditing && (
+          <div className={styles.floorActions}>
+            {floor.sections_count > 0 && (
+              <button className={styles.btnGhost} type="button" title="Открыть редактор карты отсеков" onClick={() => navigate(`/admin/floor-editor?floor_id=${floor.id}`)}>
+                <Eye size={16} />
+              </button>
+            )}
+            <button className={`${styles.btnGhost} ${styles.btnGhostDanger}`} type="button" title="Удалить этаж" onClick={() => onDeleteFloor(floor, building)}>
+              <Trash2 size={16} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {expanded && (
+        <div className={styles.sectionsPanel}>
+          {recsLoading ? (
+            <div className={styles.sectionsLoading}>Загрузка отсеков...</div>
+          ) : (
+            <div className={styles.sectionsGrid}>
+              {reconstructions.map((rec) => (
+                <SectionCard
+                  key={rec.id}
+                  reconstruction={rec}
+                  onEdit={handleEditReconstruction}
+                  onRequestDelete={setPendingDelete}
+                />
+              ))}
+              <button
+                type="button"
+                className={styles.addSectionTile}
+                onClick={handleAddSection}
+                title="Добавить отсек — загрузить план"
+              >
+                <div className={styles.addSectionPlus}>
+                  <Plus size={28} strokeWidth={2.5} />
+                </div>
+                <span className={styles.addSectionLabel}>Добавить отсек</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {pendingDelete !== null && (
+        <ConfirmDeleteModal
+          title="Удалить отсек?"
+          message={`Вы действительно хотите удалить «${pendingDelete.name}»? Это действие нельзя отменить.`}
+          onClose={() => setPendingDelete(null)}
+          onConfirm={handleConfirmDelete}
+        />
+      )}
+    </div>
+  );
+};
+
+// ========================================================
+// SectionCard — thumbnail tile for an uploaded plan (reconstruction), with 3-dot menu (edit/delete)
+// ========================================================
+interface SectionCardProps {
+  reconstruction: ReconstructionListItem;
+  onEdit: (rec: ReconstructionListItem) => void;
+  onRequestDelete: (rec: ReconstructionListItem) => void;
+}
+
+const SectionCard: React.FC<SectionCardProps> = ({ reconstruction, onEdit, onRequestDelete }) => {
+  const preview = reconstruction.preview_url;
+  // Prefer the section number when the reconstruction is already bound to one,
+  // otherwise fall back to the user-typed plan name.
+  const label = reconstruction.section !== null
+    ? `Отсек ${reconstruction.section.number}`
+    : reconstruction.name;
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  // Close menu on outside click
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = () => setMenuOpen(false);
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, [menuOpen]);
+
+  return (
+    <div className={styles.sectionCard} title={label}>
+      <div className={styles.sectionThumb}>
+        {preview !== null ? (
+          <img src={preview} alt={label} className={styles.sectionThumbImg} />
+        ) : (
+          <div className={styles.sectionThumbEmpty}>
+            <ImageOff size={28} />
+          </div>
+        )}
+      </div>
+
+      {/* Menu lives outside .sectionThumb because the thumb clips overflow. */}
+      <div className={styles.sectionMenuWrap}>
+        <button
+          type="button"
+          className={styles.sectionMenuTrigger}
+          onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+          aria-label="Меню отсека"
+          title="Действия"
+        >
+          <MoreHorizontal size={14} />
+        </button>
+        {menuOpen && (
+          <div className={`${styles.dropdownMenu} ${styles.sectionMenuDropdown}`} onClick={(e) => e.stopPropagation()}>
+            <button
+              className={styles.dropdownItem}
+              type="button"
+              onClick={() => { setMenuOpen(false); onEdit(reconstruction); }}
+              title="Редактировать план отсека"
+            >
+              <Edit2 size={16} /> Редактировать
+            </button>
+            <div className={styles.dropdownDivider} />
+            <button
+              className={`${styles.dropdownItem} ${styles.dropdownItemDanger}`}
+              type="button"
+              onClick={() => { setMenuOpen(false); onRequestDelete(reconstruction); }}
+            >
+              <Trash2 size={16} /> Удалить
+            </button>
+          </div>
+        )}
+      </div>
+
+      <span className={styles.sectionLabel}>{label}</span>
     </div>
   );
 };
@@ -393,11 +643,19 @@ type ModalState =
 // ========================================================
 export const AdminBuildingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const { buildings, isLoading, error, createBuilding, updateBuilding, deleteBuilding } = useBuildings();
+  const { buildings, isLoading, error, refetch: refetchBuildings, createBuilding, updateBuilding, deleteBuilding } = useBuildings();
   const { createFloor, deleteFloor } = useFloors();
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
   const { toast, show: showToast } = useToast();
   const closeModal = useCallback(() => setModal({ kind: 'none' }), []);
+
+  // Each BuildingCard owns its own useFloors() instance, so the parent's create/delete
+  // does NOT update the card's local floors array. Bump this signal after a successful
+  // mutation and the matching card reloads its list (and auto-expands).
+  const [floorRefreshSignal, setFloorRefreshSignal] = useState<{ buildingId: number; tick: number } | null>(null);
+  const bumpFloorRefresh = useCallback((buildingId: number) => {
+    setFloorRefreshSignal((prev) => ({ buildingId, tick: (prev?.tick ?? 0) + 1 }));
+  }, []);
 
   const handleCreateBuilding = useCallback(async (values: BuildingFormValues) => {
     try {
@@ -427,16 +685,20 @@ export const AdminBuildingsPage: React.FC = () => {
       await createFloor(building.id, number);
       showToast(`Этаж ${number} создан`);
       closeModal();
+      bumpFloorRefresh(building.id);
+      void refetchBuildings();
     } catch (err: unknown) { showToast(extractApiError(err, `Этаж ${number} уже существует`), true); }
-  }, [createFloor, showToast, closeModal]);
+  }, [createFloor, showToast, closeModal, bumpFloorRefresh, refetchBuildings]);
 
-  const handleDeleteFloor = useCallback(async (floor: Floor) => {
+  const handleDeleteFloor = useCallback(async (floor: Floor, building: Building) => {
     try {
       await deleteFloor(floor.id);
       showToast(`Этаж ${floor.number} удалён`);
       closeModal();
+      bumpFloorRefresh(building.id);
+      void refetchBuildings();
     } catch (err: unknown) { showToast(extractApiError(err, 'Ошибка удаления этажа'), true); }
-  }, [deleteFloor, showToast, closeModal]);
+  }, [deleteFloor, showToast, closeModal, bumpFloorRefresh, refetchBuildings]);
 
   // --- Skeleton ---
   if (isLoading) {
@@ -520,6 +782,7 @@ export const AdminBuildingsPage: React.FC = () => {
                   onDelete={(b) => setModal({ kind: 'deleteBuilding', building: b })}
                   onAddFloor={(b) => setModal({ kind: 'createFloor', building: b })}
                   onDeleteFloor={(f, b) => setModal({ kind: 'deleteFloor', floor: f, building: b })}
+                  floorRefreshSignal={floorRefreshSignal}
                 />
               ))}
             </div>
@@ -543,7 +806,7 @@ export const AdminBuildingsPage: React.FC = () => {
           title="Удалить этаж?"
           message={`Вы действительно хотите удалить этаж ${modal.floor.number} корпуса «${modal.building.code}»? Все отсеки этажа будут удалены. Это действие нельзя отменить.`}
           onClose={closeModal}
-          onConfirm={() => handleDeleteFloor(modal.floor)}
+          onConfirm={() => handleDeleteFloor(modal.floor, modal.building)}
         />
       )}
 

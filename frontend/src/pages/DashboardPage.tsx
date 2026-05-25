@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { X, Layout } from 'lucide-react';
 import { reconstructionApi, type ReconstructionListItem } from '../api/apiService';
+import { buildingsApi } from '../api/buildingsApi';
 import styles from './DashboardPage.module.css';
 
 export const DashboardPage: React.FC = () => {
   const navigate = useNavigate();
   const [reconstructions, setReconstructions] = useState<ReconstructionListItem[]>([]);
+  const [hasBuildings, setHasBuildings] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
@@ -14,9 +16,12 @@ export const DashboardPage: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await reconstructionApi.getReconstructions();
+        const [data, buildings] = await Promise.all([
+          reconstructionApi.getReconstructions(),
+          buildingsApi.list(),
+        ]);
         setReconstructions(data);
-
+        setHasBuildings(buildings.length > 0);
       } catch {
         setError('Ошибка загрузки списка');
       } finally {
@@ -53,8 +58,11 @@ export const DashboardPage: React.FC = () => {
           <div className={styles.emptyDivider} />
           <p className={styles.emptyMsg}>SYS.MSG: Требуется загрузка исходных данных для начала работы</p>
           {error && <p className={styles.error}>{error}</p>}
-          <button className={styles.startBtn} onClick={() => navigate('/upload')}>
-            Начать работу
+          <button
+            className={styles.startBtn}
+            onClick={() => navigate('/admin/buildings')}
+          >
+            {hasBuildings ? 'Начать работу' : 'Создать корпус'}
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useRef, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useWizard } from '../hooks/useWizard';
 import { useFileUpload } from '../hooks/useFileUpload';
 import { WizardShell } from '../components/Wizard/WizardShell';
@@ -12,11 +12,26 @@ import type { WallEditorCanvasRef } from '../components/Editor/WallEditorCanvas'
 
 export const WizardPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const wizard = useWizard();
   const upload = useFileUpload();
   const canvasRef = useRef<WallEditorCanvasRef>(null);
 
   const { state } = wizard;
+
+  // Pre-fill building/floor from URL when arriving from AdminBuildingsPage.
+  // Runs once: deliberately ignores subsequent searchParams changes so we don't
+  // overwrite a user's manual change in the floor selector.
+  useEffect(() => {
+    const buildingRaw = searchParams.get('building_id');
+    const floorRaw = searchParams.get('floor_id');
+    const buildingId = buildingRaw !== null ? parseInt(buildingRaw, 10) : NaN;
+    const floorId = floorRaw !== null ? parseInt(floorRaw, 10) : NaN;
+    if (!isNaN(buildingId) && !isNaN(floorId)) {
+      void wizard.setFloor(buildingId, floorId);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleNext = async () => {
     if (state.step === 1 && upload.files.length > 0) {
@@ -140,7 +155,7 @@ export const WizardPage: React.FC = () => {
       totalSteps={5}
       onNext={handleNext}
       onPrev={handlePrev}
-      onClose={() => navigate('/admin')}
+      onClose={() => navigate('/admin/buildings')}
       nextDisabled={isNextDisabled}
       nextLabel={nextLabel}
       hideFooter={state.step === 5}
