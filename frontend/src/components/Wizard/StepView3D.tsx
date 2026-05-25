@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import MeshViewer from '../../components/MeshViewer';
 import { NavigationPath } from '../MeshViewer/NavigationPath';
 import { MultifloorNavigationPath } from '../MeshViewer/MultifloorNavigationPath';
@@ -6,6 +6,8 @@ import { RouteBottomBar } from '../MeshViewer/RouteBottomBar';
 import { reconstructionApi, navigationApi } from '../../api/apiService';
 import type { RoomAnnotation } from '../../types/wizard';
 import type { MultifloorRouteResponse } from '../../types/transitions';
+import { fromRoomAnnotation } from '../../types/roomDisplay';
+import type { RoomDisplay } from '../../types/roomDisplay';
 import styles from './StepView3D.module.css';
 
 interface RouteResult {
@@ -51,6 +53,12 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   const [isRoutingLoading, setIsRoutingLoading] = useState(false);
   const [fromRoom, setFromRoom] = useState<string>('');
   const [toRoom, setToRoom] = useState<string>('');
+  const [showRooms, setShowRooms] = useState(false);
+
+  const roomsForDisplay: RoomDisplay[] = useMemo(
+    () => rooms.map(fromRoomAnnotation),
+    [rooms],
+  );
 
   const isMultifloor =
     buildingId != null &&
@@ -99,7 +107,7 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, position: 'relative' }}>
-        <MeshViewer url={meshUrl} format={format}>
+        <MeshViewer url={meshUrl} format={format} rooms={roomsForDisplay} showRooms={showRooms}>
           {multifloorResult && multifloorResult.status === 'success' ? (
             <MultifloorNavigationPath
               pathSegments={multifloorResult.path_segments}
@@ -115,6 +123,29 @@ export const StepView3D: React.FC<StepView3DProps> = ({
             />
           )}
         </MeshViewer>
+
+        {roomsForDisplay.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setShowRooms((v) => !v)}
+            style={{
+              position: 'absolute',
+              top: 12,
+              right: 12,
+              zIndex: 10,
+              background: showRooms ? '#f5c542' : '#222',
+              color: showRooms ? '#000' : '#fff',
+              border: '1px solid #444',
+              borderRadius: 4,
+              padding: '6px 14px',
+              fontSize: 13,
+              cursor: 'pointer',
+              fontFamily: 'system-ui, -apple-system, sans-serif',
+            }}
+          >
+            Кабинеты
+          </button>
+        )}
 
         {(routeResult?.status === 'no_path' || multifloorResult?.status === 'no_path') && (
           <div className={styles.errorHud}>

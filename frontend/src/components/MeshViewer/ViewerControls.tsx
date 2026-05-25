@@ -4,12 +4,18 @@ interface ViewerControlsProps {
   glbUrl: string | null;
   viewMode: 'top' | '3d';
   onViewModeChange: (mode: 'top' | '3d') => void;
+  showRooms?: boolean;
+  onToggleRooms?: () => void;
+  hasRooms?: boolean;
 }
 
 export const ViewerControls: React.FC<ViewerControlsProps> = ({
   glbUrl,
   viewMode,
   onViewModeChange,
+  showRooms: _showRooms = false,
+  onToggleRooms: _onToggleRooms,
+  hasRooms: _hasRooms = false,
 }) => {
   const handleDownload = () => {
     if (glbUrl) {

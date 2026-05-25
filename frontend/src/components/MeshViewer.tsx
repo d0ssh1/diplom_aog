@@ -3,6 +3,8 @@ import { Canvas, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import { OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
+import { RoomOverlay } from './MeshViewer/RoomOverlay';
+import type { RoomDisplay } from '../types/roomDisplay';
 
 /* ────────────────────────────────────────────
    2GIS / Яндекс Карты palette
@@ -70,7 +72,7 @@ function FloorPlane({ modelRef }: { modelRef: React.RefObject<THREE.Object3D> })
     const center = box.getCenter(new THREE.Vector3());
 
     // Пол чуть больше модели
-    const pad = 1.5;
+    const pad = 1;
     meshRef.current.scale.set(size.x * pad, size.z * pad, 1);
     meshRef.current.position.set(center.x, box.min.y - 0.05, center.z);
   }, [modelRef]);
@@ -105,7 +107,13 @@ function applyMapMaterials(root: THREE.Object3D, _useVertexColors: boolean) {
 /* ────────────────────────────────────────────
    OBJ model loader
    ──────────────────────────────────────────── */
-function ObjModel({ url }: { url: string }) {
+interface ObjModelProps {
+  url: string;
+  rooms: RoomDisplay[];
+  showRooms: boolean;
+}
+
+function ObjModel({ url, rooms, showRooms }: ObjModelProps) {
   const obj = useLoader(OBJLoader, url);
   const ref = useRef<THREE.Object3D>(null);
 
@@ -118,6 +126,7 @@ function ObjModel({ url }: { url: string }) {
       <primitive ref={ref} object={obj} />
       <CameraSetup modelRef={ref} />
       <FloorPlane modelRef={ref} />
+      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} />
     </>
   );
 }
@@ -148,7 +157,13 @@ function ObjModel({ url }: { url: string }) {
    Проверено: MeshBasicMaterial (игнорирует нормали и свет) показывал
    цвет корректно → подтвердило что проблема именно в нормалях.
    ──────────────────────────────────────────── */
-function GlbModel({ url }: { url: string }) {
+interface GlbModelProps {
+  url: string;
+  rooms: RoomDisplay[];
+  showRooms: boolean;
+}
+
+function GlbModel({ url, rooms, showRooms }: GlbModelProps) {
   const { scene } = useGLTF(url);
   const ref = useRef<THREE.Object3D>(null);
 
@@ -184,6 +199,7 @@ function GlbModel({ url }: { url: string }) {
       <primitive ref={ref} object={processedScene} />
       <CameraSetup modelRef={ref} />
       <FloorPlane modelRef={ref} />
+      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} />
     </>
   );
 }
@@ -238,10 +254,12 @@ interface MeshViewerProps {
   url: string;
   format?: 'obj' | 'glb';
   children?: React.ReactNode;
+  rooms?: RoomDisplay[];
+  showRooms?: boolean;
 }
 
 const MeshViewer = forwardRef<MeshViewerHandle, MeshViewerProps>(function MeshViewer(
-  { url, format, children },
+  { url, format, children, rooms = [], showRooms = false },
   ref,
 ) {
   const modelFormat: 'obj' | 'glb' =
@@ -280,8 +298,8 @@ const MeshViewer = forwardRef<MeshViewerHandle, MeshViewerProps>(function MeshVi
 
       <Suspense fallback={null}>
         {modelFormat === 'glb'
-          ? <GlbModel url={url} />
-          : <ObjModel url={url} />
+          ? <GlbModel url={url} rooms={rooms} showRooms={showRooms} />
+          : <ObjModel url={url} rooms={rooms} showRooms={showRooms} />
         }
       </Suspense>
 
