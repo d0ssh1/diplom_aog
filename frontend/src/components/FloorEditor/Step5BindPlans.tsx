@@ -36,7 +36,6 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
   floorId,
   onBind,
   onSave,
-  onSaveAndExit,
   onBack,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);

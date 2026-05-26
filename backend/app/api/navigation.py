@@ -64,3 +64,18 @@ async def build_multi_route(
     svc: NavService = Depends(get_nav_service),
 ):
     return await svc.find_multi_plan_route(request)
+
+
+@router.get("/graphs/{graph_id}/rooms_3d")
+async def get_rooms_3d(
+    graph_id: str,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: NavService = Depends(get_nav_service),
+):
+    """Returns 3D positions for every room in the nav graph, using the same
+    pixel→world formula as route markers. Frontend uses this for the
+    «Кабинеты» overlay so positions match exactly."""
+    try:
+        return svc.get_rooms_3d(graph_id)
+    except FileNotFoundError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Graph not found")

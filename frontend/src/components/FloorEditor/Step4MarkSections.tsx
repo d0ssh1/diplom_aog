@@ -43,7 +43,6 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
   onClearAllDrafts,
   onNext,
   onBack,
-  onGoToWalls,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);

@@ -126,6 +126,36 @@ class NavService:
         with open(nav_path, 'r') as f:
             return json.load(f)
 
+    def get_rooms_3d(self, graph_id: str) -> list[dict]:
+        """Возвращает 3D-позиции всех комнат графа в том же формате,
+        что и `from_room_3d`/`to_room_3d` в find_route. Используется фронтом
+        для overlay-боксов в MeshViewer — гарантирует точное совпадение
+        с маркерами маршрута."""
+        nav_data = self.load_graph(graph_id)
+        G, metadata = deserialize_nav_graph(nav_data)
+        scale_factor = metadata.get('scale_factor', 0.02)
+        mask_height = metadata.get('mask_height', 500)
+
+        rooms_3d: list[dict] = []
+        for node_id, data in G.nodes(data=True):
+            if data.get('type') != 'room' or 'bbox' not in data:
+                continue
+            rx, ry, rw, rh = data['bbox']
+            width_3d = rw * scale_factor
+            depth_3d = rh * scale_factor
+            cx = rx + rw / 2.0
+            cy = ry + rh / 2.0
+            center_x_3d = cx * scale_factor
+            center_z_3d = (cy - mask_height) * scale_factor
+            rooms_3d.append({
+                "id": data.get('room_id', node_id),
+                "name": data.get('room_name', ''),
+                "room_type": data.get('room_type', 'room'),
+                "position": [round(center_x_3d, 4), 1.5, round(center_z_3d, 4)],
+                "size": [round(width_3d, 4), 3.0, round(depth_3d, 4)],
+            })
+        return rooms_3d
+
     async def find_route(
         self,
         graph_id: str,
