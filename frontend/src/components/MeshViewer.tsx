@@ -5,6 +5,7 @@ import { OBJLoader } from 'three-stdlib';
 import * as THREE from 'three';
 import { RoomOverlay } from './MeshViewer/RoomOverlay';
 import type { RoomDisplay } from '../types/roomDisplay';
+import type { Room3DApi } from '../api/apiService';
 
 /* ────────────────────────────────────────────
    2GIS / Яндекс Карты palette
@@ -111,9 +112,10 @@ interface ObjModelProps {
   url: string;
   rooms: RoomDisplay[];
   showRooms: boolean;
+  rooms3D?: Room3DApi[];
 }
 
-function ObjModel({ url, rooms, showRooms }: ObjModelProps) {
+function ObjModel({ url, rooms, showRooms, rooms3D }: ObjModelProps) {
   const obj = useLoader(OBJLoader, url);
   const ref = useRef<THREE.Object3D>(null);
 
@@ -126,7 +128,7 @@ function ObjModel({ url, rooms, showRooms }: ObjModelProps) {
       <primitive ref={ref} object={obj} />
       <CameraSetup modelRef={ref} />
       <FloorPlane modelRef={ref} />
-      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} />
+      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} rooms3D={rooms3D} />
     </>
   );
 }
@@ -161,9 +163,10 @@ interface GlbModelProps {
   url: string;
   rooms: RoomDisplay[];
   showRooms: boolean;
+  rooms3D?: Room3DApi[];
 }
 
-function GlbModel({ url, rooms, showRooms }: GlbModelProps) {
+function GlbModel({ url, rooms, showRooms, rooms3D }: GlbModelProps) {
   const { scene } = useGLTF(url);
   const ref = useRef<THREE.Object3D>(null);
 
@@ -199,7 +202,7 @@ function GlbModel({ url, rooms, showRooms }: GlbModelProps) {
       <primitive ref={ref} object={processedScene} />
       <CameraSetup modelRef={ref} />
       <FloorPlane modelRef={ref} />
-      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} />
+      <RoomOverlay modelRef={ref} rooms={rooms} visible={showRooms} rooms3D={rooms3D} />
     </>
   );
 }
@@ -256,10 +259,11 @@ interface MeshViewerProps {
   children?: React.ReactNode;
   rooms?: RoomDisplay[];
   showRooms?: boolean;
+  rooms3D?: Room3DApi[];
 }
 
 const MeshViewer = forwardRef<MeshViewerHandle, MeshViewerProps>(function MeshViewer(
-  { url, format, children, rooms = [], showRooms = false },
+  { url, format, children, rooms = [], showRooms = false, rooms3D },
   ref,
 ) {
   const modelFormat: 'obj' | 'glb' =
@@ -298,8 +302,8 @@ const MeshViewer = forwardRef<MeshViewerHandle, MeshViewerProps>(function MeshVi
 
       <Suspense fallback={null}>
         {modelFormat === 'glb'
-          ? <GlbModel url={url} rooms={rooms} showRooms={showRooms} />
-          : <ObjModel url={url} rooms={rooms} showRooms={showRooms} />
+          ? <GlbModel url={url} rooms={rooms} showRooms={showRooms} rooms3D={rooms3D} />
+          : <ObjModel url={url} rooms={rooms} showRooms={showRooms} rooms3D={rooms3D} />
         }
       </Suspense>
 

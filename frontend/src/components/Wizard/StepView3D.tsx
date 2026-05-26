@@ -1,9 +1,10 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import MeshViewer from '../../components/MeshViewer';
 import { NavigationPath } from '../MeshViewer/NavigationPath';
 import { MultifloorNavigationPath } from '../MeshViewer/MultifloorNavigationPath';
 import { RouteBottomBar } from '../MeshViewer/RouteBottomBar';
 import { reconstructionApi, navigationApi } from '../../api/apiService';
+import type { Room3DApi } from '../../api/apiService';
 import type { RoomAnnotation } from '../../types/wizard';
 import type { MultifloorRouteResponse } from '../../types/transitions';
 import { fromRoomAnnotation } from '../../types/roomDisplay';
@@ -54,11 +55,25 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   const [fromRoom, setFromRoom] = useState<string>('');
   const [toRoom, setToRoom] = useState<string>('');
   const [showRooms, setShowRooms] = useState(false);
+  const [rooms3D, setRooms3D] = useState<Room3DApi[] | undefined>(undefined);
 
   const roomsForDisplay: RoomDisplay[] = useMemo(
     () => rooms.map(fromRoomAnnotation),
     [rooms],
   );
+
+  // Fetch exact 3D positions from backend (same formula as route markers).
+  useEffect(() => {
+    if (!navGraphId) {
+      setRooms3D(undefined);
+      return;
+    }
+    let cancelled = false;
+    navigationApi.getRooms3D(navGraphId)
+      .then((data) => { if (!cancelled) setRooms3D(data); })
+      .catch(() => { if (!cancelled) setRooms3D(undefined); });
+    return () => { cancelled = true; };
+  }, [navGraphId]);
 
   const isMultifloor =
     buildingId != null &&
@@ -107,7 +122,7 @@ export const StepView3D: React.FC<StepView3DProps> = ({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
       <div style={{ flex: 1, position: 'relative' }}>
-        <MeshViewer url={meshUrl} format={format} rooms={roomsForDisplay} showRooms={showRooms}>
+        <MeshViewer url={meshUrl} format={format} rooms={roomsForDisplay} showRooms={showRooms} rooms3D={rooms3D}>
           {multifloorResult && multifloorResult.status === 'success' ? (
             <MultifloorNavigationPath
               pathSegments={multifloorResult.path_segments}

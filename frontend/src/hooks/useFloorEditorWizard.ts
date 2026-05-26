@@ -27,6 +27,8 @@ export interface SectionDraft {
   geometry: SectionGeometry;
   section_type: number;
   reconstruction_id: number | null;
+  /** User-chosen display color (hex). Falls back to palette-by-index when absent. */
+  color?: string;
   /** Populated for UI display purposes only */
   reconstruction_brief?: ReconstructionBrief;
 }
@@ -63,7 +65,7 @@ interface UseFloorEditorWizardReturn {
   commitWallPolygons: () => Promise<void>;
 
   // Section management
-  addSectionDraft: (geometry: SectionGeometry, number: number) => void;
+  addSectionDraft: (geometry: SectionGeometry, number: number, color?: string) => void;
   updateSectionDraft: (idx: number, partial: Partial<SectionDraft>) => void;
   deleteSectionDraft: (idx: number) => void;
   bindReconstruction: (sectionIdx: number, reconstructionId: number | null) => void;
@@ -266,10 +268,10 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
   }, [floorId]);
 
   const addSectionDraft = useCallback(
-    (geometry: SectionGeometry, number: number) => {
+    (geometry: SectionGeometry, number: number, color?: string) => {
       setSectionDrafts((prev) => [
         ...prev,
-        { number, geometry, section_type: 1, reconstruction_id: null },
+        { number, geometry, section_type: 1, reconstruction_id: null, color },
       ]);
       setIsDirty(true);
     },

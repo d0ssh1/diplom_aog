@@ -345,6 +345,19 @@ export const navigationApi = {
 
   multifloorRoute: (params: MultifloorRouteRequest): Promise<MultifloorRouteResponse> =>
     apiClient.post('/navigation/multifloor-route', params).then((r) => r.data as MultifloorRouteResponse),
+
+  getRooms3D: async (graphId: string): Promise<Room3DApi[]> => {
+    const response = await apiClient.get(`/navigation/graphs/${graphId}/rooms_3d`);
+    return response.data as Room3DApi[];
+  },
 };
+
+export interface Room3DApi {
+  id: string;
+  name: string;
+  room_type: string;
+  position: [number, number, number];
+  size: [number, number, number];
+}
 
 export default apiClient;

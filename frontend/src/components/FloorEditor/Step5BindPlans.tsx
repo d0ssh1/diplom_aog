@@ -17,6 +17,8 @@ interface Step5BindPlansProps {
   wallPolygons: Point2D[][] | null;
   buildings: Building[];
   isLoading: boolean;
+  /** Id of the floor the wizard is opened for — restricts the plan gallery. */
+  floorId: number | null;
   onBind: (sectionIdx: number, reconstructionId: number | null) => void;
   onSave: () => Promise<void>;
   onSaveAndExit: () => Promise<void>;
@@ -31,6 +33,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
   sectionDrafts,
   buildings,
   isLoading,
+  floorId,
   onBind,
   onSave,
   onSaveAndExit,
@@ -269,6 +272,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
             buildings={buildings}
             selectedReconstructionId={selectedReconId}
             assignedReconstructionIds={sectionDrafts.map(d => d.reconstruction_id).filter((id): id is number => id !== null)}
+            restrictToFloorId={floorId}
             onSelect={(id) => {
               const newId = id === selectedReconId ? null : id;
               onBind(activeIdx, newId);
@@ -300,15 +304,7 @@ export const Step5BindPlans: React.FC<Step5BindPlansProps> = ({
         </button>
         <span className={styles.footerHint} />
         <div style={{ display: 'flex', gap: '0.75rem' }}>
-          <button
-            className={styles.btnBack}
-            onClick={() => void onSaveAndExit()}
-            disabled={isLoading}
-            type="button"
-            style={{ color: '#374151', borderColor: '#d1d5db', background: '#ffffff', borderRadius: '0' }}
-          >
-            Сохранить и выйти
-          </button>
+          
           <button
             className={styles.btnSave}
             onClick={() => void onSave()}

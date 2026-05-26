@@ -226,6 +226,7 @@ export const FloorEditorPage: React.FC = () => {
             wallPolygons={wizard.wallPolygons}
             buildings={[]}
             isLoading={wizard.isLoading}
+            floorId={wizard.floorId}
             onBind={wizard.bindReconstruction}
             onSave={async () => {
               await wizard.saveAll();

@@ -17,7 +17,7 @@ interface Step4MarkSectionsProps {
    * /mask-preview so the user sees the result of their manual edits. */
   editedMaskUrl?: string | null;
   sectionDrafts: SectionDraft[];
-  onAddSectionDraft: (geometry: SectionGeometry, number: number) => void;
+  onAddSectionDraft: (geometry: SectionGeometry, number: number, color?: string) => void;
   onDeleteSectionDraft: (idx: number) => void;
   onClearAllDrafts: () => void;
   onNext: () => void;
@@ -117,7 +117,7 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
     for (let idx = 0; idx < draftsRef.current.length; idx++) {
       const draft = draftsRef.current[idx];
       const pts = draft.geometry.points;
-      const color = getSectionColor(idx, draft.id);
+      const color = draft.color ?? getSectionColor(idx, draft.id);
 
       ctx.fillStyle = `${color}55`; // 33% opacity fill
       ctx.strokeStyle = color;
@@ -411,15 +411,9 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
   }, [tool]);
 
   const handleDialogConfirm = (num: number, color: string) => {
-    // Backend API doesn't have description field (ADR-29)
     if (!pendingShape) return;
     const geometry: SectionGeometry = { points: pendingShape.points };
-    onAddSectionDraft(geometry, num);
-    // Persist user-chosen color in localStorage so FloorOverview / FloorSectionsTable
-    // pick it up on next render. Keyed by draft index (negative pseudo-id) until saved.
-    try {
-      localStorage.setItem(`sectionColor:draft:${num}`, color);
-    } catch { /* ignore */ }
+    onAddSectionDraft(geometry, num, color);
     setDialogOpen(false);
     setPendingShape(null);
   };
@@ -436,9 +430,6 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
         {/* Left sidebar */}
         <aside className={styles.sidebar}>
           <div className={styles.sidebarTitle}>Инструменты</div>
-          <button className={styles.toolBtn} onClick={onGoToWalls} type="button">
-            ← Стены
-          </button>
           <button
             className={`${styles.toolBtn} ${tool === 'rect' ? styles.toolBtnActive : ''}`}
             type="button"
@@ -472,7 +463,7 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
                   <div key={idx} className={styles.sectionItem}>
                     <span
                       className={styles.sectionDot}
-                      style={{ background: getSectionColor(idx, d.id), borderRadius: '2px' }}
+                      style={{ background: d.color ?? getSectionColor(idx, d.id), borderRadius: '2px' }}
                     />
                     Отсек {d.number}
                     <button

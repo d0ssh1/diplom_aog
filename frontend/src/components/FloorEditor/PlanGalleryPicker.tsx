@@ -18,6 +18,13 @@ interface PlanGalleryPickerProps {
   selectedReconstructionId: number | null;
   assignedReconstructionIds?: number[];
   onSelect: (id: number) => void;
+  /**
+   * When provided, the gallery is hard-restricted to reconstructions of this floor.
+   * The building/floor filter dropdowns are hidden in this mode, since the picker
+   * should only show plans uploaded for the floor whose "Создать карту отсеков"
+   * button was pressed.
+   */
+  restrictToFloorId?: number | null;
 }
 
 export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
@@ -25,6 +32,7 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
   selectedReconstructionId,
   assignedReconstructionIds = [],
   onSelect,
+  restrictToFloorId = null,
 }) => {
   const [search, setSearch] = useState('');
   const [selectedBuildingId, setSelectedBuildingId] = useState<number | ''>('');
@@ -39,6 +47,8 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
       // status=3 means "Done" / completed reconstructions
       filters.status = 3;
       if (search) filters.search = search;
+      // Server-side restriction to the floor the editor was opened for.
+      if (restrictToFloorId !== null) filters.floorId = restrictToFloorId;
       const data = await reconstructionApi.getReconstructions(filters);
       setReconstructions(data);
     } catch {
@@ -46,7 +56,7 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
     } finally {
       setIsLoading(false);
     }
-  }, [search]);
+  }, [search, restrictToFloorId]);
 
   useEffect(() => {
     void fetchRecons();
@@ -76,32 +86,34 @@ export const PlanGalleryPicker: React.FC<PlanGalleryPickerProps> = ({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
-        <div className={styles.filters}>
-          <select
-            className={styles.filterSelect}
-            value={selectedBuildingId}
-            onChange={(e) => {
-              setSelectedBuildingId(e.target.value === '' ? '' : Number(e.target.value));
-              setSelectedFloorId(''); // reset floor
-            }}
-          >
-            <option value="">Все здания</option>
-            {buildings.map(b => (
-              <option key={b.id} value={b.id}>{b.name}</option>
-            ))}
-          </select>
-          <select
-            className={styles.filterSelect}
-            value={selectedFloorId}
-            disabled={selectedBuildingId === ''}
-            onChange={(e) => setSelectedFloorId(e.target.value === '' ? '' : Number(e.target.value))}
-          >
-            <option value="">Все этажи</option>
-            {((selectedBuilding as BuildingDetail)?.floors || []).map((f: { id: number; number: number }) => (
-              <option key={f.id} value={f.id}>Этаж {f.number}</option>
-            ))}
-          </select>
-        </div>
+        {restrictToFloorId === null && (
+          <div className={styles.filters}>
+            <select
+              className={styles.filterSelect}
+              value={selectedBuildingId}
+              onChange={(e) => {
+                setSelectedBuildingId(e.target.value === '' ? '' : Number(e.target.value));
+                setSelectedFloorId(''); // reset floor
+              }}
+            >
+              <option value="">Все здания</option>
+              {buildings.map(b => (
+                <option key={b.id} value={b.id}>{b.name}</option>
+              ))}
+            </select>
+            <select
+              className={styles.filterSelect}
+              value={selectedFloorId}
+              disabled={selectedBuildingId === ''}
+              onChange={(e) => setSelectedFloorId(e.target.value === '' ? '' : Number(e.target.value))}
+            >
+              <option value="">Все этажи</option>
+              {((selectedBuilding as BuildingDetail)?.floors || []).map((f: { id: number; number: number }) => (
+                <option key={f.id} value={f.id}>Этаж {f.number}</option>
+              ))}
+            </select>
+          </div>
+        )}
       </div>
 
       {/* Gallery */}
