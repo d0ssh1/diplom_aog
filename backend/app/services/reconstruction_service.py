@@ -13,6 +13,7 @@ from app.models.domain import (
     Door,
 )
 from app.models.reconstruction_vectors import VectorizationResult as ReconstructionVectorizationResult
+from app.models.floor_assembly import ControlPoint, ControlPointsResponse
 from app.processing.contours import extract_elements
 from app.processing.pipeline import (
     assign_room_numbers,
@@ -527,3 +528,79 @@ class ReconstructionService:
         """
         logger.debug("get_by_id (with relations): reconstruction_id=%d", reconstruction_id)
         return await self._repo.get_with_relations(reconstruction_id)
+
+    # ── Phase 06: section-local control points (UC1) ──────────────────────────
+
+    async def get_control_points(
+        self, reconstruction_id: int
+    ) -> Optional[ControlPointsResponse]:
+        """Read section-local control points for a reconstruction (UC1).
+
+        Echoes ``image_size_cropped`` from ``vectorization_data`` (read-only;
+        never writes it) so the editor can map normalised points to pixels.
+
+        Args:
+            reconstruction_id: Reconstruction ID.
+
+        Returns:
+            ControlPointsResponse, or None if the reconstruction is not found.
+        """
+        logger.debug("get_control_points: reconstruction_id=%d", reconstruction_id)
+        reconstruction = await self._repo.get_by_id(reconstruction_id)
+        if reconstruction is None:
+            return None
+        return self._build_control_points_response(reconstruction)
+
+    async def save_control_points(
+        self, reconstruction_id: int, points: List[ControlPoint]
+    ) -> Optional[ControlPointsResponse]:
+        """Replace section-local control points for a reconstruction (UC1).
+
+        Coord range, list cap and id uniqueness are enforced by
+        ``SaveControlPointsRequest`` at the request boundary (Phase 02), so this
+        method only persists the points and echoes the GET shape.
+
+        Args:
+            reconstruction_id: Reconstruction ID.
+            points: Validated control points to store (may be empty).
+
+        Returns:
+            ControlPointsResponse, or None if the reconstruction is not found.
+        """
+        logger.debug(
+            "save_control_points: reconstruction_id=%d, count=%d",
+            reconstruction_id,
+            len(points),
+        )
+        reconstruction = await self._repo.update_control_points(
+            reconstruction_id, [p.model_dump() for p in points]
+        )
+        if reconstruction is None:
+            return None
+        return self._build_control_points_response(reconstruction)
+
+    @staticmethod
+    def _build_control_points_response(
+        reconstruction: Reconstruction,
+    ) -> ControlPointsResponse:
+        """Assemble a ControlPointsResponse from a Reconstruction row.
+
+        Parses ``vectorization_data`` read-only to echo ``image_size_cropped``
+        (None if absent or unparseable).
+        """
+        image_size_cropped = None
+        if reconstruction.vectorization_data:
+            try:
+                data = json.loads(reconstruction.vectorization_data)
+                image_size_cropped = data.get("image_size_cropped")
+            except json.JSONDecodeError as e:
+                logger.warning(
+                    "Failed to parse vectorization_data for %d: %s",
+                    reconstruction.id,
+                    e,
+                )
+        return ControlPointsResponse(
+            reconstruction_id=reconstruction.id,
+            image_size_cropped=image_size_cropped,
+            points=reconstruction.control_points or [],
+        )

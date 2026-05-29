@@ -34,6 +34,10 @@ from app.models import (
 )
 from app.models.reconstruction import ReconstructionPatchRequest
 from app.models.reconstruction_vectors import VectorizationResult as EditVectorizationResult
+from app.models.floor_assembly import (
+    ControlPointsResponse,
+    SaveControlPointsRequest,
+)
 from app.models.domain import VectorizationResult as DomainVectorizationResult
 from app.services.reconstruction_service import ReconstructionService
 from app.services.floor_service import FloorService
@@ -421,6 +425,41 @@ async def update_vectorization_data(
     if not success:
         raise HTTPException(status_code=404, detail="Реконструкция не найдена")
     return {"message": "Vectorization data updated"}
+
+
+# === Section-local Control Points (UC1) ===
+
+@router.get(
+    "/reconstructions/{id}/control-points",
+    response_model=ControlPointsResponse,
+)
+async def get_control_points(
+    id: int = Path(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+):
+    """Get section-local control points for a reconstruction."""
+    result = await svc.get_control_points(id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    return result
+
+
+@router.put(
+    "/reconstructions/{id}/control-points",
+    response_model=ControlPointsResponse,
+)
+async def save_control_points(
+    request: SaveControlPointsRequest,
+    id: int = Path(...),
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: ReconstructionService = Depends(get_reconstruction_service),
+):
+    """Replace section-local control points for a reconstruction."""
+    result = await svc.save_control_points(id, request.points)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Реконструкция не найдена")
+    return result
 
 
 # === Rooms ===
