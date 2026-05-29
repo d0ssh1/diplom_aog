@@ -147,3 +147,33 @@ class FloorRepository(BaseRepository):
         await self._session.commit()
         await self._session.refresh(floor)
         return floor
+
+    async def update_pixels_per_meter(
+        self,
+        floor_id: int,
+        ppm: float,
+    ) -> Floor:
+        """UPDATE pixels_per_meter (floor metric scale). Raises FloorNotFoundError."""
+        logger.debug("update_pixels_per_meter: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.pixels_per_meter = ppm
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor
+
+    async def update_mesh_glb(
+        self,
+        floor_id: int,
+        mesh_file_glb: str,
+    ) -> Floor:
+        """UPDATE mesh_file_glb (assembled floor GLB path). Raises FloorNotFoundError."""
+        logger.debug("update_mesh_glb: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.mesh_file_glb = mesh_file_glb
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor

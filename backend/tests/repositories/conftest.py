@@ -135,3 +135,27 @@ async def section_factory(
     await session.commit()
     await session.refresh(s)
     return s
+
+
+async def connector_factory(
+    session: AsyncSession,
+    floor_id: int,
+    points: list | None = None,
+    height_m: float | None = None,
+    thickness_m: float | None = None,
+    connects: list | None = None,
+):
+    """Create and persist a FloorConnector, return the ORM instance."""
+    from app.db.models.floor_connector import FloorConnector
+
+    c = FloorConnector(
+        floor_id=floor_id,
+        points=points if points is not None else [[0.2, 0.2], [0.6, 0.2]],
+        height_m=height_m,
+        thickness_m=thickness_m,
+        connects=connects,
+    )
+    session.add(c)
+    await session.commit()
+    await session.refresh(c)
+    return c

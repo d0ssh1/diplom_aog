@@ -272,3 +272,19 @@ class ReconstructionRepository(BaseRepository):
         await self._session.commit()
         await self._session.refresh(reconstruction)
         return reconstruction
+
+    async def update_control_points(
+        self,
+        reconstruction_id: int,
+        points: list[dict],
+    ) -> Optional[Reconstruction]:
+        """UPDATE section-local control_points field. Returns None if not found."""
+        logger.debug("update_control_points: reconstruction_id=%d", reconstruction_id)
+        reconstruction = await self._session.get(Reconstruction, reconstruction_id)
+        if not reconstruction:
+            return None
+        reconstruction.control_points = points
+        reconstruction.updated_at = datetime.utcnow()
+        await self._session.commit()
+        await self._session.refresh(reconstruction)
+        return reconstruction

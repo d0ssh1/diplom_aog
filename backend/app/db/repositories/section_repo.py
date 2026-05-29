@@ -83,3 +83,32 @@ class SectionRepository(BaseRepository):
         if section:
             await self._session.delete(section)
             await self._session.commit()
+
+    async def update_master_control_points(
+        self, section_id: int, points: list[dict]
+    ) -> Optional[Section]:
+        """UPDATE master-schema control_points field. Returns None if not found."""
+        logger.debug("update_master_control_points: section_id=%d", section_id)
+        section = await self._session.get(Section, section_id)
+        if not section:
+            return None
+        section.control_points = points
+        await self._session.commit()
+        await self._session.refresh(section)
+        return section
+
+    async def update_transform(
+        self, section_id: int, transform: Optional[dict]
+    ) -> Optional[Section]:
+        """UPDATE solved similarity transform. None clears a stale transform.
+
+        Returns None if the section is not found.
+        """
+        logger.debug("update_transform: section_id=%d", section_id)
+        section = await self._session.get(Section, section_id)
+        if not section:
+            return None
+        section.transform = transform
+        await self._session.commit()
+        await self._session.refresh(section)
+        return section
