@@ -107,3 +107,22 @@ class FloorSchemaError(Exception):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+# ── Floor-stitching exceptions (Phase 02) ─────────────────────────────────────
+
+
+class SectionNotBoundError(Exception):
+    """Section has no bound reconstruction (UC2 -> 409)."""
+
+    def __init__(self, section_id: int) -> None:
+        self.section_id = section_id
+        super().__init__(f"Section {section_id} is not bound to a reconstruction")
+
+
+class PreviewNotFoundError(Exception):
+    """Unknown or expired build preview handle (UC5 confirm -> 422)."""
+
+    def __init__(self, glb_file_id: str) -> None:
+        self.glb_file_id = glb_file_id
+        super().__init__(f"No such preview '{glb_file_id}' — rebuild first")
