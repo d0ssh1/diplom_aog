@@ -41,6 +41,12 @@ class Section(Base):
     # 4-point polygon [[x1,y1],[x2,y2],[x3,y3],[x4,y4]] in normalised [0,1] coords
     geometry: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
+    # Master-schema control points [{"point_id","x","y"}, ...] normalised [0,1]
+    control_points: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Solved similarity transform (px-space):
+    # {"scale","tx","ty","residual_rms_px","n_points","solved_at"}
+    transform: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+
     reconstruction_id: Mapped[Optional[int]] = mapped_column(
         Integer,
         ForeignKey("reconstructions.id", ondelete="SET NULL"),

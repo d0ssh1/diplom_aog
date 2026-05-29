@@ -5,7 +5,7 @@ Database models for Reconstruction and Files
 from datetime import datetime
 from typing import TYPE_CHECKING, Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, Text
+from sqlalchemy import String, Integer, DateTime, ForeignKey, Float, JSON, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -65,6 +65,8 @@ class Reconstruction(Base):
     vectorization_data: Mapped[Optional[str]] = mapped_column(
         Text, nullable=True
     )  # JSON VectorizationResult
+    # Section-local control points [{"id","x","y"}, ...] normalised [0,1]
+    control_points: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
     created_by: Mapped[Optional[int]] = mapped_column(
         Integer, ForeignKey("users.id"), nullable=True

@@ -5,12 +5,13 @@ Database models for Building and Floor.
 from datetime import datetime
 from typing import TYPE_CHECKING, List, Optional
 
-from sqlalchemy import String, Integer, DateTime, ForeignKey, JSON, UniqueConstraint
+from sqlalchemy import String, Integer, Float, DateTime, ForeignKey, JSON, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
 
 if TYPE_CHECKING:
+    from app.db.models.floor_connector import FloorConnector
     from app.db.models.reconstruction import UploadedFile
     from app.db.models.section import Section
 
@@ -64,6 +65,11 @@ class Floor(Base):
     # Format: [[[x,y], ...], ...] normalised [0,1]
     wall_polygons: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
 
+    # Floor metric scale — master schema pixels per metre (set at assembly time)
+    pixels_per_meter: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    # Path to the assembled (stitched) floor GLB mesh
+    mesh_file_glb: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships
@@ -73,6 +79,12 @@ class Floor(Base):
         back_populates="floor",
         cascade="all, delete-orphan",
         order_by="Section.number",
+    )
+    connectors: Mapped[List["FloorConnector"]] = relationship(
+        "FloorConnector",
+        back_populates="floor",
+        cascade="all, delete-orphan",
+        order_by="FloorConnector.id",
     )
     schema_image: Mapped[Optional["UploadedFile"]] = relationship(
         "UploadedFile",
