@@ -126,3 +126,23 @@ class PreviewNotFoundError(Exception):
     def __init__(self, glb_file_id: str) -> None:
         self.glb_file_id = glb_file_id
         super().__init__(f"No such preview '{glb_file_id}' — rebuild first")
+
+
+class SectionNotFoundError(Exception):
+    """Section not found in DB (UC2 -> 404)."""
+
+    def __init__(self, section_id: int) -> None:
+        self.section_id = section_id
+        super().__init__(f"Section {section_id} not found")
+
+
+class FloorAssemblyConflictError(Exception):
+    """Floor is not in a valid state for the requested assembly step (-> 409).
+
+    Raised for floor-level preconditions: no sections bound to plans (UC3 solve),
+    or no transformed sections yet (UC5 build — run solve-transforms first).
+    """
+
+    def __init__(self, detail: str) -> None:
+        self.detail = detail
+        super().__init__(detail)
