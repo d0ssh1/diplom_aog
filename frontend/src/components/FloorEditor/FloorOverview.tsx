@@ -34,6 +34,10 @@ interface FloorOverviewProps {
   onClearAll?: () => Promise<void>;
   onSwitchToTable: () => void;
   onSwitchToWizard: () => void;
+  /** Enter the floor-assembly steps (6–9): bind master control points → solve
+   *  scale+shift → draw connectors → 3D preview + save. Jumps straight to step 6
+   *  (no need to redo upload→crop→walls→sections→bind). */
+  onStartAssembly: () => void;
 }
 
 export const FloorOverview: React.FC<FloorOverviewProps> = ({
@@ -51,6 +55,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
   onClearAll,
   onSwitchToTable,
   onSwitchToWizard,
+  onStartAssembly,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -419,6 +424,20 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
             type="button"
           >
             Сохранить изменения
+          </button>
+          <button
+            className={styles.btnSave}
+            style={{ background: '#F05123', borderColor: '#F05123', color: '#ffffff' }}
+            onClick={onStartAssembly}
+            disabled={boundCount === 0}
+            title={
+              boundCount === 0
+                ? 'Сначала привяжите планы к отсекам'
+                : 'Контрольные точки → решение (масштаб+сдвиг) → 3D-модель этажа'
+            }
+            type="button"
+          >
+            Собрать 3D-этаж →
           </button>
         </div>
       </footer>

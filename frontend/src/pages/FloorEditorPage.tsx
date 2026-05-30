@@ -332,6 +332,7 @@ export const FloorEditorPage: React.FC = () => {
           onSave={wizard.saveAll}
           onSwitchToTable={() => wizard.setMode('table')}
           onSwitchToWizard={() => wizard.goToStep(1)}
+          onStartAssembly={() => wizard.goToStep(6)}
         />
       )}
       {wizard.mode === 'table' && (
