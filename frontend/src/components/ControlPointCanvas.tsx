@@ -21,6 +21,7 @@ import {
   toImageCoords,
   type CanvasLayout,
 } from './controlPointCanvasCore';
+import { colourForId } from '../lib/controlPoints';
 import styles from './ControlPointCanvas.module.css';
 
 export interface ControlPointCanvasProps {
@@ -36,8 +37,6 @@ export interface ControlPointCanvasProps {
   onSelect(id: string): void; // click within R_HIT_PX selects that point
 }
 
-const MARKER_COLOR = '#FF5722';
-const ACTIVE_COLOR = '#FFD180';
 const CROSSHAIR_ARM_PX = 9;
 const CROSSHAIR_GAP_PX = 3;
 
@@ -141,15 +140,19 @@ export const ControlPointCanvas: React.FC<ControlPointCanvasProps> = ({
       ctx.globalAlpha = 1;
     }
 
-    // Markers (orange crosshair + ID label).
-    ctx.lineWidth = 1.5;
+    // Markers: crosshair coloured by ID (the SAME id ⇒ the SAME colour on every
+    // panel — AC2 anti-confusion). The ACTIVE point is emphasised with a thicker
+    // arm + a surrounding ring rather than a different hue, so its identity colour
+    // stays readable.
     ctx.font = '12px monospace';
     ctx.textBaseline = 'bottom';
     for (const point of points) {
       const isActive = point.id === activeId;
+      const colour = colourForId(point.id);
       const { x, y } = toDisplayCoords(point, layout);
-      ctx.strokeStyle = isActive ? ACTIVE_COLOR : MARKER_COLOR;
-      ctx.fillStyle = isActive ? ACTIVE_COLOR : MARKER_COLOR;
+      ctx.strokeStyle = colour;
+      ctx.fillStyle = colour;
+      ctx.lineWidth = isActive ? 2.5 : 1.5;
       // Horizontal arms (gap at center so the precise point stays visible).
       ctx.beginPath();
       ctx.moveTo(x - CROSSHAIR_ARM_PX, y);
@@ -162,6 +165,13 @@ export const ControlPointCanvas: React.FC<ControlPointCanvasProps> = ({
       ctx.moveTo(x, y + CROSSHAIR_GAP_PX);
       ctx.lineTo(x, y + CROSSHAIR_ARM_PX);
       ctx.stroke();
+      // Active ring (same colour, just emphasis).
+      if (isActive) {
+        ctx.beginPath();
+        ctx.arc(x, y, CROSSHAIR_ARM_PX + 3, 0, Math.PI * 2);
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
       ctx.fillText(point.id, x + CROSSHAIR_ARM_PX + 2, y - 2);
     }
   }, [points, activeId, layout, opacity, elementSize.w, elementSize.h, imageSize]);

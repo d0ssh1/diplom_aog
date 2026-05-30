@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reconstructionApi, uploadApi } from '../api/apiService';
 import { floorAssemblyApi } from '../api/floorAssemblyApi';
+import { nextMonotonicId } from '../lib/controlPoints';
 import type { WizardState, CropRect, RoomAnnotation, DoorAnnotation } from '../types/wizard';
 
 interface UseWizardReturn {
@@ -95,12 +96,15 @@ export const useWizard = (): UseWizardReturn => {
   }, []);
 
   const addControlPoint = useCallback((x: number, y: number) => {
-    setState((s) => ({
-      ...s,
+    setState((s) => {
       // Monotonic id from the counter — NEVER reuse a slot freed by delete.
-      controlPoints: [...s.controlPoints, { id: `cp-${s.nextControlPointId}`, x, y }],
-      nextControlPointId: s.nextControlPointId + 1,
-    }));
+      const { id, counter } = nextMonotonicId(s.nextControlPointId);
+      return {
+        ...s,
+        controlPoints: [...s.controlPoints, { id, x, y }],
+        nextControlPointId: counter,
+      };
+    });
   }, []);
 
   const moveControlPoint = useCallback((id: string, x: number, y: number) => {

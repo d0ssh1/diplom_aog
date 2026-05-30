@@ -15,6 +15,7 @@ import { useState, useCallback, useEffect } from 'react';
 import { floorAssemblyApi } from '../api/floorAssemblyApi';
 import { reconstructionApi } from '../api/apiService';
 import { toastApi } from './useToast';
+import { writeActivePoint } from '../lib/controlPoints';
 import type {
   AssemblySection,
   BuildFloorPreviewResponse,
@@ -189,14 +190,10 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
   // Re-calling with the same id overwrites that id's coord (never duplicates).
   const setMasterPoint = useCallback(
     (sectionId: number, pointId: string, x: number, y: number) => {
-      setMasterPointsBySection((prev) => {
-        const current = prev[sectionId] ?? [];
-        const without = current.filter((p) => p.point_id !== pointId);
-        return {
-          ...prev,
-          [sectionId]: [...without, { point_id: pointId, x, y }],
-        };
-      });
+      setMasterPointsBySection((prev) => ({
+        ...prev,
+        [sectionId]: writeActivePoint(prev[sectionId] ?? [], pointId, x, y),
+      }));
     },
     [],
   );
