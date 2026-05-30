@@ -1,6 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reconstructionApi, uploadApi } from '../api/apiService';
+import { floorAssemblyApi } from '../api/floorAssemblyApi';
 import type { WizardState, CropRect, RoomAnnotation, DoorAnnotation } from '../types/wizard';
 
 interface UseWizardReturn {
@@ -20,6 +21,9 @@ interface UseWizardReturn {
   setRotation: (deg: 0 | 90 | 180 | 270) => void;
   setBlockSize: (v: number) => void;
   setThresholdC: (v: number) => void;
+  addControlPoint: (x: number, y: number) => void;
+  moveControlPoint: (id: string, x: number, y: number) => void;
+  deleteControlPoint: (id: string) => void;
   canProceedFromUpload: boolean;
   selectedBuildingId: number | null;
   selectedFloorId: number | null;
@@ -41,6 +45,8 @@ const initialState: WizardState = {
   thresholdC: 10,
   rooms: [],
   doors: [],
+  controlPoints: [],
+  nextControlPointId: 1,
   navGraphId: null,
   isLoading: false,
   error: null,
@@ -57,7 +63,7 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -88,6 +94,30 @@ export const useWizard = (): UseWizardReturn => {
     setState((s) => ({ ...s, thresholdC: v }));
   }, []);
 
+  const addControlPoint = useCallback((x: number, y: number) => {
+    setState((s) => ({
+      ...s,
+      // Monotonic id from the counter — NEVER reuse a slot freed by delete.
+      controlPoints: [...s.controlPoints, { id: `cp-${s.nextControlPointId}`, x, y }],
+      nextControlPointId: s.nextControlPointId + 1,
+    }));
+  }, []);
+
+  const moveControlPoint = useCallback((id: string, x: number, y: number) => {
+    setState((s) => ({
+      ...s,
+      controlPoints: s.controlPoints.map((p) => (p.id === id ? { ...p, x, y } : p)),
+    }));
+  }, []);
+
+  const deleteControlPoint = useCallback((id: string) => {
+    // id is NOT reissued — nextControlPointId stays as-is so future adds keep climbing.
+    setState((s) => ({
+      ...s,
+      controlPoints: s.controlPoints.filter((p) => p.id !== id),
+    }));
+  }, []);
+
   const setMaskFile = useCallback((id: string) => {
     setState((s) => ({ ...s, maskFileId: id }));
   }, []);
@@ -114,7 +144,7 @@ export const useWizard = (): UseWizardReturn => {
         ...s,
         navGraphId: maskId,
         isLoading: false,
-        step: 4,
+        step: 5,
       }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения графа' }));
@@ -153,18 +183,33 @@ export const useWizard = (): UseWizardReturn => {
         state.rooms,
         state.doors
       );
-      const detail = await reconstructionApi.getReconstructionById(data.id as number);
+      const reconstructionId = data.id as number;
+      // Deferred persistence: there is no reconstructionId until build runs, so
+      // section-local control points are held in state.controlPoints and flushed
+      // here, right after the build creates the reconstruction. Non-fatal — a CP
+      // save error must not roll back a successful 3D build.
+      if (state.controlPoints.length > 0) {
+        try {
+          await floorAssemblyApi.saveReconstructionControlPoints(
+            reconstructionId,
+            state.controlPoints,
+          );
+        } catch {
+          // Swallowed: the operator can re-save points later from the editor.
+        }
+      }
+      const detail = await reconstructionApi.getReconstructionById(reconstructionId);
       setState((s) => ({
         ...s,
-        reconstructionId: data.id as number,
+        reconstructionId,
         meshUrl: detail.url as string | null,
         isLoading: false,
-        step: 5,
+        step: 6,
       }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения 3D-модели' }));
     }
-  }, [state.planFileId, state.editedMaskFileId, state.maskFileId]);
+  }, [state.planFileId, state.editedMaskFileId, state.maskFileId, state.controlPoints]);
 
   const setFloor = useCallback(
     async (buildingId: number | null, floorId: number | null): Promise<void> => {
@@ -216,6 +261,9 @@ export const useWizard = (): UseWizardReturn => {
     setRotation,
     setBlockSize,
     setThresholdC,
+    addControlPoint,
+    moveControlPoint,
+    deleteControlPoint,
     canProceedFromUpload,
     selectedBuildingId: floorSelection.buildingId,
     selectedFloorId: floorSelection.floorId,

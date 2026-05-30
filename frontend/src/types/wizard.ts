@@ -1,3 +1,5 @@
+import type { ControlPoint } from './floorAssembly';
+
 export interface CropRect {
   x: number;
   y: number;
@@ -5,7 +7,7 @@ export interface CropRect {
   height: number;
 }
 
-export type WizardStep = 1 | 2 | 3 | 4 | 5;
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6;
 
 export interface RoomAnnotation {
   id: string;
@@ -51,6 +53,8 @@ export interface WizardState {
   thresholdC: number;
   rooms: RoomAnnotation[];
   doors: DoorAnnotation[];
+  controlPoints: ControlPoint[];
+  nextControlPointId: number;
   navGraphId: string | null;
   isLoading: boolean;
   error: string | null;
