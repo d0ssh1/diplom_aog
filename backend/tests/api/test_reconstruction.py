@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, MagicMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from datetime import datetime
 
 from main import app
@@ -146,5 +146,126 @@ async def test_delete_reconstruction_missing_id_returns_404(client, auth_headers
             headers=auth_headers,
         )
         assert response.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_reconstruction_service, None)
+
+
+# === Section-local control points (UC1, Phase 06) ===
+
+_CP_URL = "/api/v1/reconstruction/reconstructions/7/control-points"
+
+
+@pytest.mark.asyncio
+async def test_get_reconstruction_control_points_echoes_nullable_image_size(
+    client, auth_headers
+):
+    """The GET echoes image_size_cropped — both the populated and the null case."""
+    from app.models.floor_assembly import ControlPoint, ControlPointsResponse
+
+    mock_svc = AsyncMock()
+    app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
+    try:
+        # Populated → round-trips as [w, h].
+        mock_svc.get_control_points.return_value = ControlPointsResponse(
+            reconstruction_id=7,
+            image_size_cropped=(800, 600),
+            points=[ControlPoint(id="cp-1", x=0.5, y=0.5)],
+        )
+        resp = await client.get(_CP_URL, headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["reconstruction_id"] == 7
+        assert data["image_size_cropped"] == [800, 600]
+        assert data["points"][0]["id"] == "cp-1"
+
+        # Null → round-trips as null (the field is Optional).
+        mock_svc.get_control_points.return_value = ControlPointsResponse(
+            reconstruction_id=7, image_size_cropped=None, points=[]
+        )
+        resp = await client.get(_CP_URL, headers=auth_headers)
+        assert resp.status_code == 200
+        assert resp.json()["image_size_cropped"] is None
+    finally:
+        app.dependency_overrides.pop(get_reconstruction_service, None)
+
+
+@pytest.mark.asyncio
+async def test_get_reconstruction_control_points_missing_returns_404(
+    client, auth_headers
+):
+    mock_svc = AsyncMock()
+    mock_svc.get_control_points.return_value = None  # unknown reconstruction
+    app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
+    try:
+        resp = await client.get(_CP_URL, headers=auth_headers)
+        assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_reconstruction_service, None)
+
+
+@pytest.mark.asyncio
+async def test_put_reconstruction_control_points_happy_returns_200(
+    client, auth_headers
+):
+    from app.models.floor_assembly import ControlPoint, ControlPointsResponse
+
+    mock_svc = AsyncMock()
+    mock_svc.save_control_points.return_value = ControlPointsResponse(
+        reconstruction_id=7,
+        image_size_cropped=(800, 600),
+        points=[ControlPoint(id="cp-1", x=0.2, y=0.3)],
+    )
+    app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
+    try:
+        resp = await client.put(
+            _CP_URL,
+            json={"points": [{"id": "cp-1", "x": 0.2, "y": 0.3}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["points"][0]["id"] == "cp-1"
+    finally:
+        app.dependency_overrides.pop(get_reconstruction_service, None)
+
+
+@pytest.mark.asyncio
+async def test_put_section_control_points_duplicate_id_returns_422(
+    client, auth_headers
+):
+    """Duplicate control-point ids are rejected by the request model (422)."""
+    mock_svc = AsyncMock()
+    app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
+    try:
+        resp = await client.put(
+            _CP_URL,
+            json={
+                "points": [
+                    {"id": "cp-1", "x": 0.1, "y": 0.1},
+                    {"id": "cp-1", "x": 0.2, "y": 0.2},
+                ]
+            },
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        mock_svc.save_control_points.assert_not_called()
+    finally:
+        app.dependency_overrides.pop(get_reconstruction_service, None)
+
+
+@pytest.mark.asyncio
+async def test_put_section_control_points_out_of_range_returns_422(
+    client, auth_headers
+):
+    """A coordinate outside [0, 1] is rejected by the ControlPoint model (422)."""
+    mock_svc = AsyncMock()
+    app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
+    try:
+        resp = await client.put(
+            _CP_URL,
+            json={"points": [{"id": "cp-1", "x": 1.5, "y": 0.1}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        mock_svc.save_control_points.assert_not_called()
     finally:
         app.dependency_overrides.pop(get_reconstruction_service, None)
