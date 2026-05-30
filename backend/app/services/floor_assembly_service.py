@@ -33,11 +33,16 @@ from app.core.exceptions import (
     FloorNotFoundError,
     FloorSchemaError,
     ImageProcessingError,
+    PreviewNotFoundError,
     SectionNotBoundError,
     SectionNotFoundError,
     SectionValidationError,
 )
 from app.core.floor_stitching_constants import (
+    DEFAULT_CONNECTOR_THICKNESS_M,
+    DETAIL_WARN_SCALE,
+    FLOOR_HEIGHT,
+    MAX_FLOOR_CANVAS_PX,
     MIN_CONTROL_POINTS,
     PPM_WARN_RATIO,
     R_MIN_BASELINE_FRAC,
@@ -48,15 +53,30 @@ from app.db.repositories.floor_repo import FloorRepository
 from app.db.repositories.reconstruction_repo import ReconstructionRepository
 from app.db.repositories.section_repo import SectionRepository
 from app.models.floor_assembly import (
+    AssemblySection,
+    BuildFloorPreviewResponse,
+    BuildWarning,
+    ConfirmMeshResponse,
     Connector,
     ConnectorInput,
     ConnectorsResponse,
+    ControlPoint,
+    ExcludedSection,
+    FloorAssemblyResponse,
     MasterControlPoint,
+    MasterSchemaInfo,
     SectionControlPointsResponse,
     SectionTransform,
     SolveSectionResult,
     SolveTransformsResponse,
 )
+from app.models.floors import CropBboxModel
+from app.processing.floor_assembly import (
+    ConnectorRaster,
+    SectionWarpInput,
+    assemble_floor_mask,
+)
+from app.processing.mesh_builder import build_mesh_from_mask
 from app.processing.registration import (
     DegenerateControlPointsError,
     solve_similarity,
@@ -541,6 +561,277 @@ class FloorAssemblyService:
             connectors=[self._connector_to_model(r) for r in rows],
         )
 
+    # ── UC5 — build (preview) / confirm / assembly read ──────────────────────
+
+    async def build_floor_mesh(
+        self, floor_id: int
+    ) -> BuildFloorPreviewResponse:
+        """Assemble the stitched floor mask → preview GLB (UC5 build, ADR-17).
+
+        Warps every ok-section's wall mask by its persisted uniform similarity
+        into the master-pixel canvas, rasterises connectors as wall bands, extrudes
+        the combined mask with the UNCHANGED ``build_mesh_from_mask`` and writes a
+        PREVIEW GLB. ``floors.mesh_file_glb`` is NEVER touched here — only
+        ``confirm_floor_mesh`` promotes the preview (preview-only build).
+
+        Memory guard ``k`` (06 §5.2): computed ONCE and threaded *identically* into
+        all five consumers — canvas dims, each section transform (``scale,tx,ty``),
+        connector point de-norm, connector thickness (incl. the default) and the
+        builder ``pixels_per_meter`` — so the floor's shapes are preserved (any
+        single omission silently rescales the floor).
+
+        Args:
+            floor_id: floor to build.
+
+        Returns:
+            BuildFloorPreviewResponse (``persisted=False``) with the preview handle,
+            included/excluded sections, low-detail warnings, connector count and
+            canvas size.
+
+        Raises:
+            FloorNotFoundError: floor absent (404).
+            FloorAssemblyConflictError: no ok-section has a transform (409).
+            FloorSchemaError: master schema missing, no usable section masks, no
+                metric scale, or an empty combined mask (422).
+            ImageProcessingError / FileStorageError: unexpected IO failure.
+        """
+        logger.info("build_floor_mesh: floor_id=%d", floor_id)
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if floor is None:
+            raise FloorNotFoundError(floor_id)
+
+        sections = await self._section_repo.list_by_floor(floor_id)
+        # An ok-section is one carrying a persisted transform (Phase 07 wrote it).
+        ok_sections = [s for s in sections if s.transform]
+        if not ok_sections:
+            raise FloorAssemblyConflictError("Run solve-transforms first")
+
+        # ppm guard (06/phase-07/phase-08): never let 0/None/non-finite reach the
+        # builder, which divides by ppm. No metric scale ⇒ solve never produced one.
+        ppm_floor = floor.pixels_per_meter
+        if not _is_positive_finite(ppm_floor):
+            raise FloorSchemaError(
+                "Floor has no metric scale — re-run solve/vectorization"
+            )
+
+        # Master-pixel canvas dims (Wm, Hm) = the cropped master-schema raster.
+        master_w, master_h = await self._master_pixel_dims(floor)
+
+        # ── k: the SINGLE memory-guard scalar (06 §5.2). Source of truth. ──
+        long_side = max(master_w, master_h)
+        k = (
+            MAX_FLOOR_CANVAS_PX / long_side
+            if long_side > MAX_FLOOR_CANVAS_PX
+            else 1.0
+        )
+        # (a) canvas dims × k.
+        canvas_w = round(master_w * k)
+        canvas_h = round(master_h * k)
+        canvas_size = (canvas_w, canvas_h)
+
+        # Build warp inputs for each ok-section; a missing mask file excludes the
+        # section (non-fatal) rather than aborting the whole build.
+        warp_inputs: list[SectionWarpInput] = []
+        included_ids: list[int] = []
+        excluded: list[ExcludedSection] = []
+        warnings: list[BuildWarning] = []
+
+        for section in ok_sections:
+            transform = section.transform  # persisted dict
+            mask = self._load_section_mask_for_build(section)
+            if mask is None:
+                excluded.append(
+                    ExcludedSection(section_id=section.id, reason="mask_missing")
+                )
+                continue
+
+            # Normalise to strict {0,255} on a COPY (load_mask may return {0,1} or
+            # grayscale; the builder thresholds at >127, so an un-normalised {0,1}
+            # mask silently drops every wall). Never mutate the loaded array.
+            mask_bin = np.where(mask.copy() > 127, 255, 0).astype(np.uint8)
+
+            base_scale = float(transform["scale"])
+            # (b) section transform pre-multiplied by k.
+            warp_inputs.append(
+                SectionWarpInput(
+                    section_id=section.id,
+                    mask=mask_bin,
+                    scale=base_scale * k,
+                    tx=float(transform["tx"]) * k,
+                    ty=float(transform["ty"]) * k,
+                )
+            )
+            included_ids.append(section.id)
+
+            # Low-detail warning compares the UN-scaled stored scale (NOT scale*k).
+            if base_scale < DETAIL_WARN_SCALE:
+                warnings.append(
+                    BuildWarning(
+                        section_id=section.id,
+                        code="low_detail",
+                        message=(
+                            f"Section {section.id} rendered at {base_scale:.2f}× "
+                            f"— master schema may be too low-res"
+                        ),
+                    )
+                )
+
+        # Guard: every ok-section's mask was missing ⇒ nothing to assemble. Do NOT
+        # extrude an all-zero canvas (the builder would 500/empty-contour anyway).
+        if not warp_inputs:
+            raise FloorSchemaError("No section masks to assemble")
+
+        # ── Connectors → ConnectorRaster (master-pixel, k-scaled) ──
+        connector_rows = await self._connector_repo.list_by_floor(floor_id)
+        # (d) default thickness derived ONCE, k-scaled, floored to >= 1. cv2 treats
+        # thickness=0 as a 1px hairline, so round up rather than vanish.
+        default_thickness_px = max(
+            1, round(DEFAULT_CONNECTOR_THICKNESS_M * ppm_floor * k)
+        )
+        connectors_raster: list[ConnectorRaster] = []
+        for row in connector_rows:
+            pts = row.points or []
+            if len(pts) < 2:
+                continue
+            # (c) de-normalise master-norm points × the (k-scaled) canvas dims.
+            points_px = np.array(
+                [[round(px * canvas_w), round(py * canvas_h)] for px, py in pts],
+                dtype=np.int32,
+            )
+            thickness_m = row.thickness_m or DEFAULT_CONNECTOR_THICKNESS_M
+            # Per-connector thickness is k-scaled too (a default-thickness connector
+            # uses ``default_thickness_px``, NOT the un-scaled master-px value).
+            thickness_px = max(1, round(thickness_m * ppm_floor * k))
+            connectors_raster.append(
+                ConnectorRaster(points_px=points_px, thickness_px=thickness_px)
+            )
+
+        # ── Assemble + extrude (builder UNCHANGED) ──
+        combined = assemble_floor_mask(
+            warp_inputs,
+            canvas_size,
+            connectors_raster,
+            default_wall_thickness_px=default_thickness_px,
+        )
+
+        try:
+            # (e) ppm × k so metres stay correct on the k-shrunk canvas.
+            mesh = build_mesh_from_mask(
+                combined,
+                floor_height=FLOOR_HEIGHT,
+                pixels_per_meter=ppm_floor * k,
+                vr=None,
+            )
+        except ImageProcessingError as exc:
+            # Empty combined mask (no wall contours) is a clean 422, not a 500.
+            if "No wall contours" in str(exc):
+                raise FloorSchemaError("Empty floor mask") from exc
+            raise
+
+        glb_file_id, glb_url = await self._storage.save_floor_preview_mesh(
+            floor_id, mesh
+        )
+
+        return BuildFloorPreviewResponse(
+            floor_id=floor_id,
+            glb_file_id=glb_file_id,
+            glb_url=glb_url,
+            persisted=False,
+            pixels_per_meter=ppm_floor,
+            canvas_size_px=canvas_size,
+            included_sections=included_ids,
+            excluded_sections=excluded,
+            warnings=warnings,
+            connector_count=len(connectors_raster),
+        )
+
+    async def confirm_floor_mesh(
+        self, floor_id: int, glb_file_id: str
+    ) -> ConfirmMeshResponse:
+        """Promote a built preview GLB to the persisted floor model (UC5 confirm).
+
+        The ONLY path that writes ``floors.mesh_file_glb`` (ADR-17). Delegates the
+        path validation + atomic promote to ``FileStorage``; a missing/invalid
+        preview surfaces as ``PreviewNotFoundError`` (422).
+
+        Args:
+            floor_id: floor to confirm.
+            glb_file_id: handle returned by a prior ``build_floor_mesh``.
+
+        Returns:
+            ConfirmMeshResponse (``persisted=True``) with the promoted GLB path/url.
+
+        Raises:
+            FloorNotFoundError: floor absent (404).
+            PreviewNotFoundError: handle invalid / cross-floor / preview gone (422).
+        """
+        logger.info(
+            "confirm_floor_mesh: floor_id=%d, glb_file_id=%s",
+            floor_id,
+            glb_file_id,
+        )
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if floor is None:
+            raise FloorNotFoundError(floor_id)
+
+        try:
+            rel_path, url = await self._storage.promote_floor_preview(
+                floor_id, glb_file_id
+            )
+        except FileStorageError as exc:
+            raise PreviewNotFoundError(glb_file_id) from exc
+
+        await self._floor_repo.update_mesh_glb(floor_id, rel_path)
+
+        return ConfirmMeshResponse(
+            floor_id=floor_id,
+            mesh_file_glb=rel_path,
+            glb_url=url,
+            persisted=True,
+        )
+
+    async def get_assembly(self, floor_id: int) -> FloorAssemblyResponse:
+        """Single read powering the whole Floor Editor (assembly read, 05).
+
+        Returns master-schema info, every section's full bind/solve/points/transform
+        state, connectors and the last CONFIRMED ``mesh_file_glb`` (``None`` until a
+        confirm runs — an unconfirmed preview is never reflected). Read-only:
+        ``vectorization_data`` is only read (for ``image_size_cropped``), never
+        written.
+
+        Args:
+            floor_id: floor to read.
+
+        Returns:
+            FloorAssemblyResponse — the complete editor payload.
+
+        Raises:
+            FloorNotFoundError: floor absent (404).
+            ImageProcessingError: schema image present but undecodable.
+        """
+        logger.debug("get_assembly: floor_id=%d", floor_id)
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if floor is None:
+            raise FloorNotFoundError(floor_id)
+
+        master_schema = self._build_master_schema_info(floor)
+
+        sections = await self._section_repo.list_by_floor(floor_id)
+        assembly_sections = [
+            self._section_to_assembly(section) for section in sections
+        ]
+
+        connector_rows = await self._connector_repo.list_by_floor(floor_id)
+
+        return FloorAssemblyResponse(
+            floor_id=floor_id,
+            pixels_per_meter=floor.pixels_per_meter,
+            mesh_file_glb=floor.mesh_file_glb,
+            master_schema=master_schema,
+            sections=assembly_sections,
+            connectors=[self._connector_to_model(r) for r in connector_rows],
+        )
+
     # ── Private helpers (IO / mapping) ───────────────────────────────────────
 
     async def _master_pixel_dims(self, floor) -> tuple[int, int]:  # type: ignore[no-untyped-def]
@@ -620,6 +911,162 @@ class FloorAssemblyService:
             except FileStorageError:
                 continue
         return None
+
+    def _load_section_mask_for_build(
+        self, section  # type: ignore[no-untyped-def]
+    ) -> Optional[np.ndarray]:
+        """Load a section's wall mask for the build, or ``None`` if absent.
+
+        UNLIKE the solve path, a missing mask file here is EXPECTED and non-fatal:
+        the build excludes the section (reason ``mask_missing``) and proceeds.
+        Returns a fresh grayscale array (never mutated), or ``None`` when the
+        section has no ``mask_file_id`` or the file is missing on disk. An
+        undecodable file is still an UNEXPECTED ImageProcessingError.
+
+        Raises:
+            ImageProcessingError: the mask file exists but cannot be decoded.
+        """
+        reconstruction = section.reconstruction
+        mask_file_id = reconstruction.mask_file_id if reconstruction else None
+        if not mask_file_id:
+            return None
+        try:
+            mask_path = self._storage.find_file(mask_file_id, "masks")
+        except FileStorageError:
+            return None
+        mask = cv2.imread(mask_path, cv2.IMREAD_GRAYSCALE)
+        if mask is None:
+            raise ImageProcessingError(
+                "build_floor_mesh", f"Failed to load mask: {mask_path}"
+            )
+        return mask
+
+    def _build_master_schema_info(
+        self, floor  # type: ignore[no-untyped-def]
+    ) -> MasterSchemaInfo:
+        """Map a Floor's schema fields to the assembly-read ``MasterSchemaInfo``.
+
+        ``crop_bbox`` (response key) is populated from ``Floor.schema_crop_bbox``
+        (ORM attr — the names differ on purpose, 05 §"Assembly read"). ``size_px``
+        is the FULL (uncropped) schema image dimensions read from the image file;
+        ``None`` if the image is absent (the editor still renders the rest).
+        """
+        image_id = floor.schema_image_id or ""
+        url = (
+            floor.schema_image.url
+            if floor.schema_image_id and floor.schema_image is not None
+            else ""
+        )
+        crop_bbox = (
+            CropBboxModel(**floor.schema_crop_bbox)
+            if floor.schema_crop_bbox
+            else None
+        )
+        size_px = self._full_schema_size_px(floor)
+        return MasterSchemaInfo(
+            image_id=image_id,
+            url=url,
+            crop_bbox=crop_bbox,
+            size_px=size_px,
+        )
+
+    def _full_schema_size_px(
+        self, floor  # type: ignore[no-untyped-def]
+    ) -> Optional[tuple[int, int]]:
+        """Full (uncropped) ``(W, H)`` of the schema image, or ``None`` if absent.
+
+        Read-only convenience for the assembly read; unlike ``_master_pixel_dims``
+        it does NOT apply the crop bbox — the editor receives the raw image size and
+        overlays the crop itself.
+        """
+        if not floor.schema_image_id:
+            return None
+        image_path = self._find_schema_image(floor.schema_image_id)
+        if image_path is None:
+            return None
+        image = cv2.imread(image_path)
+        if image is None:
+            raise ImageProcessingError(
+                "get_assembly", f"Failed to read schema image: {image_path}"
+            )
+        h, w = image.shape[:2]
+        return (w, h)
+
+    def _section_to_assembly(
+        self, section  # type: ignore[no-untyped-def]
+    ) -> AssemblySection:
+        """Map a Section ORM row (with reconstruction) to ``AssemblySection``.
+
+        ``status`` is ``"ok"`` iff a transform is persisted, else ``"needs_points"``
+        — a degenerate solve leaves no transform and is not re-derivable from stored
+        state, so the editor prompts for better points. ``vectorization_data`` is
+        read-only (used only for ``image_size_cropped``).
+        """
+        reconstruction = section.reconstruction
+        reconstruction_id = reconstruction.id if reconstruction else None
+
+        mask_file_id = reconstruction.mask_file_id if reconstruction else None
+        image_size_cropped = (
+            self._read_image_size_cropped(reconstruction)
+            if reconstruction
+            else None
+        )
+
+        section_cps = [
+            ControlPoint(id=str(cp["id"]), x=float(cp["x"]), y=float(cp["y"]))
+            for cp in ((reconstruction.control_points if reconstruction else None) or [])
+            if isinstance(cp, dict) and cp.get("id") is not None
+        ]
+        master_cps = [
+            MasterControlPoint(
+                point_id=str(mp["point_id"]),
+                x=float(mp["x"]),
+                y=float(mp["y"]),
+            )
+            for mp in (section.control_points or [])
+            if isinstance(mp, dict) and mp.get("point_id") is not None
+        ]
+
+        transform = (
+            SectionTransform(**section.transform) if section.transform else None
+        )
+        status = "ok" if section.transform else "needs_points"
+
+        return AssemblySection(
+            section_id=section.id,
+            number=section.number,
+            reconstruction_id=reconstruction_id,
+            mask_file_id=mask_file_id,
+            image_size_cropped=image_size_cropped,
+            section_control_points=section_cps,
+            master_control_points=master_cps,
+            transform=transform,
+            status=status,
+        )
+
+    @staticmethod
+    def _read_image_size_cropped(
+        reconstruction,  # type: ignore[no-untyped-def]
+    ) -> Optional[tuple[int, int]]:
+        """Read ``image_size_cropped`` from ``vectorization_data`` (read-only).
+
+        Returns ``(W, H)`` as ints, or ``None`` if the column is empty/unparseable
+        or the key is absent/malformed. Never writes ``vectorization_data``.
+        """
+        raw = reconstruction.vectorization_data
+        if not raw:
+            return None
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        size = data.get("image_size_cropped")
+        if not size or len(size) != 2:
+            return None
+        try:
+            return (int(size[0]), int(size[1]))
+        except (TypeError, ValueError):
+            return None
 
     def _storage_load_mask_sync_guard(
         self, section, reconstruction  # type: ignore[no-untyped-def]
