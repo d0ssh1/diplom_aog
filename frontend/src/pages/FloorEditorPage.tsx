@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './FloorEditorPage.module.css';
 import { useFloorEditorWizard } from '../hooks/useFloorEditorWizard';
+import { useFloorAssembly } from '../hooks/useFloorAssembly';
 import { useBuildings } from '../hooks/useBuildings';
 import { useFloors } from '../hooks/useFloors';
 import { Step1Upload } from '../components/FloorEditor/Step1Upload';
@@ -9,25 +10,35 @@ import { Step2CropRotate } from '../components/FloorEditor/Step2CropRotate';
 import { Step3WallExtraction } from '../components/FloorEditor/Step3WallExtraction';
 import { Step4MarkSections } from '../components/FloorEditor/Step4MarkSections';
 import { Step5BindPlans } from '../components/FloorEditor/Step5BindPlans';
+import { Step6BindControlPoints } from '../components/FloorEditor/Step6BindControlPoints';
+import { Step7SolveTransforms } from '../components/FloorEditor/Step7SolveTransforms';
+import { Step8Connectors } from '../components/FloorEditor/Step8Connectors';
+import { Step9FloorPreview } from '../components/FloorEditor/Step9FloorPreview';
 import { FloorOverview } from '../components/FloorEditor/FloorOverview';
 import { FloorSectionsTable } from '../components/FloorEditor/FloorSectionsTable';
 import { Toaster } from '../components/Toast/Toaster';
 
-const TOTAL_STEPS = 5;
+// 5 wizard steps (upload→crop→walls→sections→bind) + 4 assembly steps APPENDED
+// after them (master CPs→solve→connectors→preview). Drives the progress dots.
+const TOTAL_STEPS = 9;
 
 export const FloorEditorPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const wizard = useFloorEditorWizard();
+  // Sibling hook owning the UC2–UC5 assembly steps (6–9). Loaded alongside the
+  // wizard from the single GET /assembly read; only meaningful in wizard mode.
+  const assembly = useFloorAssembly();
 
   // Read floor_id from URL query param
   const floorIdParam = searchParams.get('floor_id');
   const urlFloorId = floorIdParam !== null ? parseInt(floorIdParam, 10) : null;
 
-  // Load wizard state when URL floor_id is present
+  // Load wizard + assembly state when URL floor_id is present
   useEffect(() => {
     if (urlFloorId !== null && !isNaN(urlFloorId)) {
       void wizard.loadFor(urlFloorId);
+      void assembly.load(urlFloorId);
     }
   }, [urlFloorId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -232,6 +243,63 @@ export const FloorEditorPage: React.FC = () => {
               await wizard.saveAll();
             }}
             onSaveAndExit={handleSaveAndExit}
+            onBack={wizard.prevStep}
+          />
+        );
+      case 6:
+        return (
+          <Step6BindControlPoints
+            sections={assembly.sections}
+            masterSchemaUrl={assembly.masterSchemaUrl}
+            sectionThumbUrls={assembly.sectionThumbUrls}
+            masterPointsBySection={assembly.masterPointsBySection}
+            activeSectionId={assembly.activeSectionId}
+            activePointId={assembly.activePointId}
+            isLoading={assembly.isLoading}
+            onSelectSection={assembly.setActiveSection}
+            onSelectPoint={assembly.setActivePoint}
+            onSetMasterPoint={assembly.setMasterPoint}
+            onRemoveMasterPoint={assembly.removeMasterPoint}
+            onSave={assembly.saveMasterControlPoints}
+            onBack={wizard.prevStep}
+            onNext={wizard.nextStep}
+          />
+        );
+      case 7:
+        return (
+          <Step7SolveTransforms
+            sections={assembly.sections}
+            masterSchemaUrl={assembly.masterSchemaUrl}
+            masterSizePx={assembly.assembly?.master_schema.size_px ?? null}
+            solveResult={assembly.solveResult}
+            isSolving={assembly.isSolving}
+            onSolve={assembly.solveTransforms}
+            onBack={wizard.prevStep}
+            onNext={wizard.nextStep}
+          />
+        );
+      case 8:
+        return (
+          <Step8Connectors
+            masterSchemaUrl={assembly.masterSchemaUrl}
+            connectorDrafts={assembly.connectorDrafts}
+            isSaving={assembly.isSavingConnectors}
+            onChangeDrafts={assembly.setConnectorDrafts}
+            onSave={assembly.replaceConnectors}
+            onBack={wizard.prevStep}
+            onNext={wizard.nextStep}
+          />
+        );
+      case 9:
+        return (
+          <Step9FloorPreview
+            previewGlbUrl={assembly.previewGlbUrl}
+            buildResult={assembly.buildResult}
+            meshFileGlb={assembly.meshFileGlb}
+            isBuilding={assembly.isBuilding}
+            isConfirming={assembly.isConfirming}
+            onBuild={assembly.buildFloorMesh}
+            onConfirm={assembly.confirmFloorMesh}
             onBack={wizard.prevStep}
           />
         );

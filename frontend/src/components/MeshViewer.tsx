@@ -123,6 +123,27 @@ function ObjModel({ url, rooms, showRooms, rooms3D }: ObjModelProps) {
     if (ref.current) applyMapMaterials(ref.current, false);
   }, [obj]);
 
+  // Dispose the MeshStandardMaterials applyMapMaterials minted for this OBJ on
+  // unmount / url change — <Canvas> disposes its renderer, not these per-mount
+  // materials. NB: unlike GlbModel, the GEOMETRY here is the SHARED
+  // useLoader(OBJLoader) cache (not a per-load clone), so it is deliberately NOT
+  // disposed — doing so would corrupt a later reload of the same url. Only the
+  // per-mount materials are ours to free.
+  useEffect(() => {
+    return () => {
+      obj.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          const material = child.material;
+          if (Array.isArray(material)) {
+            material.forEach((m) => m.dispose());
+          } else if (material) {
+            material.dispose();
+          }
+        }
+      });
+    };
+  }, [obj]);
+
   return (
     <>
       <primitive ref={ref} object={obj} />
@@ -196,6 +217,26 @@ function GlbModel({ url, rooms, showRooms, rooms3D }: GlbModelProps) {
     });
     return cloned;
   }, [scene]);
+
+  // Dispose the cloned geometries + the MeshStandardMaterials minted above when
+  // this processedScene is replaced or the component unmounts. <Canvas> disposes
+  // its renderer, not these per-load clones, so without this they leak GPU
+  // memory (Phase 14's dispose test targets exactly these resources).
+  useEffect(() => {
+    return () => {
+      processedScene.traverse((child) => {
+        if (child instanceof THREE.Mesh) {
+          child.geometry.dispose();
+          const material = child.material;
+          if (Array.isArray(material)) {
+            material.forEach((m) => m.dispose());
+          } else if (material) {
+            material.dispose();
+          }
+        }
+      });
+    };
+  }, [processedScene]);
 
   return (
     <>

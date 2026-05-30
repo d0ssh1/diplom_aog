@@ -13,7 +13,11 @@ import type {
 } from '../types/hierarchy';
 
 export type EditorMode = 'wizard' | 'overview' | 'table';
-export type WizardStep = 1 | 2 | 3 | 4 | 5;
+// Steps 6–9 (master control points, solve, connectors, preview) are APPENDED
+// after the original 1–5 (upload→crop→walls→sections→bind). Appending keeps
+// 1–5 numbering stable, so resetFloor's setCurrentStep(4) and the goToStep(1)/
+// goToStep(3) calls in FloorEditorPage stay correct.
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
 
 export interface Point2D {
   x: number;
@@ -157,7 +161,7 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
   }, []);
 
   const nextStep = useCallback(() => {
-    setCurrentStep((s) => (Math.min(s + 1, 5) as WizardStep));
+    setCurrentStep((s) => (Math.min(s + 1, 9) as WizardStep));
   }, []);
 
   const prevStep = useCallback(() => {
