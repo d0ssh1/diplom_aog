@@ -16,6 +16,7 @@ from app.api.sections import router as sections_router
 from app.api.floor_schema import router as floor_schema_router
 from app.api.stitching import router as stitching_router
 from app.api.floor_transitions import router as floor_transitions_router
+from app.api.floor_assembly import router as floor_assembly_router
 
 # Main API router
 router = APIRouter()
@@ -34,6 +35,7 @@ router.include_router(sections_router)
 router.include_router(floor_schema_router)
 router.include_router(stitching_router)
 router.include_router(floor_transitions_router)
+router.include_router(floor_assembly_router)
 
 
 # Common info endpoint

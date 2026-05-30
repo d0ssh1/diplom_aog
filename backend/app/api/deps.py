@@ -10,7 +10,9 @@ from app.db.repositories.section_repo import SectionRepository
 from app.db.repositories.transition_repo import TransitionRepository
 from app.db.repositories.user_repository import UserRepository
 from app.db.repositories.floor_transition_repo import FloorTransitionRepository
+from app.db.repositories.floor_connector_repo import FloorConnectorRepository
 from app.services.building_service import BuildingService
+from app.services.floor_assembly_service import FloorAssemblyService
 from app.services.floor_schema_service import FloorSchemaService
 from app.services.floor_service import FloorService
 from app.services.mask_service import MaskService
@@ -163,4 +165,29 @@ async def get_floor_schema_service(
     return FloorSchemaService(
         floor_repo=floor_repo,
         upload_dir=str(settings.UPLOAD_DIR),
+    )
+
+
+# ── Floor-stitching deps (Phase 09) ───────────────────────────────────────────
+
+
+async def get_floor_connector_repo(
+    session: AsyncSession = Depends(get_db),
+) -> FloorConnectorRepository:
+    return FloorConnectorRepository(session)
+
+
+async def get_floor_assembly_service(
+    floor_repo: FloorRepository = Depends(get_floor_repo),
+    section_repo: SectionRepository = Depends(get_section_repo),
+    reconstruction_repo: ReconstructionRepository = Depends(get_reconstruction_repo),
+    connector_repo: FloorConnectorRepository = Depends(get_floor_connector_repo),
+    storage: FileStorage = Depends(get_file_storage),
+) -> FloorAssemblyService:
+    return FloorAssemblyService(
+        floor_repo=floor_repo,
+        section_repo=section_repo,
+        reconstruction_repo=reconstruction_repo,
+        connector_repo=connector_repo,
+        storage=storage,
     )
