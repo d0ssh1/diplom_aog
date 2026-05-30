@@ -454,15 +454,18 @@ class FloorAssemblyService:
                 ppm_section=ppm_section,
             )
 
-        # Success — build the transform dict to persist. solved_at is timezone-AWARE
-        # UTC (NOT naive utcnow): Phase 02's SectionTransform round-trips the offset.
+        # Success — build the transform dict to persist. solved_at is a timezone-
+        # AWARE UTC ISO-8601 STRING (not a datetime object): section.transform is a
+        # JSON column, and json.dumps cannot serialise a datetime — storing the ISO
+        # string keeps the offset and Pydantic v2 coerces it back to a tz-aware
+        # datetime when SectionTransform(**transform) is built (Phase 02 contract).
         transform = {
             "scale": result.scale,
             "tx": result.tx,
             "ty": result.ty,
             "residual_rms_px": result.residual_rms,
             "n_points": result.n_points,
-            "solved_at": datetime.now(timezone.utc),
+            "solved_at": datetime.now(timezone.utc).isoformat(),
         }
         implied_ppm = (
             ppm_section * result.scale
