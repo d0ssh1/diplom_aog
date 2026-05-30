@@ -329,6 +329,10 @@ class MasterSchemaInfo(BaseModel):
     url: str
     crop_bbox: Optional[CropBboxModel] = None
     size_px: Optional[tuple[int, int]] = None
+    # Vectorised "карта отсеков": floor wall contours normalised [0,1] over the
+    # CROPPED+rotated master frame (same frame as master_control_points). The Floor
+    # Editor draws these as the master backdrop (vector); None until wall extraction.
+    wall_polygons: Optional[list[list[tuple[float, float]]]] = None
 
 
 class AssemblySection(BaseModel):
@@ -341,6 +345,9 @@ class AssemblySection(BaseModel):
     number: int
     reconstruction_id: Optional[int] = None
     mask_file_id: Optional[str] = None
+    # Viewable URL of the section's cropped wall mask (the "эталон" backdrop the
+    # editor places section-local control points on). None when unbound / no mask.
+    mask_url: Optional[str] = None
     image_size_cropped: Optional[tuple[int, int]] = None
     section_control_points: list[ControlPoint]
     master_control_points: list[MasterControlPoint]

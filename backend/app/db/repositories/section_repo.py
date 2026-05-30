@@ -23,11 +23,23 @@ class SectionRepository(BaseRepository):
         super().__init__(session)
 
     async def list_by_floor(self, floor_id: int) -> list[Section]:
-        """SELECT sections for a floor, eager-loading reconstruction."""
+        """SELECT sections for a floor, eager-loading reconstruction + its files.
+
+        ``mask_file`` is eager-loaded (alongside ``plan_file``) so the assembly
+        read can expose the section's cropped wall-mask URL without a lazy load in
+        async context.
+        """
         logger.debug("list_by_floor: floor_id=%d", floor_id)
         result = await self._session.execute(
             select(Section)
-            .options(selectinload(Section.reconstruction).selectinload(Reconstruction.plan_file))
+            .options(
+                selectinload(Section.reconstruction).selectinload(
+                    Reconstruction.plan_file
+                ),
+                selectinload(Section.reconstruction).selectinload(
+                    Reconstruction.mask_file
+                ),
+            )
             .where(Section.floor_id == floor_id)
             .order_by(Section.number)
         )
@@ -67,11 +79,18 @@ class SectionRepository(BaseRepository):
         return sections
 
     async def get_by_id(self, section_id: int) -> Optional[Section]:
-        """SELECT by PK with reconstruction loaded. Returns None if not found."""
+        """SELECT by PK with reconstruction + its files loaded. None if not found."""
         logger.debug("get_by_id: section_id=%d", section_id)
         result = await self._session.execute(
             select(Section)
-            .options(selectinload(Section.reconstruction).selectinload(Reconstruction.plan_file))
+            .options(
+                selectinload(Section.reconstruction).selectinload(
+                    Reconstruction.plan_file
+                ),
+                selectinload(Section.reconstruction).selectinload(
+                    Reconstruction.mask_file
+                ),
+            )
             .where(Section.id == section_id)
         )
         return result.scalar_one_or_none()

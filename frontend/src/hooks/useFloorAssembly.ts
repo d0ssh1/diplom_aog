@@ -13,7 +13,6 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import { floorAssemblyApi } from '../api/floorAssemblyApi';
-import { reconstructionApi } from '../api/apiService';
 import { toastApi } from './useToast';
 import { writeActivePoint } from '../lib/controlPoints';
 import type {
@@ -21,6 +20,7 @@ import type {
   BuildFloorPreviewResponse,
   Connector,
   ConnectorInput,
+  ControlPoint,
   FloorAssemblyResponse,
   MasterControlPoint,
   SolveTransformsResponse,
@@ -47,20 +47,23 @@ export interface UseFloorAssemblyReturn {
   load: (floorId: number) => Promise<void>;
   reload: () => Promise<void>;
 
-  // --- UC2: bind master control points ---
+  // --- UC2: bind control points (section эталон ↔ master карта отсеков) ---
   activeSectionId: number | null;
   activePointId: string | null;
-  /** Master points placed per section (draft, keyed by section id). */
+  /** Section-local points placed per section (эталон side, keyed by section id). */
+  sectionPointsBySection: Record<number, ControlPoint[]>;
+  /** Master points placed per section (карта-отсеков side, keyed by section id). */
   masterPointsBySection: Record<number, MasterControlPoint[]>;
   setActiveSection: (sectionId: number | null) => void;
   setActivePoint: (pointId: string | null) => void;
-  /** Write the active id's master coord (active-id only, overwrite — AC2). */
+  /** Write a numbered point's coord on the section (эталон) side (overwrite). */
+  setSectionPoint: (sectionId: number, pointId: string, x: number, y: number) => void;
+  /** Write a numbered point's coord on the master (карта отсеков) side (overwrite). */
   setMasterPoint: (sectionId: number, pointId: string, x: number, y: number) => void;
-  removeMasterPoint: (sectionId: number, pointId: string) => void;
-  /** Persist the active section's master points (PUT). */
-  saveMasterControlPoints: (sectionId: number) => Promise<void>;
-  /** Section-mask backdrop URLs (reconstruction preview), keyed by section id. */
-  sectionThumbUrls: Record<number, string | null>;
+  /** Remove a numbered point from BOTH sides (delete the whole correspondence). */
+  removePoint: (sectionId: number, pointId: string) => void;
+  /** Persist BOTH sides for the section: section-local CPs THEN master CPs (PUT). */
+  saveControlPoints: (sectionId: number) => Promise<void>;
 
   // --- UC3: solve transforms ---
   solveResult: SolveTransformsResponse | null;
@@ -98,6 +101,16 @@ const masterPointsFromSections = (
   return map;
 };
 
+const sectionPointsFromSections = (
+  sections: AssemblySection[],
+): Record<number, ControlPoint[]> => {
+  const map: Record<number, ControlPoint[]> = {};
+  for (const s of sections) {
+    map[s.section_id] = s.section_control_points.map((p) => ({ ...p }));
+  }
+  return map;
+};
+
 export const useFloorAssembly = (): UseFloorAssemblyReturn => {
   const [floorId, setFloorId] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -109,11 +122,11 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
 
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [activePointId, setActivePointId] = useState<string | null>(null);
+  const [sectionPointsBySection, setSectionPointsBySection] = useState<
+    Record<number, ControlPoint[]>
+  >({});
   const [masterPointsBySection, setMasterPointsBySection] = useState<
     Record<number, MasterControlPoint[]>
-  >({});
-  const [sectionThumbUrls, setSectionThumbUrls] = useState<
-    Record<number, string | null>
   >({});
 
   const [solveResult, setSolveResult] = useState<SolveTransformsResponse | null>(null);
@@ -135,6 +148,7 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
       setAssembly(data);
       setMeshFileGlb(data.mesh_file_glb);
       setPixelsPerMeter(data.pixels_per_meter);
+      setSectionPointsBySection(sectionPointsFromSections(data.sections));
       setMasterPointsBySection(masterPointsFromSections(data.sections));
       setConnectorDrafts(connectorsToDrafts(data.connectors));
       // Reset transient per-build state — those come from POSTs, never the read.
@@ -144,26 +158,6 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
       const firstBound = data.sections.find((s) => s.reconstruction_id !== null);
       setActiveSectionId(firstBound ? firstBound.section_id : null);
       setActivePointId(null);
-
-      // Fetch each bound section's mask preview for the bind thumbnail backdrop.
-      const thumbs: Record<number, string | null> = {};
-      await Promise.all(
-        data.sections.map(async (s) => {
-          if (s.reconstruction_id === null) {
-            thumbs[s.section_id] = null;
-            return;
-          }
-          try {
-            const recon = await reconstructionApi.getReconstructionById(
-              s.reconstruction_id,
-            );
-            thumbs[s.section_id] = recon.preview_url ?? recon.url ?? null;
-          } catch {
-            thumbs[s.section_id] = null;
-          }
-        }),
-      );
-      setSectionThumbUrls(thumbs);
     } catch {
       setError('Ошибка загрузки данных сборки этажа');
     } finally {
@@ -186,8 +180,26 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     setActivePointId(pointId);
   }, []);
 
-  // Writes the master coord to the ACTIVE id only — no nearest-neighbour match.
-  // Re-calling with the same id overwrites that id's coord (never duplicates).
+  // Write a numbered point's coord on the section (эталон) side. Re-calling the
+  // same id overwrites that id's coord (never duplicates).
+  const setSectionPoint = useCallback(
+    (sectionId: number, pointId: string, x: number, y: number) => {
+      setSectionPointsBySection((prev) => {
+        const current = prev[sectionId] ?? [];
+        return {
+          ...prev,
+          [sectionId]: [
+            ...current.filter((p) => p.id !== pointId),
+            { id: pointId, x, y },
+          ],
+        };
+      });
+    },
+    [],
+  );
+
+  // Write a numbered point's coord on the master (карта отсеков) side. Overwrite
+  // by id — never nearest-neighbour matched (writeActivePoint, AC2).
   const setMasterPoint = useCallback(
     (sectionId: number, pointId: string, x: number, y: number) => {
       setMasterPointsBySection((prev) => ({
@@ -198,27 +210,58 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     [],
   );
 
-  const removeMasterPoint = useCallback((sectionId: number, pointId: string) => {
-    setMasterPointsBySection((prev) => {
-      const current = prev[sectionId] ?? [];
-      return { ...prev, [sectionId]: current.filter((p) => p.point_id !== pointId) };
-    });
+  // Delete a numbered point from BOTH sides — a point is one correspondence pair,
+  // so removing it clears the эталон AND the карта-отсеков coordinate together.
+  const removePoint = useCallback((sectionId: number, pointId: string) => {
+    setSectionPointsBySection((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] ?? []).filter((p) => p.id !== pointId),
+    }));
+    setMasterPointsBySection((prev) => ({
+      ...prev,
+      [sectionId]: (prev[sectionId] ?? []).filter((p) => p.point_id !== pointId),
+    }));
+    setActivePointId((cur) => (cur === pointId ? null : cur));
   }, []);
 
-  const saveMasterControlPoints = useCallback(
+  // Persist both sides for one section. Section-local CPs go FIRST (they define the
+  // valid id set); the master save then validates every point_id against them, so
+  // only master points that already have an эталон counterpart are persisted —
+  // incomplete pairs simply wait for their other half.
+  const saveControlPoints = useCallback(
     async (sectionId: number): Promise<void> => {
       if (floorId === null) return;
+      const section =
+        assembly?.sections.find((s) => s.section_id === sectionId) ?? null;
+      if (!section || section.reconstruction_id === null) {
+        toastApi.error('Отсек не привязан к плану');
+        return;
+      }
       setIsLoading(true);
       setError(null);
       try {
-        const points = masterPointsBySection[sectionId] ?? [];
-        const res = await floorAssemblyApi.saveMasterControlPoints(
+        const sectionPts = sectionPointsBySection[sectionId] ?? [];
+        const masterPts = masterPointsBySection[sectionId] ?? [];
+
+        // 1) Section эталон → reconstruction.control_points.
+        const recRes = await floorAssemblyApi.saveReconstructionControlPoints(
+          section.reconstruction_id,
+          sectionPts,
+        );
+        setSectionPointsBySection((prev) => ({
+          ...prev,
+          [sectionId]: recRes.points,
+        }));
+
+        // 2) Master карта отсеков → section.control_points (only complete pairs).
+        const savedIds = new Set(recRes.points.map((p) => p.id));
+        const masterToSave = masterPts.filter((p) => savedIds.has(p.point_id));
+        const mRes = await floorAssemblyApi.saveMasterControlPoints(
           floorId,
           sectionId,
-          points,
+          masterToSave,
         );
-        // Echo the server's canonical list back into the draft.
-        setMasterPointsBySection((prev) => ({ ...prev, [sectionId]: res.points }));
+        setMasterPointsBySection((prev) => ({ ...prev, [sectionId]: mRes.points }));
         toastApi.success('Опорные точки сохранены');
       } catch {
         toastApi.error('Ошибка сохранения опорных точек');
@@ -226,7 +269,7 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
         setIsLoading(false);
       }
     },
-    [floorId, masterPointsBySection],
+    [floorId, assembly, sectionPointsBySection, masterPointsBySection],
   );
 
   // --- UC3 -----------------------------------------------------------------
@@ -321,13 +364,14 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     reload,
     activeSectionId,
     activePointId,
+    sectionPointsBySection,
     masterPointsBySection,
     setActiveSection,
     setActivePoint,
+    setSectionPoint,
     setMasterPoint,
-    removeMasterPoint,
-    saveMasterControlPoints,
-    sectionThumbUrls,
+    removePoint,
+    saveControlPoints,
     solveResult,
     isSolving,
     solveTransforms,

@@ -251,16 +251,20 @@ export const FloorEditorPage: React.FC = () => {
           <Step6BindControlPoints
             sections={assembly.sections}
             masterSchemaUrl={assembly.masterSchemaUrl}
-            sectionThumbUrls={assembly.sectionThumbUrls}
+            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
+            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
+            masterSizePx={assembly.assembly?.master_schema.size_px ?? null}
+            sectionPointsBySection={assembly.sectionPointsBySection}
             masterPointsBySection={assembly.masterPointsBySection}
             activeSectionId={assembly.activeSectionId}
             activePointId={assembly.activePointId}
             isLoading={assembly.isLoading}
             onSelectSection={assembly.setActiveSection}
             onSelectPoint={assembly.setActivePoint}
+            onSetSectionPoint={assembly.setSectionPoint}
             onSetMasterPoint={assembly.setMasterPoint}
-            onRemoveMasterPoint={assembly.removeMasterPoint}
-            onSave={assembly.saveMasterControlPoints}
+            onRemovePoint={assembly.removePoint}
+            onSave={assembly.saveControlPoints}
             onBack={wizard.prevStep}
             onNext={wizard.nextStep}
           />

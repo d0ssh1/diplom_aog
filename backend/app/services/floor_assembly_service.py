@@ -966,11 +966,19 @@ class FloorAssemblyService:
             else None
         )
         size_px = self._full_schema_size_px(floor)
+        # Vectorised карта отсеков (normalised over the cropped master frame). The
+        # JSON column stores [[x, y], ...] lists; coerce to tuples for the contract.
+        wall_polygons = (
+            [[(float(pt[0]), float(pt[1])) for pt in poly] for poly in floor.wall_polygons]
+            if floor.wall_polygons
+            else None
+        )
         return MasterSchemaInfo(
             image_id=image_id,
             url=url,
             crop_bbox=crop_bbox,
             size_px=size_px,
+            wall_polygons=wall_polygons,
         )
 
     def _full_schema_size_px(
@@ -1009,6 +1017,12 @@ class FloorAssemblyService:
         reconstruction_id = reconstruction.id if reconstruction else None
 
         mask_file_id = reconstruction.mask_file_id if reconstruction else None
+        # Viewable URL of the cropped wall mask (eager-loaded by the section repo).
+        mask_url = (
+            reconstruction.mask_file.url
+            if reconstruction is not None and reconstruction.mask_file is not None
+            else None
+        )
         image_size_cropped = (
             self._read_image_size_cropped(reconstruction)
             if reconstruction
@@ -1040,6 +1054,7 @@ class FloorAssemblyService:
             number=section.number,
             reconstruction_id=reconstruction_id,
             mask_file_id=mask_file_id,
+            mask_url=mask_url,
             image_size_cropped=image_size_cropped,
             section_control_points=section_cps,
             master_control_points=master_cps,

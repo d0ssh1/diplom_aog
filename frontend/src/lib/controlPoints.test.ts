@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { nextMonotonicId, writeActivePoint, colourForId } from './controlPoints';
+import {
+  nextMonotonicId,
+  nextNumberId,
+  pointLabel,
+  writeActivePoint,
+  colourForId,
+} from './controlPoints';
 import {
   nearestWithin,
   hitTest,
@@ -28,6 +34,34 @@ describe('nextMonotonicId', () => {
     expect(ids).toEqual(['cp-1', 'cp-2', 'cp-3']);
     expect(afterDelete.id).toBe('cp-4');
     expect(afterDelete.id).not.toBe('cp-2');
+  });
+});
+
+describe('nextNumberId (floor-stitch pairing)', () => {
+  it('starts at "cp-1" for an empty set', () => {
+    expect(nextNumberId([])).toBe('cp-1');
+  });
+
+  it('returns cp-(max + 1) over the digits of existing cp-N ids', () => {
+    // Left has cp-1,cp-2; right has cp-1,cp-2,cp-3 → next is cp-4 (never reuses 3).
+    expect(nextNumberId(['cp-1', 'cp-2', 'cp-1', 'cp-2', 'cp-3'])).toBe('cp-4');
+  });
+
+  it('is backend-pattern (^cp-\\d+$) compatible and survives a delete gap', () => {
+    // cp-2 deleted from both sides → remaining cp-1,cp-3 → next is cp-4, not cp-2.
+    expect(nextNumberId(['cp-1', 'cp-3'])).toBe('cp-4');
+    expect(nextNumberId(['cp-1', 'cp-3'])).toMatch(/^cp-\d+$/);
+  });
+});
+
+describe('pointLabel (UI number)', () => {
+  it('shows the bare number for a cp-N id', () => {
+    expect(pointLabel('cp-7')).toBe('7');
+    expect(pointLabel('cp-12')).toBe('12');
+  });
+
+  it('falls back to the id when there is no number', () => {
+    expect(pointLabel('x')).toBe('x');
   });
 });
 

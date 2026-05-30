@@ -21,6 +21,33 @@ export const nextMonotonicId = (counter: number): IdAssignment => ({
   counter: counter + 1,
 });
 
+/**
+ * Next sequence id for the floor-stitch flow (Step 6). Control points are numbered
+ * 1, 2, 3… and the SAME number on the section (эталон) and the master (карта
+ * отсеков) form one correspondence pair. The id itself is the backend-mandated
+ * `cp-N` form (ControlPoint.id / MasterControlPoint.point_id are validated against
+ * `^cp-\d+$`); only the bare number is shown in the UI (see {@link pointLabel}).
+ * N is `max(existing) + 1` over the digits of the given ids, so a number is never
+ * reused. An empty set yields "cp-1".
+ */
+export const nextNumberId = (ids: readonly string[]): string => {
+  let max = 0;
+  for (const id of ids) {
+    const match = /(\d+)/.exec(id);
+    if (match) {
+      const n = parseInt(match[1], 10);
+      if (n > max) max = n;
+    }
+  }
+  return `cp-${max + 1}`;
+};
+
+/** Bare display number for a control-point id ("cp-7" → "7"; falls back to id). */
+export const pointLabel = (id: string): string => {
+  const match = /(\d+)/.exec(id);
+  return match ? match[1] : id;
+};
+
 export interface IdedPoint {
   point_id: string;
   x: number;

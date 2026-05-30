@@ -332,6 +332,7 @@ async def test_assembly_returns_full_payload_shape(client, auth_headers):
             url="/api/v1/uploads/plans/schema-1.png",
             crop_bbox=None,
             size_px=(3200, 2400),
+            wall_polygons=[[(0.1, 0.1), (0.9, 0.1), (0.9, 0.9)]],
         ),
         sections=[
             AssemblySection(
@@ -339,6 +340,7 @@ async def test_assembly_returns_full_payload_shape(client, auth_headers):
                 number=1,
                 reconstruction_id=5,
                 mask_file_id="mask-1",
+                mask_url="/api/v1/uploads/masks/mask-1.png",
                 image_size_cropped=(800, 600),
                 section_control_points=[],
                 master_control_points=[],
@@ -355,7 +357,13 @@ async def test_assembly_returns_full_payload_shape(client, auth_headers):
         data = resp.json()
         assert data["floor_id"] == 1
         assert data["master_schema"]["image_id"] == "schema-1"
+        # Vectorised карта отсеков is echoed for the master backdrop.
+        assert data["master_schema"]["wall_polygons"] == [
+            [[0.1, 0.1], [0.9, 0.1], [0.9, 0.9]]
+        ]
         assert data["sections"][0]["status"] == "needs_points"
+        # Section's cropped-mask URL is exposed for the эталон backdrop.
+        assert data["sections"][0]["mask_url"] == "/api/v1/uploads/masks/mask-1.png"
         assert data["connectors"] == []
     finally:
         _clear()

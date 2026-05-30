@@ -129,6 +129,12 @@ export interface MasterSchemaInfo {
   url: string;
   crop_bbox: CropBbox | null;
   size_px: [number, number] | null;
+  /**
+   * Vectorised "карта отсеков" — floor wall contours normalised [0,1] over the
+   * CROPPED+rotated master frame (the same frame master_control_points live in).
+   * Drawn as the master backdrop (vector); null until wall extraction (step 3).
+   */
+  wall_polygons: [number, number][][] | null;
 }
 
 export interface AssemblySection {
@@ -136,6 +142,8 @@ export interface AssemblySection {
   number: number;
   reconstruction_id: number | null;
   mask_file_id: string | null;
+  /** Viewable URL of the section's cropped wall mask (the "эталон" backdrop). */
+  mask_url: string | null;
   image_size_cropped: [number, number] | null;
   section_control_points: ControlPoint[];
   master_control_points: MasterControlPoint[];
