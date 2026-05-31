@@ -9,8 +9,17 @@
 import type { CropBbox } from '../../types/hierarchy';
 
 /**
- * Bake a cropped + rotated image into an offscreen canvas.
- * Returns null if inputs are missing or invalid.
+ * Bake the cropped + rotated region of a schema image into an offscreen canvas.
+ *
+ * CRITICAL: `crop.{x,y,width,height}` are NORMALISED fractions [0,1], NOT pixels
+ * — that is how they are stored (floor.schema_crop_bbox) and how the backend
+ * consumes them (preprocessor.preprocess_image: `x = int(crop.x * w)`). This
+ * mirrors the backend EXACTLY — rotate the full image FIRST, then crop by
+ * fractions over the ROTATED dims — so the returned canvas has the same frame
+ * (and dims, modulo ≤1px rounding) as `_master_pixel_dims`, which is the frame
+ * `wall_polygons` and the master control points are normalised over.
+ *
+ * Returns null if inputs are missing or the cropped region is degenerate.
  */
 export function bakeCroppedRotated(
   img: HTMLImageElement,
@@ -18,42 +27,48 @@ export function bakeCroppedRotated(
 ): HTMLCanvasElement | null {
   if (!img.complete || img.naturalWidth === 0) return null;
 
-  // No crop yet: return the original image as-is (wrapped in a canvas)
-  if (!crop) {
-    const off = document.createElement('canvas');
-    off.width = img.naturalWidth;
-    off.height = img.naturalHeight;
-    off.getContext('2d')!.drawImage(img, 0, 0);
-    return off;
-  }
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const rotation = (((crop?.rotation ?? 0) % 360) + 360) % 360;
 
-  const { x, y, width, height, rotation } = crop;
-  if (width <= 0 || height <= 0) return null;
+  // 1. Rotate the FULL image (mirrors preprocess_image step 1: cv2.rotate).
+  const swap = rotation === 90 || rotation === 270;
+  const rw = swap ? ih : iw;
+  const rh = swap ? iw : ih;
+  const rotCanvas = document.createElement('canvas');
+  rotCanvas.width = rw;
+  rotCanvas.height = rh;
+  const rctx = rotCanvas.getContext('2d');
+  if (!rctx) return null;
+  rctx.imageSmoothingEnabled = true;
+  rctx.imageSmoothingQuality = 'high';
+  rctx.save();
+  rctx.translate(rw / 2, rh / 2);
+  rctx.rotate((rotation * Math.PI) / 180);
+  rctx.drawImage(img, -iw / 2, -ih / 2);
+  rctx.restore();
 
-  const rotated = rotation === 90 || rotation === 270;
-  const off = document.createElement('canvas');
-  off.width = Math.max(1, Math.round(rotated ? height : width));
-  off.height = Math.max(1, Math.round(rotated ? width : height));
+  // No crop → the (possibly rotated) full image.
+  if (!crop) return rotCanvas;
+  if (crop.width <= 0 || crop.height <= 0) return null;
 
-  // Defensive: bail out if the resulting canvas has no real area.
-  if (off.width < 2 || off.height < 2) return null;
+  // 2. Crop by FRACTIONS over the rotated dims (mirrors preprocess_image step 2:
+  //    int(crop.x*w) etc., clamped to bounds).
+  const cx = Math.max(0, Math.min(Math.round(crop.x * rw), rw - 1));
+  const cy = Math.max(0, Math.min(Math.round(crop.y * rh), rh - 1));
+  const cw = Math.max(1, Math.min(Math.round(crop.width * rw), rw - cx));
+  const ch = Math.max(1, Math.min(Math.round(crop.height * rh), rh - cy));
+  if (cw < 2 || ch < 2) return null;
 
-  const ctx = off.getContext('2d');
-  if (!ctx) return null;
-
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = 'high';
-  ctx.save();
-  ctx.translate(off.width / 2, off.height / 2);
-  ctx.rotate((rotation * Math.PI) / 180);
-  ctx.drawImage(
-    img,
-    x, y, width, height,        // source rect within original image
-    -width / 2, -height / 2,    // destination centered at origin
-    width, height,
-  );
-  ctx.restore();
-  return off;
+  const out = document.createElement('canvas');
+  out.width = cw;
+  out.height = ch;
+  const octx = out.getContext('2d');
+  if (!octx) return null;
+  octx.imageSmoothingEnabled = true;
+  octx.imageSmoothingQuality = 'high';
+  octx.drawImage(rotCanvas, cx, cy, cw, ch, 0, 0, cw, ch);
+  return out;
 }
 
 /**

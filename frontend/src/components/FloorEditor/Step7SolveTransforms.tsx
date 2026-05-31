@@ -12,19 +12,23 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import { getSectionColor } from './sectionColors';
-import { fitContain } from './croppedImage';
+import { fitContain, bakeCroppedRotated } from './croppedImage';
 import type {
   AssemblySection,
   SolveSectionResult,
   SolveTransformsResponse,
 } from '../../types/floorAssembly';
+import type { CropBbox } from '../../types/hierarchy';
 import wizardStyles from './WizardStep.module.css';
 import styles from './Step7SolveTransforms.module.css';
 
 interface Step7SolveTransformsProps {
   sections: AssemblySection[];
   masterSchemaUrl: string | null;
-  masterSizePx: [number, number] | null;
+  // The warped section overlays map section px → CROPPED master px, so the backdrop
+  // + normalisation frame must be the cropped карта отсеков (not the full raster).
+  masterCropBbox: CropBbox | null;
+  masterWallPolygons: [number, number][][] | null;
   solveResult: SolveTransformsResponse | null;
   isSolving: boolean;
   onSolve: () => Promise<void>;
@@ -63,7 +67,8 @@ export const residualMetres = (
 export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
   sections,
   masterSchemaUrl,
-  masterSizePx,
+  masterCropBbox,
+  masterWallPolygons,
   solveResult,
   isSolving,
   onSolve,
@@ -73,6 +78,10 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  // Cropped карта-отсеков frame (баked from schema + crop) — the frame the solved
+  // transforms map into, so overlays land correctly.
+  const bakedRef = useRef<HTMLCanvasElement | null>(null);
+  const wallPolyRef = useRef<[number, number][][] | null>(null);
 
   const sectionIndexById = new Map<number, number>();
   sections.forEach((s, i) => sectionIndexById.set(s.section_id, i));
@@ -93,19 +102,36 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, cw, ch);
 
-    const img = imgRef.current;
-    const imgW = img?.naturalWidth ?? 0;
-    const imgH = img?.naturalHeight ?? 0;
-    if (!img || imgW <= 0 || imgH <= 0) return;
+    // The CROPPED master frame is the canvas the transforms map into (master px).
+    const baked = bakedRef.current;
+    const masterW = baked?.width ?? 0;
+    const masterH = baked?.height ?? 0;
+    if (!baked || masterW <= 0 || masterH <= 0) return;
 
-    const { dx, dy, dw, dh } = fitContain(imgW, imgH, cw, ch, 1);
-    ctx.drawImage(img, dx, dy, dw, dh);
+    const { dx, dy, dw, dh } = fitContain(masterW, masterH, cw, ch, 1);
+    ctx.drawImage(baked, dx, dy, dw, dh);
 
-    // Master pixel canvas size — transforms map section px → master px. Fall back
-    // to the natural image size when size_px is absent.
-    const masterW = masterSizePx?.[0] ?? imgW;
-    const masterH = masterSizePx?.[1] ?? imgH;
-    if (masterW <= 0 || masterH <= 0 || solveResult === null) return;
+    // Vector карта отсеков (section outlines) as a faint reference.
+    const polys = wallPolyRef.current;
+    if (polys) {
+      ctx.strokeStyle = 'rgba(37, 99, 235, 0.30)';
+      ctx.lineWidth = 1.2;
+      ctx.lineJoin = 'round';
+      for (const poly of polys) {
+        if (poly.length < 2) continue;
+        ctx.beginPath();
+        poly.forEach(([nx, ny], i) => {
+          const cx = dx + nx * dw;
+          const cy = dy + ny * dh;
+          if (i === 0) ctx.moveTo(cx, cy);
+          else ctx.lineTo(cx, cy);
+        });
+        ctx.closePath();
+        ctx.stroke();
+      }
+    }
+
+    if (solveResult === null) return;
 
     for (const result of solveResult.sections) {
       if (result.status !== 'ok' || result.transform === null) continue;
@@ -143,12 +169,19 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-  }, [masterSizePx, solveResult, sections]);
+  }, [solveResult, sections]);
 
-  // Load master schema backdrop.
+  // Mirror vector polygons into a ref so draw() stays identity-stable.
+  useEffect(() => {
+    wallPolyRef.current = masterWallPolygons;
+    draw();
+  }, [masterWallPolygons, draw]);
+
+  // Load master schema backdrop and bake the cropped карта-отсеков frame.
   useEffect(() => {
     if (!masterSchemaUrl) {
       imgRef.current = null;
+      bakedRef.current = null;
       draw();
       return;
     }
@@ -157,18 +190,20 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
     img.onload = () => {
       if (cancelled) return;
       imgRef.current = img;
+      bakedRef.current = bakeCroppedRotated(img, masterCropBbox ?? null);
       draw();
     };
     img.onerror = () => {
       if (cancelled) return;
       imgRef.current = null;
+      bakedRef.current = null;
       draw();
     };
     img.src = masterSchemaUrl;
     return () => {
       cancelled = true;
     };
-  }, [masterSchemaUrl, draw]);
+  }, [masterSchemaUrl, masterCropBbox, draw]);
 
   // Redraw on overlay/solve change + on resize.
   useEffect(() => {

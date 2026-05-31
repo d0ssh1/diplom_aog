@@ -274,7 +274,8 @@ export const FloorEditorPage: React.FC = () => {
           <Step7SolveTransforms
             sections={assembly.sections}
             masterSchemaUrl={assembly.masterSchemaUrl}
-            masterSizePx={assembly.assembly?.master_schema.size_px ?? null}
+            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
+            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
             solveResult={assembly.solveResult}
             isSolving={assembly.isSolving}
             onSolve={assembly.solveTransforms}
@@ -286,6 +287,8 @@ export const FloorEditorPage: React.FC = () => {
         return (
           <Step8Connectors
             masterSchemaUrl={assembly.masterSchemaUrl}
+            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
+            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
             connectorDrafts={assembly.connectorDrafts}
             isSaving={assembly.isSavingConnectors}
             onChangeDrafts={assembly.setConnectorDrafts}
