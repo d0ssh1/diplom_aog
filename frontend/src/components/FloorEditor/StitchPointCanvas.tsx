@@ -1,16 +1,14 @@
-// Floor-stitch control-point canvas (Step 6). Distinct from the plan-wizard
-// ControlPointCanvas: here the operator marks NUMBERED correspondence points on
-// two backdrops —
-//   • эталон  : the section's cropped wall mask (raster), drawn opaque;
-//   • карта отсеков : the floor's VECTOR wall_polygons drawn over the cropped
-//                     schema raster shown faintly (transparency tool).
-// Markers are orange discs with the point number inside; the active number is
-// emphasised on BOTH canvases so a pair is never confused.
+// Floor-stitch control-point canvas (Step 6). Renders a wall MASK backdrop
+// (black walls on white, like the floor overview) and lets the operator place
+// NUMBERED square markers on it. Used for both panels:
+//   • эталон : the section's cropped wall mask;
+//   • карта отсеков : the cropped floor-schema mask + section outlines overlaid.
+// The same number on each side is one correspondence pair. Brutalist: square
+// markers, no rounded shapes.
 //
-// All coordinate maths are reused from ../controlPointCanvasCore (pure, tested).
-// The component is presentational: clicks become onSelect (hit a marker) or
-// onPlace (miss). The host decides what a click means for the current tool.
-// devicePixelRatio-aware so discs/lines stay crisp on HiDPI.
+// All coordinate maths reuse ../controlPointCanvasCore (pure, tested). The
+// component is presentational: clicks become onSelect (hit a marker) or onPlace
+// (miss); the host decides what a click means for the current tool.
 
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
@@ -23,9 +21,7 @@ import {
   toImageCoords,
   type CanvasLayout,
 } from '../controlPointCanvasCore';
-import { bakeCroppedRotated } from './croppedImage';
 import { pointLabel } from '../../lib/controlPoints';
-import type { CropBbox } from '../../types/hierarchy';
 import styles from './StitchPointCanvas.module.css';
 
 export interface StitchPoint {
@@ -34,19 +30,19 @@ export interface StitchPoint {
   y: number;
 }
 
+/** A section outline drawn on the master (карта отсеков) for orientation. */
+export interface SectionOutline {
+  number: number;
+  points: [number, number][]; // normalised [0,1] over the master frame
+}
+
 export interface StitchPointCanvasProps {
-  /** Raster backdrop drawn OPAQUE (the section эталон mask). Mutually exclusive
-   *  with underlayUrl — provide whichever this canvas represents. */
-  maskUrl?: string | null;
-  /** Raster baked through `crop` and drawn FAINTLY beneath the vector (master). */
-  underlayUrl?: string | null;
-  crop?: CropBbox | null;
-  /** Underlay opacity 0..1 (the transparency tool). Default 0.2. */
-  underlayOpacity?: number;
-  /** Vector wall polygons (normalised [0,1] over this canvas's frame). */
-  polygons?: [number, number][][] | null;
-  /** Intrinsic size to fall back to when no raster decodes (e.g. vector-only). */
-  fallbackSize?: [number, number] | null;
+  /** Wall-mask backdrop URL (section mask, or the floor-schema mask blob). */
+  maskUrl: string | null;
+  /** Draw the mask inverted → black walls on white (default true). */
+  invert?: boolean;
+  /** Section outlines to overlay (master panel only). */
+  sectionOutlines?: SectionOutline[];
 
   points: StitchPoint[];
   activeId: string | null;
@@ -61,11 +57,11 @@ export interface StitchPointCanvasProps {
   onSelect(id: string): void;
 }
 
-const VECTOR_WALL = '#2563EB';
 const MARKER_FILL = '#F05123';
-const MARKER_RING = '#ffffff';
-const R_MARKER_PX = 11;
-const R_MARKER_ACTIVE_PX = 13;
+const MARKER_BORDER = '#ffffff';
+const OUTLINE_COLOR = '#2563eb';
+const HALF = 11; // marker half-size px
+const HALF_ACTIVE = 13;
 
 const computeLayout = (
   elementWidth: number,
@@ -89,11 +85,8 @@ const computeLayout = (
 
 export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
   maskUrl,
-  underlayUrl,
-  crop,
-  underlayOpacity = 0.2,
-  polygons,
-  fallbackSize,
+  invert = true,
+  sectionOutlines,
   points,
   activeId,
   snapTargets,
@@ -103,54 +96,37 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  // The decoded backdrop to paint: an opaque mask image OR a faint baked-crop canvas.
-  const opaqueImgRef = useRef<HTMLImageElement | null>(null);
-  const underlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const imageRef = useRef<HTMLImageElement | null>(null);
 
   const [imageSize, setImageSize] = useState<{ w: number; h: number } | null>(null);
   const [elementSize, setElementSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
 
-  // Load whichever raster backdrop this canvas uses. Re-baked when crop changes.
+  // Load the mask backdrop.
   useEffect(() => {
     let cancelled = false;
-    opaqueImgRef.current = null;
-    underlayCanvasRef.current = null;
-
-    const url = maskUrl ?? underlayUrl ?? null;
-    if (!url) {
-      setImageSize(fallbackSize ? { w: fallbackSize[0], h: fallbackSize[1] } : null);
+    imageRef.current = null;
+    if (!maskUrl) {
+      setImageSize(null);
       return;
     }
-
     const img = new Image();
     img.onload = () => {
       if (cancelled) return;
-      if (maskUrl) {
-        opaqueImgRef.current = img;
-        setImageSize({ w: img.naturalWidth, h: img.naturalHeight });
-        return;
-      }
-      // Master underlay: bake the cropped+rotated region; that also fixes the frame
-      // the vector polygons + master points are normalised over.
-      const baked = bakeCroppedRotated(img, crop ?? null);
-      if (baked && baked.width >= 2 && baked.height >= 2) {
-        underlayCanvasRef.current = baked;
-        setImageSize({ w: baked.width, h: baked.height });
-      } else {
-        setImageSize(fallbackSize ? { w: fallbackSize[0], h: fallbackSize[1] } : null);
-      }
+      imageRef.current = img;
+      setImageSize({ w: img.naturalWidth, h: img.naturalHeight });
     };
     img.onerror = () => {
       if (cancelled) return;
-      setImageSize(fallbackSize ? { w: fallbackSize[0], h: fallbackSize[1] } : null);
+      imageRef.current = null;
+      setImageSize(null);
     };
-    img.src = url;
+    img.src = maskUrl;
     return () => {
       cancelled = true;
     };
-  }, [maskUrl, underlayUrl, crop, fallbackSize]);
+  }, [maskUrl]);
 
-  // Track the rendered element size (CSS px).
+  // Track rendered element size (CSS px).
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -168,7 +144,7 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
     ? computeLayout(elementSize.w, elementSize.h, imageSize.w, imageSize.h)
     : { offsetX: 0, offsetY: 0, drawWidth: 0, drawHeight: 0 };
 
-  // Draw: backdrop → vector walls → numbered markers (DPR-aware).
+  // Draw: mask → section outlines → numbered square markers (DPR-aware).
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -184,70 +160,75 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
     canvas.height = Math.round(cssH * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cssW, cssH);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, cssW, cssH);
 
-    if (layout.drawWidth > 0) {
-      // 1) Backdrop.
-      if (opaqueImgRef.current) {
-        ctx.globalAlpha = 1;
-        ctx.drawImage(
-          opaqueImgRef.current,
-          layout.offsetX, layout.offsetY, layout.drawWidth, layout.drawHeight,
-        );
-      } else if (underlayCanvasRef.current) {
-        ctx.globalAlpha = Math.max(0, Math.min(1, underlayOpacity));
-        ctx.drawImage(
-          underlayCanvasRef.current,
-          layout.offsetX, layout.offsetY, layout.drawWidth, layout.drawHeight,
-        );
-        ctx.globalAlpha = 1;
-      }
-
-      // 2) Vector wall polygons (the карта отсеков itself).
-      if (polygons && polygons.length > 0) {
-        ctx.strokeStyle = VECTOR_WALL;
-        ctx.lineWidth = 1.6;
-        ctx.lineJoin = 'round';
-        for (const poly of polygons) {
-          if (poly.length < 2) continue;
-          ctx.beginPath();
-          poly.forEach(([nx, ny], i) => {
-            const d = toDisplayCoords({ x: nx, y: ny }, layout);
-            if (i === 0) ctx.moveTo(d.x, d.y);
-            else ctx.lineTo(d.x, d.y);
-          });
-          ctx.closePath();
-          ctx.stroke();
-        }
-      }
+    const img = imageRef.current;
+    if (img && layout.drawWidth > 0) {
+      ctx.save();
+      if (invert) ctx.filter = 'invert(1)';
+      ctx.drawImage(img, layout.offsetX, layout.offsetY, layout.drawWidth, layout.drawHeight);
+      ctx.restore();
     }
 
-    // 3) Numbered orange markers; active is larger with a white halo.
+    // Section outlines + number (master orientation).
+    if (sectionOutlines && layout.drawWidth > 0) {
+      ctx.strokeStyle = OUTLINE_COLOR;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      for (const outline of sectionOutlines) {
+        if (outline.points.length < 3) continue;
+        ctx.beginPath();
+        outline.points.forEach(([nx, ny], i) => {
+          const d = toDisplayCoords({ x: nx, y: ny }, layout);
+          if (i === 0) ctx.moveTo(d.x, d.y);
+          else ctx.lineTo(d.x, d.y);
+        });
+        ctx.closePath();
+        ctx.stroke();
+        // Number at centroid.
+        let ax = 0;
+        let ay = 0;
+        for (const [px, py] of outline.points) {
+          ax += px;
+          ay += py;
+        }
+        const c = toDisplayCoords(
+          { x: ax / outline.points.length, y: ay / outline.points.length },
+          layout,
+        );
+        ctx.setLineDash([]);
+        ctx.fillStyle = OUTLINE_COLOR;
+        ctx.font = 'bold 15px monospace';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`№${outline.number}`, c.x, c.y);
+        ctx.setLineDash([6, 4]);
+      }
+      ctx.setLineDash([]);
+    }
+
+    // Numbered square markers.
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     for (const point of points) {
       const isActive = point.id === activeId;
-      const r = isActive ? R_MARKER_ACTIVE_PX : R_MARKER_PX;
+      const h = isActive ? HALF_ACTIVE : HALF;
       const { x, y } = toDisplayCoords(point, layout);
-
       if (isActive) {
-        ctx.beginPath();
-        ctx.arc(x, y, r + 3, 0, Math.PI * 2);
-        ctx.fillStyle = 'rgba(240, 81, 35, 0.25)';
-        ctx.fill();
+        ctx.fillStyle = 'rgba(240, 81, 35, 0.22)';
+        ctx.fillRect(x - h - 3, y - h - 3, (h + 3) * 2, (h + 3) * 2);
       }
-      ctx.beginPath();
-      ctx.arc(x, y, r, 0, Math.PI * 2);
       ctx.fillStyle = MARKER_FILL;
-      ctx.fill();
+      ctx.fillRect(x - h, y - h, h * 2, h * 2);
       ctx.lineWidth = isActive ? 3 : 2;
-      ctx.strokeStyle = MARKER_RING;
-      ctx.stroke();
-
+      ctx.strokeStyle = MARKER_BORDER;
+      ctx.strokeRect(x - h, y - h, h * 2, h * 2);
       ctx.fillStyle = '#ffffff';
-      ctx.font = `bold ${isActive ? 13 : 12}px system-ui, sans-serif`;
+      ctx.font = `bold ${isActive ? 13 : 12}px monospace`;
       ctx.fillText(pointLabel(point.id), x, y + 0.5);
     }
-  }, [points, activeId, layout, polygons, underlayOpacity, elementSize.w, elementSize.h, imageSize]);
+  }, [points, activeId, layout, invert, sectionOutlines, elementSize.w, elementSize.h, imageSize]);
 
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -257,7 +238,6 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
       const norm = toImageCoords(event.clientX - rect.left, event.clientY - rect.top, layout);
       if (!norm) return;
 
-      // Select an existing marker first (so delete/select land on it).
       const hitRadiusNorm = displayRadiusToNorm(R_HIT_PX, layout.drawWidth);
       const hitId = hitTest(norm, points, hitRadiusNorm);
       if (hitId !== null) {
@@ -265,7 +245,6 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
         return;
       }
 
-      // Miss: place. Snap to a wall vertex when one is within reach.
       let placed = norm;
       if (snapTargets && snapTargets.length > 0) {
         const snapRadiusNorm = displayRadiusToNorm(R_SNAP_PX, layout.drawWidth);

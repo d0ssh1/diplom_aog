@@ -1,25 +1,25 @@
 // Step 6 (UC2) — bind correspondence points between each section's plan (эталон)
-// and the floor's "карта отсеков" (the whole-floor VECTOR map = floor.wall_polygons).
+// and the floor's "карта отсеков": the SAME cropped floor mask the overview shows
+// (black walls), with the section outlines drawn on it. NOT a single section's
+// poster, NOT auto-extracted vector lines.
 //
-// The master backdrop is the vectorised карта отсеков, NOT a single section's
-// evacuation poster, with the cropped original raster shown faintly beneath
-// (transparency tool, 20% by default). Points are numbered orange discs: the SAME
-// number on the эталон and on the карта отсеков is one correspondence pair
-// ("ставишь 1, 2, 3" on each side). Selecting a number highlights it on both
-// canvases; the delete tool removes a number from both sides at once.
+// Points are numbered orange SQUARES: the SAME number on the эталон and on the
+// карта отсеков is one correspondence pair ("ставишь 1, 2, 3"). Clicking a canvas
+// auto-mints the next number for that side, so a click ALWAYS places. Selecting a
+// number highlights it on both canvases; the delete tool removes a pair from both
+// sides. Points auto-save when leaving the step (and via the explicit button).
 //
 // Presentational only — all draft state/persistence lives in useFloorAssembly.
 
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { Crosshair, Trash2 } from 'lucide-react';
-import { StitchPointCanvas } from './StitchPointCanvas';
+import { StitchPointCanvas, type SectionOutline } from './StitchPointCanvas';
 import { nextNumberId, pointLabel } from '../../lib/controlPoints';
 import type {
   AssemblySection,
   ControlPoint,
   MasterControlPoint,
 } from '../../types/floorAssembly';
-import type { CropBbox } from '../../types/hierarchy';
 import wizardStyles from './WizardStep.module.css';
 import styles from './Step6BindControlPoints.module.css';
 
@@ -27,12 +27,8 @@ type Tool = 'place' | 'delete';
 
 interface Step6BindControlPointsProps {
   sections: AssemblySection[];
-  // Master "карта отсеков" backdrop (vector over the cropped raster underlay).
-  masterSchemaUrl: string | null;
-  masterCropBbox: CropBbox | null;
-  masterWallPolygons: [number, number][][] | null;
-  masterSizePx: [number, number] | null;
-  // Draft points per section, keyed by section id.
+  /** Cropped floor-schema binary mask (the карта-отсеков backdrop). */
+  masterMaskUrl: string | null;
   sectionPointsBySection: Record<number, ControlPoint[]>;
   masterPointsBySection: Record<number, MasterControlPoint[]>;
   activeSectionId: number | null;
@@ -56,10 +52,7 @@ const byNumber = (a: string, b: string): number => numOf(a) - numOf(b);
 
 export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
   sections,
-  masterSchemaUrl,
-  masterCropBbox,
-  masterWallPolygons,
-  masterSizePx,
+  masterMaskUrl,
   sectionPointsBySection,
   masterPointsBySection,
   activeSectionId,
@@ -75,19 +68,6 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
   onNext,
 }) => {
   const [tool, setTool] = useState<Tool>('place');
-  // Default 20% when the vectorised карта отсеков is present (it is the primary
-  // layer, the raster is just a faint reference). When no vector exists yet, the
-  // raster IS the only backdrop, so show it fully until the user touches the slider.
-  const [underlayOpacity, setUnderlayOpacity] = useState(0.2);
-  const [opacityTouched, setOpacityTouched] = useState(false);
-  const hasVector = (masterWallPolygons?.length ?? 0) > 0;
-  useEffect(() => {
-    if (!opacityTouched) setUnderlayOpacity(hasVector ? 0.2 : 1);
-  }, [hasVector, opacityTouched]);
-  const handleOpacityChange = useCallback((next: number) => {
-    setOpacityTouched(true);
-    setUnderlayOpacity(next);
-  }, []);
 
   const boundSections = sections.filter((s) => s.reconstruction_id !== null);
   const activeSection =
@@ -111,17 +91,23 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
     (id) => sectionIds.has(id) && masterIds.has(id),
   ).length;
 
-  // Wall vertices the master points snap to (карта отсеков corners).
-  const snapTargets = useMemo<[number, number][] | undefined>(
-    () => (masterWallPolygons ? masterWallPolygons.flat() : undefined),
-    [masterWallPolygons],
+  // Section outlines drawn on the master for orientation + snap targets.
+  const sectionOutlines = useMemo<SectionOutline[]>(
+    () =>
+      sections
+        .filter((s) => s.geometry && s.geometry.length >= 3)
+        .map((s) => ({ number: s.number, points: s.geometry as [number, number][] })),
+    [sections],
+  );
+  const masterSnap = useMemo<[number, number][]>(
+    () => sectionOutlines.flatMap((o) => o.points),
+    [sectionOutlines],
   );
 
   const sectionCanvasPoints = sectionPts.map((p) => ({ id: p.id, x: p.x, y: p.y }));
   const masterCanvasPoints = masterPts.map((p) => ({ id: p.point_id, x: p.x, y: p.y }));
   const sectionMaskUrl = activeSection?.mask_url ?? null;
 
-  // Click on an existing marker: select it, or delete the whole pair in delete mode.
   const handlePointClick = useCallback(
     (id: string) => {
       if (activeSectionId === null) return;
@@ -134,8 +120,6 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
     [activeSectionId, tool, activePointId, onRemovePoint, onSelectPoint],
   );
 
-  // Miss-click on the эталон: place the active number, or auto-mint the next one
-  // for THIS side when nothing is selected (so 1, 2, 3 just by clicking).
   const handleSectionPlace = useCallback(
     (id: string, x: number, y: number) => {
       if (activeSectionId === null || tool === 'delete') return;
@@ -158,7 +142,13 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
     if (activeSectionId !== null) void onSave(activeSectionId);
   }, [activeSectionId, onSave]);
 
-  const hasMaster = masterSchemaUrl !== null || (masterWallPolygons?.length ?? 0) > 0;
+  // Auto-save the active section's points before advancing (so nothing is lost).
+  const handleNext = useCallback(async () => {
+    if (activeSectionId !== null && allIds.length > 0) {
+      await onSave(activeSectionId);
+    }
+    onNext();
+  }, [activeSectionId, allIds.length, onSave, onNext]);
 
   return (
     <div className={wizardStyles.layout}>
@@ -224,31 +214,27 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
           <div className={styles.canvasCol}>
             <div className={styles.canvasLabel}>Карта отсеков (весь этаж)</div>
             <div className={styles.canvasBox}>
-              {hasMaster ? (
+              {masterMaskUrl ? (
                 <StitchPointCanvas
-                  underlayUrl={masterSchemaUrl}
-                  crop={masterCropBbox}
-                  underlayOpacity={underlayOpacity}
-                  polygons={masterWallPolygons}
-                  fallbackSize={masterSizePx}
+                  maskUrl={masterMaskUrl}
+                  sectionOutlines={sectionOutlines}
                   points={masterCanvasPoints}
                   activeId={activePointId}
-                  snapTargets={snapTargets}
+                  snapTargets={masterSnap}
                   tool={tool}
                   onPlace={handleMasterPlace}
                   onSelect={handlePointClick}
                 />
               ) : (
                 <div className={styles.canvasEmpty}>
-                  Нет карты отсеков — загрузите и векторизуйте схему этажа
-                  (шаги 1–3)
+                  Нет карты отсеков — загрузите и обрежьте схему этажа (шаги 1–3)
                 </div>
               )}
             </div>
           </div>
         </div>
 
-        {/* Right panel — tools, point list, transparency, status */}
+        {/* Right panel — tools, point list, status */}
         <aside className={styles.toolsPanel}>
           <div className={styles.panelTitle}>ИНСТРУМЕНТЫ</div>
           <div className={styles.toolGroup}>
@@ -334,22 +320,6 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
                 )}
               </div>
 
-              <div className={styles.panelTitle}>ПРОЗРАЧНОСТЬ СХЕМЫ</div>
-              <div className={styles.sliderBox}>
-                <input
-                  type="range"
-                  className={styles.sliderInput}
-                  min={0}
-                  max={100}
-                  step={5}
-                  value={Math.round(underlayOpacity * 100)}
-                  onChange={(e) => handleOpacityChange(Number(e.target.value) / 100)}
-                />
-                <span className={styles.sliderValue}>
-                  {Math.round(underlayOpacity * 100)}%
-                </span>
-              </div>
-
               <div className={styles.statusRow}>
                 <span className={styles.statusLabel}>Пар сопоставлено</span>
                 <span
@@ -384,7 +354,11 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
           ← Назад
         </button>
         <span className={wizardStyles.footerHint} />
-        <button className={wizardStyles.btnNext} onClick={onNext} type="button">
+        <button
+          className={wizardStyles.btnNext}
+          onClick={() => void handleNext()}
+          type="button"
+        >
           Далее ▸
         </button>
       </footer>

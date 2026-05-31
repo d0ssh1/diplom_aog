@@ -11,8 +11,9 @@
 // Presentational components consume this; all logic lives here (no canvas maths
 // — that stays in controlPointCanvasCore — and no `any`).
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { floorAssemblyApi } from '../api/floorAssemblyApi';
+import { reconstructionApi } from '../api/apiService';
 import { toastApi } from './useToast';
 import { writeActivePoint } from '../lib/controlPoints';
 import type {
@@ -41,6 +42,8 @@ export interface UseFloorAssemblyReturn {
   // --- Single assembly read (drives all steps) ---
   assembly: FloorAssemblyResponse | null;
   masterSchemaUrl: string | null;
+  /** Cropped floor-schema binary mask (blob) — the карта-отсеков backdrop. */
+  masterMaskUrl: string | null;
   pixelsPerMeter: number | null;
   meshFileGlb: string | null;
   sections: AssemblySection[];
@@ -120,6 +123,24 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
   const [meshFileGlb, setMeshFileGlb] = useState<string | null>(null);
   const [pixelsPerMeter, setPixelsPerMeter] = useState<number | null>(null);
 
+  // Master backdrop = the cropped floor-schema BINARY MASK (black walls), exactly
+  // what the overview shows — fetched as a blob via the mask-preview endpoint. Held
+  // in a ref too so the previous blob can be revoked on reload/unmount.
+  const [masterMaskUrl, setMasterMaskUrl] = useState<string | null>(null);
+  const masterMaskUrlRef = useRef<string | null>(null);
+  const setMasterMask = useCallback((url: string | null) => {
+    const prev = masterMaskUrlRef.current;
+    if (prev && prev.startsWith('blob:') && prev !== url) {
+      try {
+        URL.revokeObjectURL(prev);
+      } catch {
+        /* ignore */
+      }
+    }
+    masterMaskUrlRef.current = url;
+    setMasterMaskUrl(url);
+  }, []);
+
   const [activeSectionId, setActiveSectionId] = useState<number | null>(null);
   const [activePointId, setActivePointId] = useState<string | null>(null);
   const [sectionPointsBySection, setSectionPointsBySection] = useState<
@@ -148,6 +169,32 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
       setAssembly(data);
       setMeshFileGlb(data.mesh_file_glb);
       setPixelsPerMeter(data.pixels_per_meter);
+
+      // Fetch the cropped floor-schema mask (the карта отсеков backdrop). Same
+      // crop the solver/builder use, so master points round-trip correctly.
+      const ms = data.master_schema;
+      if (ms.image_id) {
+        const crop = ms.crop_bbox
+          ? {
+              x: ms.crop_bbox.x,
+              y: ms.crop_bbox.y,
+              width: ms.crop_bbox.width,
+              height: ms.crop_bbox.height,
+            }
+          : null;
+        try {
+          const url = await reconstructionApi.previewMask(
+            ms.image_id,
+            crop,
+            ms.crop_bbox?.rotation ?? 0,
+          );
+          setMasterMask(url);
+        } catch {
+          setMasterMask(null);
+        }
+      } else {
+        setMasterMask(null);
+      }
       setSectionPointsBySection(sectionPointsFromSections(data.sections));
       setMasterPointsBySection(masterPointsFromSections(data.sections));
       setConnectorDrafts(connectorsToDrafts(data.connectors));
@@ -343,11 +390,18 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     }
   }, [floorId, buildResult]);
 
-  // Revoke nothing here: preview/section URLs are server URLs (not blob:),
-  // produced by the API; they need no manual cleanup.
+  // Revoke the master-mask blob on unmount (section/preview URLs are server URLs,
+  // not blob:, so they need no cleanup).
   useEffect(() => {
     return () => {
-      /* no blob URLs created in this hook */
+      const url = masterMaskUrlRef.current;
+      if (url && url.startsWith('blob:')) {
+        try {
+          URL.revokeObjectURL(url);
+        } catch {
+          /* ignore */
+        }
+      }
     };
   }, []);
 
@@ -357,6 +411,7 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     error,
     assembly,
     masterSchemaUrl: assembly?.master_schema.url ?? null,
+    masterMaskUrl,
     pixelsPerMeter,
     meshFileGlb,
     sections: assembly?.sections ?? [],

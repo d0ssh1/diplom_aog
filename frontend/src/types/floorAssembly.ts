@@ -144,6 +144,8 @@ export interface AssemblySection {
   mask_file_id: string | null;
   /** Viewable URL of the section's cropped wall mask (the "эталон" backdrop). */
   mask_url: string | null;
+  /** Section outline polygon, normalised [0,1] over the master (floor) frame. */
+  geometry: [number, number][] | null;
   image_size_cropped: [number, number] | null;
   section_control_points: ControlPoint[];
   master_control_points: MasterControlPoint[];

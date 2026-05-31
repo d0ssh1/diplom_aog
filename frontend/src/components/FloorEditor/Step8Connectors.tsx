@@ -12,7 +12,7 @@
 // the in-progress polyline + drag state are local UI concerns kept here.
 
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import { fitContain, bakeCroppedRotated } from './croppedImage';
+import { fitContain } from './croppedImage';
 import {
   toImageCoords,
   toDisplayCoords,
@@ -21,17 +21,14 @@ import {
   type CanvasLayout,
 } from '../controlPointCanvasCore';
 import type { ConnectorDraft } from '../../hooks/useFloorAssembly';
-import type { CropBbox } from '../../types/hierarchy';
 import wizardStyles from './WizardStep.module.css';
 import styles from './Step8Connectors.module.css';
 
 interface Step8ConnectorsProps {
-  masterSchemaUrl: string | null;
-  // The connectors are drawn on the CROPPED master frame (карта отсеков), so their
+  // Connectors are drawn on the cropped floor-schema mask (карта отсеков), so their
   // [0,1] coords round-trip with the mesh builder (which de-normalises over the
-  // cropped canvas). The vector wall_polygons are shown as a faint reference.
-  masterCropBbox: CropBbox | null;
-  masterWallPolygons: [number, number][][] | null;
+  // cropped canvas).
+  masterMaskUrl: string | null;
   connectorDrafts: ConnectorDraft[];
   isSaving: boolean;
   onChangeDrafts: (drafts: ConnectorDraft[]) => void;
@@ -51,9 +48,7 @@ interface VertexHit {
 }
 
 export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
-  masterSchemaUrl,
-  masterCropBbox,
-  masterWallPolygons,
+  masterMaskUrl,
   connectorDrafts,
   isSaving,
   onChangeDrafts,
@@ -64,10 +59,6 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
-  // The CROPPED master raster (карта отсеков) baked from the schema + crop bbox —
-  // this is the frame connector coords are normalised over (matches the builder).
-  const bakedRef = useRef<HTMLCanvasElement | null>(null);
-  const wallPolyRef = useRef<[number, number][][] | null>(null);
   const layoutRef = useRef<CanvasLayout>({
     offsetX: 0,
     offsetY: 0,
@@ -94,11 +85,10 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
     if (!container) return { offsetX: 0, offsetY: 0, drawWidth: 0, drawHeight: 0 };
     const cw = container.clientWidth;
     const ch = container.clientHeight;
-    // Size to the CROPPED master frame (baked), not the raw image, so connector
-    // [0,1] coords match the builder's cropped canvas.
-    const baked = bakedRef.current;
-    const iw = baked?.width ?? img?.naturalWidth ?? cw;
-    const ih = baked?.height ?? img?.naturalHeight ?? ch;
+    // Size to the cropped floor mask, so connector [0,1] coords match the builder's
+    // cropped canvas.
+    const iw = img?.naturalWidth ?? cw;
+    const ih = img?.naturalHeight ?? ch;
     const { dx, dy, dw, dh } = fitContain(iw, ih, cw, ch, 1);
     return { offsetX: dx, offsetY: dy, drawWidth: dw, drawHeight: dh };
   }, []);
@@ -121,34 +111,18 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
     const layout = computeLayout();
     layoutRef.current = layout;
 
-    const baked = bakedRef.current;
-    if (baked && layout.drawWidth > 0) {
+    const img = imgRef.current;
+    if (img && layout.drawWidth > 0) {
+      ctx.save();
+      ctx.filter = 'invert(1)'; // mask is white-on-black → black walls on white
       ctx.drawImage(
-        baked,
+        img,
         layout.offsetX,
         layout.offsetY,
         layout.drawWidth,
         layout.drawHeight,
       );
-    }
-
-    // Vector карта отсеков (section outlines) as a faint registration reference.
-    const polys = wallPolyRef.current;
-    if (polys && layout.drawWidth > 0) {
-      ctx.strokeStyle = 'rgba(37, 99, 235, 0.35)';
-      ctx.lineWidth = 1.2;
-      ctx.lineJoin = 'round';
-      for (const poly of polys) {
-        if (poly.length < 2) continue;
-        ctx.beginPath();
-        poly.forEach(([nx, ny], i) => {
-          const d = toDisplayCoords({ x: nx, y: ny }, layout);
-          if (i === 0) ctx.moveTo(d.x, d.y);
-          else ctx.lineTo(d.x, d.y);
-        });
-        ctx.closePath();
-        ctx.stroke();
-      }
+      ctx.restore();
     }
 
     const drawPolyline = (
@@ -190,17 +164,10 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
     drawPolyline(drawingRef.current, DRAFT_COLOR, false);
   }, [computeLayout]);
 
-  // Mirror the vector polygons into a ref so draw() stays identity-stable.
+  // Load the cropped floor-schema mask backdrop.
   useEffect(() => {
-    wallPolyRef.current = masterWallPolygons;
-    draw();
-  }, [masterWallPolygons, draw]);
-
-  // Load master backdrop and bake the cropped карта-отсеков frame.
-  useEffect(() => {
-    if (!masterSchemaUrl) {
+    if (!masterMaskUrl) {
       imgRef.current = null;
-      bakedRef.current = null;
       draw();
       return;
     }
@@ -209,20 +176,18 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
     img.onload = () => {
       if (cancelled) return;
       imgRef.current = img;
-      bakedRef.current = bakeCroppedRotated(img, masterCropBbox ?? null);
       draw();
     };
     img.onerror = () => {
       if (cancelled) return;
       imgRef.current = null;
-      bakedRef.current = null;
       draw();
     };
-    img.src = masterSchemaUrl;
+    img.src = masterMaskUrl;
     return () => {
       cancelled = true;
     };
-  }, [masterSchemaUrl, masterCropBbox, draw]);
+  }, [masterMaskUrl, draw]);
 
   // Redraw on state change + resize.
   useEffect(() => {
@@ -431,8 +396,8 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
               ref={canvasRef}
               style={{ width: '100%', height: '100%', display: 'block' }}
             />
-            {!masterSchemaUrl && (
-              <div className={styles.canvasEmpty}>Нет мастер-схемы</div>
+            {!masterMaskUrl && (
+              <div className={styles.canvasEmpty}>Нет карты отсеков</div>
             )}
           </div>
         </div>

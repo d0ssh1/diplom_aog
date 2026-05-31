@@ -250,10 +250,7 @@ export const FloorEditorPage: React.FC = () => {
         return (
           <Step6BindControlPoints
             sections={assembly.sections}
-            masterSchemaUrl={assembly.masterSchemaUrl}
-            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
-            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
-            masterSizePx={assembly.assembly?.master_schema.size_px ?? null}
+            masterMaskUrl={assembly.masterMaskUrl}
             sectionPointsBySection={assembly.sectionPointsBySection}
             masterPointsBySection={assembly.masterPointsBySection}
             activeSectionId={assembly.activeSectionId}
@@ -273,9 +270,7 @@ export const FloorEditorPage: React.FC = () => {
         return (
           <Step7SolveTransforms
             sections={assembly.sections}
-            masterSchemaUrl={assembly.masterSchemaUrl}
-            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
-            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
+            masterMaskUrl={assembly.masterMaskUrl}
             solveResult={assembly.solveResult}
             isSolving={assembly.isSolving}
             onSolve={assembly.solveTransforms}
@@ -286,9 +281,7 @@ export const FloorEditorPage: React.FC = () => {
       case 8:
         return (
           <Step8Connectors
-            masterSchemaUrl={assembly.masterSchemaUrl}
-            masterCropBbox={assembly.assembly?.master_schema.crop_bbox ?? null}
-            masterWallPolygons={assembly.assembly?.master_schema.wall_polygons ?? null}
+            masterMaskUrl={assembly.masterMaskUrl}
             connectorDrafts={assembly.connectorDrafts}
             isSaving={assembly.isSavingConnectors}
             onChangeDrafts={assembly.setConnectorDrafts}

@@ -348,6 +348,9 @@ class AssemblySection(BaseModel):
     # Viewable URL of the section's cropped wall mask (the "эталон" backdrop the
     # editor places section-local control points on). None when unbound / no mask.
     mask_url: Optional[str] = None
+    # Section outline polygon, normalised [0,1] over the master (floor-schema) frame
+    # — drawn on the карта отсеков so the operator sees where each отсек sits.
+    geometry: Optional[list[tuple[float, float]]] = None
     image_size_cropped: Optional[tuple[int, int]] = None
     section_control_points: list[ControlPoint]
     master_control_points: list[MasterControlPoint]

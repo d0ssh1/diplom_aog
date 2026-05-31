@@ -1023,6 +1023,9 @@ class FloorAssemblyService:
             if reconstruction is not None and reconstruction.mask_file is not None
             else None
         )
+        # Section outline polygon (normalised over the master frame). Stored as
+        # {"points": [[x, y], ...]}; coerce to a list of (x, y) tuples or None.
+        geometry = self._read_section_geometry(section)
         image_size_cropped = (
             self._read_image_size_cropped(reconstruction)
             if reconstruction
@@ -1055,12 +1058,33 @@ class FloorAssemblyService:
             reconstruction_id=reconstruction_id,
             mask_file_id=mask_file_id,
             mask_url=mask_url,
+            geometry=geometry,
             image_size_cropped=image_size_cropped,
             section_control_points=section_cps,
             master_control_points=master_cps,
             transform=transform,
             status=status,
         )
+
+    @staticmethod
+    def _read_section_geometry(
+        section,  # type: ignore[no-untyped-def]
+    ) -> Optional[list[tuple[float, float]]]:
+        """Read a section's outline polygon from ``section.geometry`` (read-only).
+
+        Stored as ``{"points": [[x, y], ...]}`` (normalised [0,1] over the master
+        frame). Returns a list of ``(x, y)`` tuples, or ``None`` if absent/malformed.
+        """
+        geom = section.geometry
+        if not isinstance(geom, dict):
+            return None
+        points = geom.get("points")
+        if not isinstance(points, list) or len(points) < 3:
+            return None
+        try:
+            return [(float(p[0]), float(p[1])) for p in points]
+        except (TypeError, ValueError, IndexError):
+            return None
 
     @staticmethod
     def _read_image_size_cropped(

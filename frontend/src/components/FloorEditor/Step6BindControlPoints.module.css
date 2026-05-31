@@ -147,7 +147,7 @@
   padding: 0.625rem 0.75rem;
   background: #f9fafb;
   border: 1.5px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 0;
   color: #334155;
   cursor: pointer;
   font-family: inherit;
@@ -192,7 +192,7 @@
   align-items: center;
   gap: 0.25rem;
   border: 1px solid #e5e7eb;
-  border-radius: 6px;
+  border-radius: 0;
 }
 
 .pointRowActive {
@@ -214,7 +214,7 @@
   color: #0f172a;
 }
 
-/* Circular number badge (green when both sides placed, amber when partial) */
+/* Square number badge (green when both sides placed, amber when partial) */
 .numBadge {
   width: 22px;
   height: 22px;
@@ -222,7 +222,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 50%;
+  border-radius: 0;
   font-family: 'Courier New', monospace;
   font-size: 0.75rem;
   font-weight: 700;
@@ -240,7 +240,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 4px;
+  border-radius: 0;
   font-size: 0.6875rem;
   font-weight: 700;
   color: #9ca3af;
@@ -265,53 +265,6 @@
 
 .pointClear:hover {
   color: #dc2626;
-}
-
-/* Transparency slider (light) */
-.sliderBox {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 0.25rem 1rem 0.5rem;
-}
-
-.sliderInput {
-  flex: 1;
-  height: 3px;
-  appearance: none;
-  -webkit-appearance: none;
-  background: #e5e7eb;
-  outline: none;
-  cursor: pointer;
-}
-
-.sliderInput::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #f05123;
-  cursor: pointer;
-  border: none;
-}
-
-.sliderInput::-moz-range-thumb {
-  width: 14px;
-  height: 14px;
-  border-radius: 50%;
-  background: #f05123;
-  cursor: pointer;
-  border: none;
-}
-
-.sliderValue {
-  font-family: 'Courier New', monospace;
-  font-size: 0.75rem;
-  color: #6b7280;
-  min-width: 34px;
-  text-align: right;
-  flex-shrink: 0;
 }
 
 .statusRow {
@@ -349,7 +302,7 @@
   background: #f05123;
   color: #ffffff;
   border: none;
-  border-radius: 6px;
+  border-radius: 0;
   font-family: inherit;
   font-size: 0.8125rem;
   font-weight: 700;
