@@ -87,6 +87,12 @@ class FloorWallsUpdateRequest(BaseModel):
         return v
 
 
+class FloorMaskUpdateRequest(BaseModel):
+    """PUT /api/v1/floors/{id}/mask — link the persisted user-edited wall mask."""
+
+    mask_file_id: str = Field(..., min_length=1)
+
+
 # ── Response models ────────────────────────────────────────────────────────────
 
 
@@ -125,3 +131,6 @@ class FloorWithBuildingResponse(FloorResponse):
     schema_crop_bbox: Optional[CropBboxModel] = None
     # [polygons[points[x,y]]] normalised [0,1]
     wall_polygons: Optional[list[list[list[float]]]] = None
+    # Persisted user-edited wall mask (wizard step 3) — survives reload
+    mask_file_id: Optional[str] = None
+    mask_file_url: Optional[str] = None

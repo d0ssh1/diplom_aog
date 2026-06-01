@@ -27,7 +27,7 @@ interface Step3WallExtractionProps {
   wallPolygons: Point2D[][] | null;
   isLoading: boolean;
   onTriggerExtraction: () => Promise<void>;
-  onSetEditedMaskUrl?: (url: string | null) => void;
+  onCommitEditedMask?: (blob: Blob) => Promise<void>;
   onNext: () => Promise<void>;
   onBack: () => void;
 }
@@ -40,7 +40,7 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
   schemaImageUrl,
   cropBbox,
   isLoading,
-  onSetEditedMaskUrl,
+  onCommitEditedMask,
   onNext,
   onBack,
 }) => {
@@ -115,22 +115,21 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
   }, []);
 
   const handleNext = useCallback(async () => {
-    // Capture edited mask from the fabric.js canvas so Step 4 can show
-    // the result of all manual edits (brush walls, eraser strokes, etc.)
-    // instead of refetching a raw /mask-preview.
-    if (onSetEditedMaskUrl && canvasRef.current) {
+    // Capture the edited mask from the fabric.js canvas and hand it UP so the
+    // hook can both show it instantly (Step 4/5) and persist it (survives
+    // reload) instead of refetching a raw /mask-preview.
+    if (onCommitEditedMask && canvasRef.current) {
       try {
         const blob = await canvasRef.current.getBlob();
         if (blob && blob.size > 0) {
-          const url = URL.createObjectURL(blob);
-          onSetEditedMaskUrl(url);
+          await onCommitEditedMask(blob);
         }
       } catch {
         // Fall back silently — Step 4 will use /mask-preview.
       }
     }
     await onNext();
-  }, [onNext, onSetEditedMaskUrl]);
+  }, [onNext, onCommitEditedMask]);
 
   // The WallEditorCanvas requires a popup handler; floor editor doesn't use
   // room/door annotations, so we provide a no-op.

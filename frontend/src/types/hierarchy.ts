@@ -58,6 +58,9 @@ export interface FloorWithSchema extends Floor {
   schema_image_url: string | null;
   schema_crop_bbox: CropBbox | null;
   wall_polygons: [number, number][][] | null; // [polygons[points]]
+  /** Persisted user-edited wall mask (wizard step 3) — survives reload. */
+  mask_file_id: string | null;
+  mask_file_url: string | null;
 }
 
 export interface ReconstructionBrief {

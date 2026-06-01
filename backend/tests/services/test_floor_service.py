@@ -35,8 +35,11 @@ def _make_floor(id: int = 101, building_id: int = 1, number: int = 7) -> MagicMo
     f.created_at = datetime(2026, 1, 1)
     f.building = _make_building(id=building_id)
     f.schema_image_id = None
+    f.schema_image = None
     f.schema_crop_bbox = None
     f.wall_polygons = None
+    f.mask_file_id = None
+    f.mask_file = None
     return f
 
 
@@ -81,3 +84,19 @@ async def test_create_floor_duplicate_number_raises_conflict():
         await svc.create_floor(building_id=1, req=req)
 
     svc._floor_repo.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_get_by_id_exposes_mask_file_url():
+    """get_by_id surfaces mask_file_url from the linked mask_file relationship."""
+    floor = _make_floor(id=101, building_id=1, number=7)
+    floor.mask_file_id = "mask-uuid"
+    floor.mask_file = MagicMock()
+    floor.mask_file.url = "/api/v1/uploads/masks/mask-uuid.png"
+    svc = _make_svc(building=_make_building(id=1))
+    svc._floor_repo.get_by_id.return_value = floor
+
+    resp = await svc.get_by_id(101)
+
+    assert resp.mask_file_id == "mask-uuid"
+    assert resp.mask_file_url == "/api/v1/uploads/masks/mask-uuid.png"

@@ -115,6 +115,11 @@ class FloorService:
         if floor.schema_image_id and floor.schema_image is not None:
             schema_image_url = floor.schema_image.url
 
+        # Persisted wall-mask URL — mirrors schema_image_url.
+        mask_file_url = None
+        if floor.mask_file_id and floor.mask_file is not None:
+            mask_file_url = floor.mask_file.url
+
         # Parse crop bbox from JSON dict
         schema_crop_bbox = None
         if floor.schema_crop_bbox:
@@ -132,6 +137,8 @@ class FloorService:
             schema_image_url=schema_image_url,
             schema_crop_bbox=schema_crop_bbox,
             wall_polygons=floor.wall_polygons,
+            mask_file_id=floor.mask_file_id,
+            mask_file_url=mask_file_url,
         )
 
     async def delete(self, floor_id: int) -> None:

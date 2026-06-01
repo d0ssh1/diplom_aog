@@ -46,12 +46,16 @@ class FloorRepository(BaseRepository):
         return floor
 
     async def get_by_id(self, floor_id: int) -> Optional[Floor]:
-        """SELECT by PK with eager-loaded building + schema_image. Returns None if not found."""
+        """SELECT by PK with eager-loaded building + schema_image + mask_file.
+
+        Returns None if not found.
+        """
         logger.debug("get_by_id: floor_id=%d", floor_id)
         result = await self._session.execute(
             select(Floor)
             .options(selectinload(Floor.building))
             .options(selectinload(Floor.schema_image))
+            .options(selectinload(Floor.mask_file))
             .where(Floor.id == floor_id)
         )
         return result.scalar_one_or_none()
@@ -174,6 +178,21 @@ class FloorRepository(BaseRepository):
         if not floor:
             raise FloorNotFoundError(floor_id)
         floor.mesh_file_glb = mesh_file_glb
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor
+
+    async def update_mask(
+        self,
+        floor_id: int,
+        mask_file_id: Optional[str],
+    ) -> Floor:
+        """UPDATE mask_file_id (persisted wall-mask file). Raises FloorNotFoundError."""
+        logger.debug("update_mask: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.mask_file_id = mask_file_id
         await self._session.commit()
         await self._session.refresh(floor)
         return floor

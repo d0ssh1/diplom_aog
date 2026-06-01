@@ -64,6 +64,13 @@ class Floor(Base):
     # Wall polygons extracted from the schema image (wizard step 3)
     # Format: [[[x,y], ...], ...] normalised [0,1]
     wall_polygons: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Persisted user-edited wall mask PNG (wizard step 3). Display source that
+    # survives reload — mirrors Reconstruction.mask_file.
+    mask_file_id: Mapped[Optional[str]] = mapped_column(
+        String(36),
+        ForeignKey("uploaded_files.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     # Floor metric scale — master schema pixels per metre (set at assembly time)
     pixels_per_meter: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
@@ -89,4 +96,8 @@ class Floor(Base):
     schema_image: Mapped[Optional["UploadedFile"]] = relationship(
         "UploadedFile",
         foreign_keys=[schema_image_id],
+    )
+    mask_file: Mapped[Optional["UploadedFile"]] = relationship(
+        "UploadedFile",
+        foreign_keys=[mask_file_id],
     )

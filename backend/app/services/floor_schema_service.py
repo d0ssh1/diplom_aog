@@ -188,6 +188,25 @@ class FloorSchemaService:
 
         await self._floor_repo.update_wall_polygons(floor_id, polygons)
 
+    # ── Persisted wall mask ─────────────────────────────────────────────────────
+
+    async def update_mask(self, floor_id: int, mask_file_id: str) -> None:
+        """Link an already-uploaded mask PNG as the floor's persisted wall mask.
+
+        The client uploads the file via POST /upload/user-mask/ before this call,
+        so no disk validation is done here (mirrors update_walls — keep light).
+
+        Raises FloorNotFoundError if floor absent.
+        """
+        logger.info(
+            "update_mask: floor_id=%d, mask_file_id=%s", floor_id, mask_file_id
+        )
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+
+        await self._floor_repo.update_mask(floor_id, mask_file_id)
+
     # ── Private helpers ────────────────────────────────────────────────────────
 
     def _find_image(self, image_id: str) -> str | None:

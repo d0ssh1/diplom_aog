@@ -201,7 +201,7 @@ export const FloorEditorPage: React.FC = () => {
             wallPolygons={wizard.wallPolygons}
             isLoading={wizard.isLoading}
             onTriggerExtraction={wizard.triggerWallExtraction}
-            onSetEditedMaskUrl={wizard.setEditedMaskUrl}
+            onCommitEditedMask={wizard.commitEditedMask}
             onNext={async () => {
               await wizard.commitWallPolygons();
               wizard.nextStep();

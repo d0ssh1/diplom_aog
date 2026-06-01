@@ -4,6 +4,7 @@
 import { useState, useCallback } from 'react';
 import { floorsApi, sectionsApi } from '../api/buildingsApi';
 import { floorSchemaApi } from '../api/floorSchemaApi';
+import { uploadApi } from '../api/apiService';
 import { toastApi } from './useToast';
 import type {
   CropBbox,
@@ -66,6 +67,7 @@ interface UseFloorEditorWizardReturn {
   triggerWallExtraction: () => Promise<void>;
   setWallPolygons: (polygons: Point2D[][]) => void;
   setEditedMaskUrl: (url: string | null) => void;
+  commitEditedMask: (blob: Blob) => Promise<void>;
   commitWallPolygons: () => Promise<void>;
 
   // Section management
@@ -121,6 +123,10 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
       setWallPolygonsState(
         floor.wall_polygons ? normalizeToPoint2D(floor.wall_polygons) : null,
       );
+      // Restore the persisted Step-3 wall-mask edit. It's a server URL served
+      // same-origin via the dev proxy; setEditedMaskUrl only revokes blob: URLs,
+      // so passing a server URL (or null) is safe.
+      setEditedMaskUrl(floor.mask_file_url);
 
       const drafts: SectionDraft[] = sections.map((s) => ({
         id: s.id,
@@ -252,6 +258,29 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     }
   }, [floorId, wallPolygons]);
 
+  const commitEditedMask = useCallback(async (blob: Blob): Promise<void> => {
+    // Show the edit instantly this session (blob URL).
+    const url = URL.createObjectURL(blob);
+    setEditedMaskUrl(url);
+    // Persist so the edit survives reload. Display-only — a failure here must
+    // not block the wizard (the edit still shows for this session).
+    if (floorId === null) return;
+    try {
+      const file = new File([blob], `floor-${floorId}-mask.png`, {
+        type: 'image/png',
+      });
+      const data = await uploadApi.uploadUserMask(file);
+      const fileId = String(
+        (data as { id?: string; file_id?: string }).id
+          ?? (data as { id?: string; file_id?: string }).file_id
+          ?? '',
+      );
+      if (fileId) await floorSchemaApi.updateMask(floorId, fileId);
+    } catch {
+      toastApi.error('Не удалось сохранить правки стен');
+    }
+  }, [floorId, setEditedMaskUrl]);
+
   const resetFloor = useCallback(async (): Promise<void> => {
     if (floorId === null) return;
     setIsLoading(true);
@@ -375,6 +404,7 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     triggerWallExtraction,
     setWallPolygons,
     setEditedMaskUrl,
+    commitEditedMask,
     commitWallPolygons,
     addSectionDraft,
     updateSectionDraft,

@@ -129,3 +129,25 @@ async def test_update_walls_persists_manual_polygons():
     await svc.update_walls(floor_id=101, polygons=polygons)
 
     svc._floor_repo.update_wall_polygons.assert_awaited_once_with(101, polygons)
+
+
+@pytest.mark.asyncio
+async def test_update_mask_persists_mask_file_id():
+    """update_mask links the uploaded mask via floor_repo.update_mask."""
+    floor = _make_floor(id=101, schema_image_id="img-1")
+    svc = _make_svc(floor=floor)
+
+    await svc.update_mask(floor_id=101, mask_file_id="mask-uuid")
+
+    svc._floor_repo.update_mask.assert_awaited_once_with(101, "mask-uuid")
+
+
+@pytest.mark.asyncio
+async def test_update_mask_missing_floor_raises_not_found():
+    """update_mask raises FloorNotFoundError when the floor is absent."""
+    svc = _make_svc(floor=None)  # floor_repo.get_by_id returns None
+
+    with pytest.raises(FloorNotFoundError):
+        await svc.update_mask(floor_id=999, mask_file_id="mask-uuid")
+
+    svc._floor_repo.update_mask.assert_not_awaited()

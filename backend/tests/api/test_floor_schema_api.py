@@ -40,6 +40,7 @@ def _make_schema_svc():
     svc.update_crop = AsyncMock()
     svc.extract_walls = AsyncMock()
     svc.update_walls = AsyncMock()
+    svc.update_mask = AsyncMock()
     return svc
 
 
@@ -212,3 +213,68 @@ async def test_update_walls_missing_floor_returns_404(client, auth_headers):
         assert resp.status_code == 404
     finally:
         app.dependency_overrides.pop(get_floor_schema_service, None)
+
+
+# ── PUT /api/v1/floors/{id}/mask ─────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_update_floor_mask_returns_200(client, auth_headers):
+    schema_svc = _make_schema_svc()
+    schema_svc.update_mask.return_value = None
+    floor_svc = _make_floor_svc()
+    floor_svc.get_by_id.return_value = _floor_with_schema(
+        mask_file_id="mask-uuid",
+        mask_file_url="/api/v1/uploads/masks/mask-uuid.png",
+    )
+    app.dependency_overrides[get_floor_schema_service] = lambda: schema_svc
+    app.dependency_overrides[get_floor_service] = lambda: floor_svc
+    try:
+        resp = await client.put(
+            "/api/v1/floors/101/mask",
+            json={"mask_file_id": "mask-uuid"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["mask_file_id"] == "mask-uuid"
+        assert data["mask_file_url"] == "/api/v1/uploads/masks/mask-uuid.png"
+    finally:
+        app.dependency_overrides.pop(get_floor_schema_service, None)
+        app.dependency_overrides.pop(get_floor_service, None)
+
+
+@pytest.mark.asyncio
+async def test_update_floor_mask_missing_floor_returns_404(client, auth_headers):
+    schema_svc = _make_schema_svc()
+    schema_svc.update_mask.side_effect = FloorNotFoundError(999)
+    floor_svc = _make_floor_svc()
+    app.dependency_overrides[get_floor_schema_service] = lambda: schema_svc
+    app.dependency_overrides[get_floor_service] = lambda: floor_svc
+    try:
+        resp = await client.put(
+            "/api/v1/floors/999/mask",
+            json={"mask_file_id": "mask-uuid"},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+    finally:
+        app.dependency_overrides.pop(get_floor_schema_service, None)
+        app.dependency_overrides.pop(get_floor_service, None)
+
+
+@pytest.mark.asyncio
+async def test_update_floor_mask_empty_id_returns_422(client, auth_headers):
+    schema_svc = _make_schema_svc()
+    floor_svc = _make_floor_svc()
+    app.dependency_overrides[get_floor_schema_service] = lambda: schema_svc
+    app.dependency_overrides[get_floor_service] = lambda: floor_svc
+    try:
+        resp = await client.put(
+            "/api/v1/floors/101/mask",
+            json={"mask_file_id": ""},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+    finally:
+        app.dependency_overrides.pop(get_floor_schema_service, None)
+        app.dependency_overrides.pop(get_floor_service, None)

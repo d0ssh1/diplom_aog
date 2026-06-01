@@ -30,4 +30,10 @@ export const floorSchemaApi = {
     apiClient
       .put(`/floors/${floorId}/walls`, { wall_polygons: wallPolygons })
       .then((r) => r.data as FloorWallsUpdateResponse),
+
+  // PUT /api/v1/floors/{id}/mask — persist the user-edited wall-mask file id
+  updateMask: (floorId: number, maskFileId: string): Promise<FloorWithSchema> =>
+    apiClient
+      .put(`/floors/${floorId}/mask`, { mask_file_id: maskFileId })
+      .then((r) => r.data as FloorWithSchema),
 };

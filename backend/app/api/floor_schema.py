@@ -12,6 +12,7 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.api.deps import get_floor_schema_service, get_floor_service
 from app.core.exceptions import FloorNotFoundError, FloorSchemaError, ImageProcessingError
 from app.models.floors import (
+    FloorMaskUpdateRequest,
     FloorSchemaUpdateRequest,
     FloorWallsUpdateRequest,
     FloorWithBuildingResponse,
@@ -108,6 +109,29 @@ async def update_walls(
     try:
         await schema_svc.update_walls(floor_id, req.wall_polygons)
         return {"wall_polygons": req.wall_polygons}
+    except FloorNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Floor {e.floor_id} not found",
+        )
+
+
+@router.put("/floors/{floor_id}/mask", response_model=FloorWithBuildingResponse)
+async def update_floor_mask(
+    floor_id: int,
+    req: FloorMaskUpdateRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    schema_svc: FloorSchemaService = Depends(get_floor_schema_service),
+    floor_svc: FloorService = Depends(get_floor_service),
+) -> FloorWithBuildingResponse:
+    """Persist the user-edited wall mask for a floor (admin only).
+
+    Links an already-uploaded mask file (POST /upload/user-mask/) so the Step-3
+    wall edit survives reload. Returns the full FloorWithBuildingResponse.
+    """
+    try:
+        await schema_svc.update_mask(floor_id, req.mask_file_id)
+        return await floor_svc.get_by_id(floor_id)
     except FloorNotFoundError as e:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
