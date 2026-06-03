@@ -43,6 +43,7 @@ from app.core.floor_stitching_constants import (
     DETAIL_WARN_SCALE,
     FLOOR_HEIGHT,
     MAX_FLOOR_CANVAS_PX,
+    MIN_CONNECTOR_THICKNESS_PX,
     MIN_CONTROL_POINTS,
     PPM_WARN_RATIO,
     R_MIN_BASELINE_FRAC,
@@ -719,10 +720,13 @@ class FloorAssemblyService:
 
         # ── Connectors → ConnectorRaster (master-pixel, k-scaled) ──
         connector_rows = await self._connector_repo.list_by_floor(floor_id)
-        # (d) default thickness derived ONCE, k-scaled, floored to >= 1. cv2 treats
-        # thickness=0 as a 1px hairline, so round up rather than vanish.
+        # (d) default thickness derived ONCE, k-scaled, floored to MIN_CONNECTOR_
+        # THICKNESS_PX so a low-ppm floor still rasterises a VISIBLE band (a 1px
+        # hairline is invisible next to 4-6px section walls). At normal ppm the
+        # metric calculation already exceeds the floor, so this is a no-op.
         default_thickness_px = max(
-            1, round(DEFAULT_CONNECTOR_THICKNESS_M * ppm_floor * k)
+            MIN_CONNECTOR_THICKNESS_PX,
+            round(DEFAULT_CONNECTOR_THICKNESS_M * ppm_floor * k),
         )
         connectors_raster: list[ConnectorRaster] = []
         for row in connector_rows:
@@ -737,7 +741,9 @@ class FloorAssemblyService:
             thickness_m = row.thickness_m or DEFAULT_CONNECTOR_THICKNESS_M
             # Per-connector thickness is k-scaled too (a default-thickness connector
             # uses ``default_thickness_px``, NOT the un-scaled master-px value).
-            thickness_px = max(1, round(thickness_m * ppm_floor * k))
+            thickness_px = max(
+                MIN_CONNECTOR_THICKNESS_PX, round(thickness_m * ppm_floor * k)
+            )
             connectors_raster.append(
                 ConnectorRaster(points_px=points_px, thickness_px=thickness_px)
             )

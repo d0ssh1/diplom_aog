@@ -66,3 +66,13 @@ Connector default thickness (Phase 08):
 (master-pixel scale), then k-scaled and floored to >= 1 when handed to the
 assembler (see Phase 08).
 """
+
+MIN_CONNECTOR_THICKNESS_PX = 3
+"""Visible-minimum raster thickness for a connector wall band.
+
+At low ``ppm_floor`` (e.g. a coarse solve where ``ppm`` ~ 8 px/m), the metric
+thickness rounds to ~1 px and the extruded connector becomes a hairline that
+is invisible next to the multi-px section walls. This pixel floor keeps a
+connector readable on any floor regardless of scale; at normal ppm the
+metric calculation already exceeds it, so this is a no-op.
+"""
