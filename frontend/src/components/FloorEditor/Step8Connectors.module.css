@@ -31,7 +31,7 @@
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
   border: 1px solid #e5e7eb;
   overflow: hidden;
-  cursor: crosshair;
+  cursor: none;
 }
 
 .canvasEmpty {
@@ -72,31 +72,97 @@
   line-height: 1.55;
 }
 
-.drawingBadge {
-  margin: 0 1rem 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: #fff7ed;
-  border: 1px solid #fed7aa;
-  color: #c2410c;
-  font-size: 0.75rem;
+.tools {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   gap: 0.5rem;
+  padding: 0.75rem 1rem 0.5rem;
 }
 
-.miniBtn {
-  background: transparent;
-  border: 1px solid #fdba74;
-  color: #c2410c;
-  font-size: 0.6875rem;
-  padding: 0.15rem 0.5rem;
+.toolBtn {
+  flex: 1;
+  padding: 0.5rem;
+  background: #ffffff;
+  border: 1px solid #e1e4e8;
+  color: #0f172a;
+  font-family: inherit;
+  font-size: 0.8125rem;
   cursor: pointer;
   border-radius: 0;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
-.miniBtn:hover {
-  background: #ffedd5;
+.toolBtn:hover {
+  border-color: #f05123;
+  color: #f05123;
+}
+
+.toolBtnActive,
+.toolBtnActive:hover {
+  background: #f05123;
+  border-color: #f05123;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.brushControl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem 0.75rem;
+}
+
+.brushLabel {
+  font-size: 0.75rem;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.slider {
+  flex: 1;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 4px;
+  background: #e1e4e8;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: #f05123;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.slider::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  background: #f05123;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.brushValue {
+  font-size: 0.75rem;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  min-width: 34px;
+  text-align: right;
+}
+
+.brushCursor {
+  position: absolute;
+  border-radius: 50%;
+  border: 1.5px solid rgba(240, 81, 35, 0.9);
+  background: rgba(240, 81, 35, 0.08);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  z-index: 10;
 }
 
 .connList {

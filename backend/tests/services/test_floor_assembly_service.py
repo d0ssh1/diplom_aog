@@ -372,7 +372,7 @@ async def test_solve_response_carries_ppm_spread_warning_on_ok_section(monkeypat
     by_id = {s.section_id: s for s in resp.sections}
     assert resp.anchor_section_id == 10
     assert by_id[20].status == "ok"
-    assert by_id[20].warning is not None and "ppm" in by_id[20].warning.lower()
+    assert by_id[20].warning is not None and "масштаб" in by_id[20].warning.lower()
     assert by_id[10].warning is None  # anchor matches itself exactly
 
 
@@ -408,7 +408,7 @@ async def test_solve_high_residual_section_is_ok_with_warning(monkeypatch):
 
     assert resp.sections[0].status == "ok"
     assert resp.sections[0].warning is not None
-    assert "rms" in resp.sections[0].warning.lower()
+    assert "неточно" in resp.sections[0].warning.lower()
 
 
 # ── ppm derivation helper (pure) ─────────────────────────────────────────────────
@@ -564,21 +564,61 @@ async def test_build_skips_missing_mask_file_continues(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_build_emits_low_detail_warning_for_small_scale_section(monkeypatch):
-    """A section rendered below DETAIL_WARN_SCALE → a non-fatal low_detail warning."""
+async def test_build_emits_low_detail_warning_when_cap_clamps_scale(monkeypatch):
+    """Section still downsampled below DETAIL_WARN_SCALE after the canvas cap binds
+    → a non-fatal low_detail warning. The compared value is the EFFECTIVE scale
+    (base_scale * k), so the upscale must be unable to lift it to native."""
     svc = _make_service()
     svc._floor_repo.get_by_id.return_value = _floor()
-    section = _section(sid=10, transform={"scale": 0.42, "tx": 0.0, "ty": 0.0})
+    section = _section(sid=10, transform={"scale": 0.1, "tx": 0.0, "ty": 0.0})
     svc._section_repo.list_by_floor.return_value = [section]
     svc._connector_repo.list_by_floor.return_value = []
     svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
-    _patch_build_seams(svc, monkeypatch)  # master 800x600 → k = 1
+    # Master long side 4000 = MAX_FLOOR_CANVAS_PX → the cap clamps k to 1.0, so the
+    # upscale cannot lift the 0.1× section to native: effective 0.1 < 0.5.
+    _patch_build_seams(svc, monkeypatch, master_dims=(4000, 3000))
 
     resp = await svc.build_floor_mesh(1)
 
     assert resp.included_sections == [10]
     codes = [(w.section_id, w.code) for w in resp.warnings]
     assert (10, "low_detail") in codes
+
+
+@pytest.mark.asyncio
+async def test_build_upscales_low_res_master_to_render_sections_native(monkeypatch):
+    """Round-2 fix: a low-res "карта отсеков" (tiny section scales) is UPSCALED so
+    sections rasterise at ~native resolution — otherwise walls collapse to
+    sub-pixel and the floor extrudes as blank scraps. k = 1/min(scale) threads into
+    canvas, transform and builder ppm; a lifted section gets no low_detail warning."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor(pixels_per_meter=10.0)
+    section = _section(sid=10, transform={"scale": 0.2, "tx": 4.0, "ty": 6.0})
+    svc._section_repo.list_by_floor.return_value = [section]
+    svc._connector_repo.list_by_floor.return_value = []
+    svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
+    # Master 400x300, scale 0.2 → k = 1/0.2 = 5 (well under the 4000 cap).
+    cap_assemble, cap_build = _patch_build_seams(
+        svc, monkeypatch, master_dims=(400, 300)
+    )
+
+    resp = await svc.build_floor_mesh(1)
+
+    k = 5.0
+    # Section lifted to ~native (0.2 * 5 = 1.0×) → NO low_detail warning.
+    assert resp.warnings == []
+    # (a) canvas dims upscaled by k.
+    assert resp.canvas_size_px == (2000, 1500)
+    assert cap_assemble.args[1] == (2000, 1500)
+    # (b) transform pre-multiplied by k → native-scale warp.
+    warp_inputs = cap_assemble.args[0]
+    assert warp_inputs[0].scale == pytest.approx(0.2 * k)  # == 1.0
+    assert warp_inputs[0].tx == pytest.approx(4.0 * k)
+    assert warp_inputs[0].ty == pytest.approx(6.0 * k)
+    # (e) builder ppm x k so metres stay correct on the upscaled canvas.
+    assert cap_build.kwargs["pixels_per_meter"] == pytest.approx(10.0 * k)
+    # Response echoes the UN-scaled metric ppm.
+    assert resp.pixels_per_meter == pytest.approx(10.0)
 
 
 @pytest.mark.asyncio

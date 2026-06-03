@@ -104,6 +104,7 @@ class TransitionRepository(BaseRepository):
         group_id: int,
         position_x: float,
         position_y: float,
+        geometry: list[list[float]] | None,
         label: str | None,
         user_id: int | None,
     ) -> TransitionPoint:
@@ -112,6 +113,7 @@ class TransitionRepository(BaseRepository):
             group_id=group_id,
             position_x=position_x,
             position_y=position_y,
+            geometry=geometry,
             label=label,
             created_by=user_id,
         )
@@ -147,6 +149,7 @@ class TransitionRepository(BaseRepository):
         point_id: int,
         position_x: float | None,
         position_y: float | None,
+        geometry: list[list[float]] | None,
         label: str | None,
     ) -> Optional[TransitionPoint]:
         point = await self._session.get(TransitionPoint, point_id)
@@ -156,6 +159,8 @@ class TransitionRepository(BaseRepository):
             point.position_x = position_x
         if position_y is not None:
             point.position_y = position_y
+        if geometry is not None:
+            point.geometry = geometry
         if label is not None:
             point.label = label
         await self._session.commit()

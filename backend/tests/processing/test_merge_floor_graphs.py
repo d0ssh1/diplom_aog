@@ -70,12 +70,19 @@ def sample_transition() -> dict:
     return {
         "id": 10,
         "name": "Лестница А",
-        "from_reconstruction_id": 1,
-        "from_x": 0.5,
-        "from_y": 0.5,
-        "to_reconstruction_id": 2,
-        "to_x": 0.5,
-        "to_y": 0.5,
+        "type": "stairs",
+        "points": [
+            {
+                "id": 101,
+                "reconstruction_id": 1,
+                "geometry": [[0.5, 0.5], [0.6, 0.5], [0.55, 0.6]],
+            },
+            {
+                "id": 102,
+                "reconstruction_id": 2,
+                "geometry": [[0.5, 0.5], [0.6, 0.5], [0.55, 0.6]],
+            },
+        ],
     }
 
 

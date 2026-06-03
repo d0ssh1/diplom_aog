@@ -122,6 +122,7 @@ class TransitionService:
             data.group_id,
             data.position_x,
             data.position_y,
+            data.geometry,
             data.label,
             user_id,
         )
@@ -131,12 +132,13 @@ class TransitionService:
             group_id=point.group_id,
             position_x=point.position_x,
             position_y=point.position_y,
+            geometry=point.geometry,
             label=point.label,
             snapped_node_id=None,
         )
 
     async def update_point(self, point_id: int, data: TransitionPointUpdate) -> TransitionPointResponse | None:
-        point = await self._transition_repo.update_point(point_id, data.position_x, data.position_y, data.label)
+        point = await self._transition_repo.update_point(point_id, data.position_x, data.position_y, data.geometry, data.label)
         if point is None:
             return None
         return TransitionPointResponse(
@@ -145,6 +147,7 @@ class TransitionService:
             group_id=point.group_id,
             position_x=point.position_x,
             position_y=point.position_y,
+            geometry=point.geometry,
             label=point.label,
             snapped_node_id=None,
         )
@@ -161,6 +164,7 @@ class TransitionService:
                 group_id=point.group_id,
                 position_x=point.position_x,
                 position_y=point.position_y,
+                geometry=point.geometry,
                 label=point.label,
                 snapped_node_id=None,
             )
@@ -176,6 +180,7 @@ class TransitionService:
                 group_id=point.group_id,
                 position_x=point.position_x,
                 position_y=point.position_y,
+                geometry=point.geometry,
                 label=point.label,
                 snapped_node_id=None,
             )

@@ -57,9 +57,9 @@ async def test_get_reconstruction_by_id_existing_returns_200(client, auth_header
 
     mock_svc = AsyncMock()
     mock_svc.get_reconstruction.return_value = mock_reconstruction
-    # These are synchronous methods, not async
     mock_svc.get_status_display = MagicMock(return_value="Готово")
     mock_svc.build_mesh_url = MagicMock(return_value=None)
+    mock_svc.get_vectorization_data.return_value = None
 
     app.dependency_overrides[get_reconstruction_service] = lambda: mock_svc
     try:

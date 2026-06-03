@@ -1,12 +1,27 @@
 {
-"env": {
-"ANTHROPIC_BASE_URL": "https://claude-api.filips-site.online",
-"ANTHROPIC_API_KEY": "sk-kp-OlHNFNlzc3jgZGWhAQlDokGGaKEnHJEtyI4ONGoIdzo",
-"CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
-"DISABLE_TELEMETRY": "1",
-"DISABLE_ERROR_REPORTING": "1",
-"DISABLE_AUTOUPDATER": "1",
-"DISABLE_COST_WARNINGS": "1"
-},
-"model": "claude-sonnet-4-6"
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://api.vibecode-claude.online",
+    "ANTHROPIC_API_KEY": "sk-ad430280e5a5dedf6f569d160b7e2be51b7f2f1764bf99eb",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "claude-opus-4.6",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "claude-sonnet-4.6",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "claude-haiku-4.5",
+    "DISABLE_TELEMETRY": "1",
+    "DISABLE_ERROR_REPORTING": "1",
+    "DISABLE_AUTOUPDATER": "1",
+    "DISABLE_BUG_COMMAND": "1",
+    "DISABLE_COST_WARNINGS": "1",
+    "DISABLE_NON_ESSENTIAL_MODEL_CALLS": "1",
+    "CLAUDE_CODE_DISABLE_FEEDBACK_SURVEY": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ]
+  },
+  "model": "opus[1m]",
+  "defaultMode": "acceptEdits"
 }

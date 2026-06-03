@@ -12,7 +12,7 @@ interface UseTransitionsReturn {
   error: string | null;
   selectPlan: (planId: number) => void;
   startAddingTransition: (name: string, toReconstructionId: number) => void;
-  handlePlanClick: (x: number, y: number) => void;
+  handlePlanSubmit: (geometry: number[][]) => void;
   deleteTransition: (id: number) => Promise<void>;
   cancelMode: () => void;
 }
@@ -58,27 +58,36 @@ export const useTransitions = (buildingId: string): UseTransitionsReturn => {
     setMode({ type: 'placing_from', name, to_reconstruction_id: toReconstructionId });
   }, []);
 
-  const handlePlanClick = useCallback(
-    (x: number, y: number) => {
+  const handlePlanSubmit = useCallback(
+    (geometry: number[][]) => {
+      // Calculate centroid
+      const xs = geometry.map((p) => p[0]);
+      const ys = geometry.map((p) => p[1]);
+      const cx = xs.reduce((sum, v) => sum + v, 0) / (xs.length || 1);
+      const cy = ys.reduce((sum, v) => sum + v, 0) / (ys.length || 1);
+
       if (mode.type === 'placing_from') {
         const toReconId = mode.to_reconstruction_id;
         setMode({
           type: 'placing_to',
           name: mode.name,
           from_reconstruction_id: selectedPlanId!,
-          from_x: x,
-          from_y: y,
+          from_geometry: geometry,
+          from_x: cx,
+          from_y: cy,
         });
         setSelectedPlanId(toReconId);
       } else if (mode.type === 'placing_to' && selectedPlanId !== null) {
         const req = {
           name: mode.name,
           from_reconstruction_id: mode.from_reconstruction_id,
+          from_geometry: mode.from_geometry,
           from_x: mode.from_x,
           from_y: mode.from_y,
           to_reconstruction_id: selectedPlanId,
-          to_x: x,
-          to_y: y,
+          to_geometry: geometry,
+          to_x: cx,
+          to_y: cy,
         };
         transitionsApi
           .createFloorTransition(req)
@@ -113,7 +122,7 @@ export const useTransitions = (buildingId: string): UseTransitionsReturn => {
     error,
     selectPlan,
     startAddingTransition,
-    handlePlanClick,
+    handlePlanSubmit,
     deleteTransition,
     cancelMode,
   };

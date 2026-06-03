@@ -185,6 +185,10 @@
   flex-direction: column;
   gap: 0.25rem;
   padding: 0 0.75rem 0.25rem;
+  /* Bounded scroll region — a long list scrolls here instead of pushing the
+     status + save button (and the page) down. */
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 .pointRow {
@@ -214,17 +218,18 @@
   color: #0f172a;
 }
 
-/* Square number badge (green when both sides placed, amber when partial) */
+/* Square number badge (green when both sides placed, amber when partial) —
+   SAME 20×20 box as the Э/К chips so the row reads as three even squares. */
 .numBadge {
-  width: 22px;
-  height: 22px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 0;
   font-family: 'Courier New', monospace;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
   font-weight: 700;
   color: #ffffff;
 }
@@ -235,12 +240,14 @@
 }
 
 .chip {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   border-radius: 0;
+  font-family: 'Courier New', monospace;
   font-size: 0.6875rem;
   font-weight: 700;
   color: #9ca3af;

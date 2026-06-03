@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field, model_validator
 class FloorTransitionRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     from_reconstruction_id: int
+    from_geometry: list[list[float]] | None = None
     from_x: float = Field(ge=0.0, le=1.0)
     from_y: float = Field(ge=0.0, le=1.0)
     to_reconstruction_id: int
+    to_geometry: list[list[float]] | None = None
     to_x: float = Field(ge=0.0, le=1.0)
     to_y: float = Field(ge=0.0, le=1.0)
 
@@ -28,9 +30,11 @@ class FloorTransitionResponse(BaseModel):
     name: str
     building_id: str | None
     from_reconstruction_id: int
+    from_geometry: list[list[float]] | None = None
     from_x: float
     from_y: float
     to_reconstruction_id: int
+    to_geometry: list[list[float]] | None = None
     to_x: float
     to_y: float
     created_at: datetime

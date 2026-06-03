@@ -59,13 +59,21 @@ async def get_file_storage() -> FileStorage:
     return FileStorage(upload_dir=str(settings.UPLOAD_DIR))
 
 
+async def get_floor_transition_repo(
+    session: AsyncSession = Depends(get_db),
+) -> FloorTransitionRepository:
+    return FloorTransitionRepository(session)
+
+
 async def get_reconstruction_service(
     repo: ReconstructionRepository = Depends(get_reconstruction_repo),
     storage: FileStorage = Depends(get_file_storage),
+    transition_repo: FloorTransitionRepository = Depends(get_floor_transition_repo),
 ) -> ReconstructionService:
     return ReconstructionService(
         repo=repo,
         storage=storage,
+        transition_repo=transition_repo,
     )
 
 
@@ -83,10 +91,7 @@ async def get_stitching_service(
     return StitchingService(reconstruction_repo=repo)
 
 
-async def get_floor_transition_repo(
-    session: AsyncSession = Depends(get_db),
-) -> FloorTransitionRepository:
-    return FloorTransitionRepository(session)
+
 
 
 async def get_floor_transition_service(

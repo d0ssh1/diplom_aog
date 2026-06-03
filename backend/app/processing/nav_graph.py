@@ -732,16 +732,16 @@ def _find_nearest_node(
 
 def merge_floor_graphs(
     floor_data: list[FloorGraphData],
-    transitions: list[dict],
+    transition_groups: list[dict],
 ) -> tuple[nx.Graph, dict[int, FloorGraphData]]:
     """
     Merge N floor graphs into one, connecting them via transition edges.
 
     Args:
         floor_data: list of FloorGraphData (one per floor/reconstruction)
-        transitions: list of dicts from FloorTransition ORM —
-            keys: id, name, from_reconstruction_id, from_x, from_y,
-                  to_reconstruction_id, to_x, to_y
+        transition_groups: list of dicts representing transition groups
+            keys: id, name, type, points
+            where points is a list of dicts: id, reconstruction_id, x, y
 
     Returns:
         (merged_graph, floor_data_by_recon_id)
@@ -761,68 +761,51 @@ def merge_floor_graphs(
             merged.add_edge(f"{prefix}{u}", f"{prefix}{v}", **edge_data)
 
     # Add transition edges
-    for t in transitions:
-        from_recon_id = t["from_reconstruction_id"]
-        to_recon_id = t["to_reconstruction_id"]
-        t_id = t["id"]
-        t_name = t["name"]
-
-        from_fd = floor_data_by_recon_id.get(from_recon_id)
-        to_fd = floor_data_by_recon_id.get(to_recon_id)
-        if from_fd is None or to_fd is None:
-            continue
-
-        from_meta = from_fd.metadata
-        to_meta = to_fd.metadata
-
-        from_px = t["from_x"] * from_meta.get("mask_width", 1)
-        from_py = t["from_y"] * from_meta.get("mask_height", 1)
-        to_px = t["to_x"] * to_meta.get("mask_width", 1)
-        to_py = t["to_y"] * to_meta.get("mask_height", 1)
-
-        nearest_from = _find_nearest_node(merged, from_recon_id, from_px, from_py)
-        nearest_to = _find_nearest_node(merged, to_recon_id, to_px, to_py)
-
-        if nearest_from is None or nearest_to is None:
-            logger.warning(
-                "merge_floor_graphs: cannot find nearest nodes for transition %d "
-                "(from_recon=%d nearest=%s, to_recon=%d nearest=%s)",
-                t_id, from_recon_id, nearest_from, to_recon_id, nearest_to,
+    for group in transition_groups:
+        group_id = group["id"]
+        group_name = group["name"]
+        points = group.get("points", [])
+        
+        valid_points = []
+        for p in points:
+            recon_id = p["reconstruction_id"]
+            fd = floor_data_by_recon_id.get(recon_id)
+            if fd is None:
+                continue
+                
+            meta = fd.metadata
+            px = p["x"] * meta.get("mask_width", 1)
+            py = p["y"] * meta.get("mask_height", 1)
+            
+            nearest = _find_nearest_node(merged, recon_id, px, py)
+            if nearest is None:
+                continue
+                
+            pos = merged.nodes[nearest].get("pos", (px, py))
+            teleport_id = f"teleport_{group_id}_pt_{p['id']}"
+            
+            merged.add_node(
+                teleport_id,
+                type="teleport",
+                pos=pos,
+                recon_id=recon_id,
+                transition_id=group_id,
+                transition_name=group_name,
             )
-            continue
-
-        teleport_from = f"teleport_{t_id}_from"
-        teleport_to = f"teleport_{t_id}_to"
-
-        from_pos = merged.nodes[nearest_from].get("pos", (from_px, from_py))
-        to_pos = merged.nodes[nearest_to].get("pos", (to_px, to_py))
-
-        merged.add_node(
-            teleport_from,
-            type="teleport",
-            pos=from_pos,
-            recon_id=from_recon_id,
-            transition_id=t_id,
-            transition_name=t_name,
-        )
-        merged.add_node(
-            teleport_to,
-            type="teleport",
-            pos=to_pos,
-            recon_id=to_recon_id,
-            transition_id=t_id,
-            transition_name=t_name,
-        )
-
-        merged.add_edge(nearest_from, teleport_from, weight=5.0, type="teleport_approach")
-        merged.add_edge(
-            teleport_from, teleport_to,
-            weight=10.0,
-            type="floor_transition",
-            transition_name=t_name,
-            transition_id=t_id,
-        )
-        merged.add_edge(teleport_to, nearest_to, weight=5.0, type="teleport_approach")
+            merged.add_edge(nearest, teleport_id, weight=5.0, type="teleport_approach")
+            
+            valid_points.append(teleport_id)
+            
+        # Create a fully connected mesh between all valid points in this group
+        for i in range(len(valid_points)):
+            for j in range(i + 1, len(valid_points)):
+                merged.add_edge(
+                    valid_points[i], valid_points[j],
+                    weight=10.0,
+                    type="floor_transition",
+                    transition_name=group_name,
+                    transition_id=group_id,
+                )
 
     return merged, floor_data_by_recon_id
 

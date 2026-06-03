@@ -4,7 +4,7 @@ Database models for transitions between reconstructions.
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, JSON
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -62,6 +62,7 @@ class TransitionPoint(Base):
         nullable=False,
         index=True,
     )
+    geometry: Mapped[list[dict] | None] = mapped_column(JSON, nullable=True)
     position_x: Mapped[float] = mapped_column(Float, nullable=False)
     position_y: Mapped[float] = mapped_column(Float, nullable=False)
     label: Mapped[str | None] = mapped_column(String(255), nullable=True)

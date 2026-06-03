@@ -44,9 +44,11 @@ class ReconstructionService:
         self,
         repo: ReconstructionRepository,
         storage: FileStorage,
+        transition_repo: "app.db.repositories.floor_transition_repo.FloorTransitionRepository" = None,
     ) -> None:
         self._repo = repo
         self._storage = storage
+        self._transition_repo = transition_repo
 
     async def build_mesh(
         self,
@@ -226,12 +228,23 @@ class ReconstructionService:
                 ),
             )
 
+            # 12.5 Fetch transitions
+            transition_geoms = []
+            if self._transition_repo:
+                transitions = await self._transition_repo.get_by_reconstruction(reconstruction.id)
+                for t in transitions:
+                    if t.from_reconstruction_id == reconstruction.id and t.from_geometry:
+                        transition_geoms.append(t.from_geometry)
+                    if t.to_reconstruction_id == reconstruction.id and t.to_geometry:
+                        transition_geoms.append(t.to_geometry)
+
             # 13. Build 3D mesh from binary mask
             mesh = build_mesh_from_mask(
                 mask_array,
                 floor_height=settings.DEFAULT_FLOOR_HEIGHT,
                 pixels_per_meter=pixels_per_meter,
                 vr=vectorization_result,
+                transitions=transition_geoms if transition_geoms else None,
             )
 
             # 14. Export mesh

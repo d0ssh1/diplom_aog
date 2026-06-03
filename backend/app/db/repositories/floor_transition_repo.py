@@ -25,9 +25,11 @@ class FloorTransitionRepository(BaseRepository):
         from_reconstruction_id: int,
         from_x: float,
         from_y: float,
+        from_geometry: list[list[float]] | None,
         to_reconstruction_id: int,
         to_x: float,
         to_y: float,
+        to_geometry: list[list[float]] | None,
         created_by: Optional[int] = None,
     ) -> FloorTransition:
         """INSERT a new floor transition."""
@@ -41,9 +43,11 @@ class FloorTransitionRepository(BaseRepository):
             from_reconstruction_id=from_reconstruction_id,
             from_x=from_x,
             from_y=from_y,
+            from_geometry=from_geometry,
             to_reconstruction_id=to_reconstruction_id,
             to_x=to_x,
             to_y=to_y,
+            to_geometry=to_geometry,
             created_by=created_by,
         )
         self._session.add(obj)

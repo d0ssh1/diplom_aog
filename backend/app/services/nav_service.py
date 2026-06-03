@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from app.db.repositories.floor_transition_repo import FloorTransitionRepository
     from app.db.repositories.reconstruction_repo import ReconstructionRepository
+    from app.db.repositories.transition_repo import TransitionRepository
 
 import cv2
 import numpy as np
@@ -33,6 +34,11 @@ from app.models.floor_transition import (
     PathSegment3D,
     TransitionUsed3D,
     Room3DInfo,
+)
+from app.models.transition import (
+    MultiPlanRouteRequest,
+    MultiPlanRouteResponse,
+    RouteSegment,
 )
 from app.core.exceptions import NavGraphNotFoundError
 
@@ -310,25 +316,49 @@ class NavService:
 
         # Multi-floor path
         transitions = await ft_repo.get_by_building(building_id)
-        transitions_dicts = [
-            {
+        transition_groups = []
+        for t in transitions:
+            # Centroid extraction for from_geometry
+            if t.from_geometry and isinstance(t.from_geometry, list) and len(t.from_geometry) > 0:
+                fx = sum(pt[0] for pt in t.from_geometry) / len(t.from_geometry)
+                fy = sum(pt[1] for pt in t.from_geometry) / len(t.from_geometry)
+            else:
+                fx = t.from_x
+                fy = t.from_y
+                
+            # Centroid extraction for to_geometry
+            if t.to_geometry and isinstance(t.to_geometry, list) and len(t.to_geometry) > 0:
+                tx = sum(pt[0] for pt in t.to_geometry) / len(t.to_geometry)
+                ty = sum(pt[1] for pt in t.to_geometry) / len(t.to_geometry)
+            else:
+                tx = t.to_x
+                ty = t.to_y
+                
+            transition_groups.append({
                 "id": t.id,
                 "name": t.name,
-                "from_reconstruction_id": t.from_reconstruction_id,
-                "from_x": t.from_x,
-                "from_y": t.from_y,
-                "to_reconstruction_id": t.to_reconstruction_id,
-                "to_x": t.to_x,
-                "to_y": t.to_y,
-            }
-            for t in transitions
-        ]
+                "type": "floor_transition",
+                "points": [
+                    {
+                        "id": f"from_{t.id}",
+                        "reconstruction_id": t.from_reconstruction_id,
+                        "x": fx,
+                        "y": fy,
+                    },
+                    {
+                        "id": f"to_{t.id}",
+                        "reconstruction_id": t.to_reconstruction_id,
+                        "x": tx,
+                        "y": ty,
+                    },
+                ]
+            })
 
         # Collect all unique reconstruction ids to load
         recon_ids: set[int] = {from_reconstruction_id, to_reconstruction_id}
-        for t in transitions_dicts:
-            recon_ids.add(t["from_reconstruction_id"])
-            recon_ids.add(t["to_reconstruction_id"])
+        for t in transitions:
+            recon_ids.add(t.from_reconstruction_id)
+            recon_ids.add(t.to_reconstruction_id)
 
         floor_data_list: list[FloorGraphData] = []
         for recon_id in recon_ids:
@@ -351,7 +381,7 @@ class NavService:
             ))
 
         merged_graph, floor_data_by_recon_id = merge_floor_graphs(
-            floor_data_list, transitions_dicts
+            floor_data_list, transition_groups
         )
 
         route = find_multifloor_route_in_graph(
@@ -434,6 +464,146 @@ class NavService:
             estimated_time_seconds=estimated_time,
             path_segments=path_segments_3d,
             transitions_used=transitions_used_3d,
+        )
+
+    async def find_multi_plan_route(
+        self,
+        request: MultiPlanRouteRequest,
+        transition_repo: "TransitionRepository",
+        recon_repo: "ReconstructionRepository",
+    ) -> MultiPlanRouteResponse:
+        from_recon = await recon_repo.get_by_id(request.from_reconstruction_id)
+        if from_recon is None:
+            return MultiPlanRouteResponse(status="error", message="From reconstruction not found")
+
+        # Same floor — delegate to single-floor logic
+        if request.from_reconstruction_id == request.to_reconstruction_id:
+            result = await self.find_route(
+                graph_id=from_recon.mask_file_id,
+                from_room_id=request.from_room_id,
+                to_room_id=request.to_room_id,
+            )
+            if result.get("status") != "success":
+                return MultiPlanRouteResponse(status=result.get("status", "no_path"), message=result.get("message"))
+            
+            floor_name = from_recon.name or str(from_recon.id)
+            segment = RouteSegment(
+                reconstruction_id=from_recon.id,
+                reconstruction_name=floor_name,
+                floor_label=floor_name,
+                coordinates=result.get("coordinates", []),
+            )
+            return MultiPlanRouteResponse(
+                status="success",
+                total_distance_meters=result.get("total_distance_meters"),
+                segments=[segment]
+            )
+
+        # Multi-floor path using new Transition models
+        building_id = from_recon.building_id
+        if not building_id:
+            return MultiPlanRouteResponse(status="error", message="From reconstruction has no building_id")
+
+        groups = await transition_repo.list_groups_by_building(building_id)
+        transition_groups = []
+        for g in groups:
+            points = []
+            for p in g.points:
+                # If geometry exists, calculate centroid. Otherwise use position_x, position_y
+                if getattr(p, "geometry", None):
+                    geom = p.geometry
+                    xs = [pt[0] for pt in geom]
+                    ys = [pt[1] for pt in geom]
+                    cx, cy = sum(xs) / len(xs), sum(ys) / len(ys)
+                else:
+                    cx, cy = p.position_x, p.position_y
+                points.append({
+                    "id": p.id,
+                    "reconstruction_id": p.reconstruction_id,
+                    "x": cx,
+                    "y": cy,
+                })
+            transition_groups.append({
+                "id": g.id,
+                "name": g.label or f"Transition {g.id}",
+                "type": getattr(g, "type", "passage"),
+                "points": points,
+            })
+
+        recon_ids: set[int] = {request.from_reconstruction_id, request.to_reconstruction_id}
+        for tg in transition_groups:
+            for p in tg["points"]:
+                recon_ids.add(p["reconstruction_id"])
+
+        floor_data_list: list[FloorGraphData] = []
+        for recon_id in recon_ids:
+            recon = await recon_repo.get_by_id(recon_id)
+            if recon is None or not recon.mask_file_id:
+                continue
+            try:
+                nav_data = self.load_graph(recon.mask_file_id)
+            except FileNotFoundError:
+                if recon_id in (request.from_reconstruction_id, request.to_reconstruction_id):
+                    raise NavGraphNotFoundError(recon_id)
+                continue
+            G, metadata = deserialize_nav_graph(nav_data)
+            floor_data_list.append(FloorGraphData(
+                graph=G,
+                metadata=metadata,
+                reconstruction_id=recon_id,
+                floor_number=recon.floor.number if recon.floor else 0,
+                floor_name=recon.name or str(recon_id),
+            ))
+
+        merged_graph, floor_data_by_recon_id = merge_floor_graphs(
+            floor_data_list, transition_groups
+        )
+
+        route = find_multifloor_route_in_graph(
+            merged_graph,
+            floor_data_by_recon_id,
+            request.from_reconstruction_id,
+            request.from_room_id,
+            request.to_reconstruction_id,
+            request.to_room_id,
+        )
+
+        if route is None:
+            return MultiPlanRouteResponse(
+                status="no_path",
+                message="No path found between rooms",
+            )
+
+        # Build path segments (using the existing PathSegment3D and transforming it to RouteSegment)
+        path_segments: list[RouteSegment] = []
+        for seg in route["path_segments"]:
+            fd = floor_data_by_recon_id.get(seg["reconstruction_id"])
+            if fd is None:
+                continue
+            y_offset = fd.floor_number * FLOOR_HEIGHT_METERS + 0.1
+            coords_3d = transform_2d_to_3d(
+                seg["coords_2d"],
+                fd.metadata.get("mask_width", 1000),
+                fd.metadata.get("mask_height", 500),
+                fd.metadata.get("scale_factor", 0.02),
+                y_offset=y_offset,
+            )
+            path_segments.append(RouteSegment(
+                reconstruction_id=seg["reconstruction_id"],
+                reconstruction_name=seg["floor_name"],
+                floor_label=seg["floor_name"],
+                coordinates=coords_3d,
+            ))
+
+        total_distance_px = route.get("total_distance_px", 0.0)
+        from_fd = floor_data_by_recon_id.get(request.from_reconstruction_id)
+        scale = from_fd.metadata.get("scale_factor", 0.02) if from_fd else 0.02
+        distance_meters = round(total_distance_px * scale, 1)
+
+        return MultiPlanRouteResponse(
+            status="success",
+            total_distance_meters=distance_meters,
+            segments=path_segments,
         )
 
     async def build_graph_endpoint(self, request) -> dict:

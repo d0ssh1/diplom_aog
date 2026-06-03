@@ -2,11 +2,11 @@
 // connector is an OPEN polyline (one corridor wall) rendered as a thick band —
 // the floor mesh is walls-only, so a line literally extrudes into a wall.
 //
-// Tools:
+// Tools (click-to-place vertices — точка-точка-прямая линия):
 //  • Draw: click to add a vertex; double-click / Enter to finish; Esc cancels.
 //  • Edit: drag a vertex to move it; Shift+click a segment inserts a vertex;
 //    right-click a vertex removes it; the side panel deletes a whole line.
-//  • Persist: "Сохранить" → replaceConnectors (atomic replace-all).
+//  • Persist: "Сохранить" → replaceConnectors (also auto-saved on "Далее").
 //
 // Presentational only — the committed connector drafts live in useFloorAssembly;
 // the in-progress polyline + drag state are local UI concerns kept here.
@@ -406,14 +406,14 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
         <aside className={styles.panel}>
           <div className={styles.panelTitle}>ПЕРЕХОДЫ</div>
           <div className={styles.hint}>
-            Клик — добавить вершину. Двойной клик / Enter — завершить линию. Esc —
-            отменить. Перетащить вершину — переместить. Shift+клик по линии —
-            вставить вершину. ПКМ по вершине — удалить.
+            Клик — добавить точку. Двойной клик / Enter — завершить линию. Esc —
+            отменить. Перетащить точку — переместить. Shift+клик по линии —
+            вставить точку. ПКМ по точке — удалить.
           </div>
 
           {drawing.length > 0 && (
             <div className={styles.drawingBadge}>
-              Рисуется линия: {drawing.length} вершин
+              Рисуется линия: {drawing.length} точек
               <button
                 type="button"
                 className={styles.miniBtn}
@@ -429,7 +429,7 @@ export const Step8Connectors: React.FC<Step8ConnectorsProps> = ({
               <div key={c.id ?? `draft-${i}`} className={styles.connRow}>
                 <span className={styles.connDot} />
                 <span className={styles.connName}>
-                  Линия {i + 1} · {c.points.length} вершин
+                  Линия {i + 1} · {c.points.length} точек
                 </span>
                 <button
                   type="button"

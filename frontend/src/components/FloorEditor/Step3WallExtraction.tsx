@@ -35,6 +35,37 @@ interface Step3WallExtractionProps {
 const DEFAULT_BLOCK_SIZE = 15;
 const DEFAULT_THRESHOLD_C = 10;
 
+// Editor settings persist across sessions (localStorage) so the operator's tuned
+// sensitivity / contrast / brush / overlay survive reopening the wall editor.
+const MASK_SETTINGS_KEY = 'floorEditor:maskSettings';
+
+interface MaskSettings {
+  brushSize: number;
+  blockSize: number;
+  thresholdC: number;
+  overlayEnabled: boolean;
+  overlayOpacity: number;
+}
+
+const DEFAULT_MASK_SETTINGS: MaskSettings = {
+  brushSize: 6,
+  blockSize: DEFAULT_BLOCK_SIZE,
+  thresholdC: DEFAULT_THRESHOLD_C,
+  overlayEnabled: true,
+  overlayOpacity: 0.4,
+};
+
+function loadMaskSettings(): MaskSettings {
+  try {
+    const raw = localStorage.getItem(MASK_SETTINGS_KEY);
+    if (!raw) return DEFAULT_MASK_SETTINGS;
+    const parsed = JSON.parse(raw) as Partial<MaskSettings>;
+    return { ...DEFAULT_MASK_SETTINGS, ...parsed };
+  } catch {
+    return DEFAULT_MASK_SETTINGS;
+  }
+}
+
 export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
   schemaImageId,
   schemaImageUrl,
@@ -46,13 +77,21 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
 }) => {
   const canvasRef = useRef<WallEditorCanvasRef>(null);
 
+  // Read persisted settings once on mount (lazy ref → localStorage hit once, not
+  // every render).
+  const savedSettingsRef = useRef<MaskSettings | null>(null);
+  if (savedSettingsRef.current === null) {
+    savedSettingsRef.current = loadMaskSettings();
+  }
+  const savedSettings = savedSettingsRef.current;
+
   const [activeTool, setActiveTool] = useState<Tool>('wall');
   const [eraserMode, setEraserMode] = useState<'brush' | 'select'>('brush');
-  const [brushSize, setBrushSize] = useState(6);
-  const [blockSize, setBlockSize] = useState(DEFAULT_BLOCK_SIZE);
-  const [thresholdC, setThresholdC] = useState(DEFAULT_THRESHOLD_C);
-  const [overlayEnabled, setOverlayEnabled] = useState(true);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.4);
+  const [brushSize, setBrushSize] = useState(savedSettings.brushSize);
+  const [blockSize, setBlockSize] = useState(savedSettings.blockSize);
+  const [thresholdC, setThresholdC] = useState(savedSettings.thresholdC);
+  const [overlayEnabled, setOverlayEnabled] = useState(savedSettings.overlayEnabled);
+  const [overlayOpacity, setOverlayOpacity] = useState(savedSettings.overlayOpacity);
   const [maskUrl, setMaskUrl] = useState<string>('');
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewError, setPreviewError] = useState<string | null>(null);
@@ -113,6 +152,18 @@ export const Step3WallExtraction: React.FC<Step3WallExtractionProps> = ({
   useEffect(() => () => {
     if (previewUrlRef.current) URL.revokeObjectURL(previewUrlRef.current);
   }, []);
+
+  // Persist mask/editor settings so they survive reopening the editor.
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        MASK_SETTINGS_KEY,
+        JSON.stringify({ brushSize, blockSize, thresholdC, overlayEnabled, overlayOpacity }),
+      );
+    } catch {
+      /* localStorage unavailable (private mode / quota) — non-fatal */
+    }
+  }, [brushSize, blockSize, thresholdC, overlayEnabled, overlayOpacity]);
 
   const handleNext = useCallback(async () => {
     // Capture the edited mask from the fabric.js canvas and hand it UP so the

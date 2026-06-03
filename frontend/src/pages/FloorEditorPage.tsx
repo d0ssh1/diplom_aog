@@ -287,7 +287,12 @@ export const FloorEditorPage: React.FC = () => {
             onChangeDrafts={assembly.setConnectorDrafts}
             onSave={assembly.replaceConnectors}
             onBack={wizard.prevStep}
-            onNext={wizard.nextStep}
+            onNext={async () => {
+              // Persist drawn connectors before advancing (commit-on-Далее, like
+              // crop/walls) so the build on step 9 actually includes them.
+              await assembly.replaceConnectors();
+              wizard.nextStep();
+            }}
           />
         );
       case 9:

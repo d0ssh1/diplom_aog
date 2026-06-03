@@ -38,9 +38,9 @@ export const TransitionsPage: React.FC = () => {
 
   // Modal state
   const [showModal, setShowModal] = useState(false);
-  // Coords of the canvas click that opened the teleport modal — used as FROM
-  // after the user confirms the modal, so they don't have to click again.
-  const [pendingFromPoint, setPendingFromPoint] = useState<{ x: number; y: number } | null>(null);
+  // Polygon drawn that opened the teleport modal — used as FROM
+  // after the user confirms the modal.
+  const [pendingFromPolygon, setPendingFromPolygon] = useState<number[][] | null>(null);
 
   // Hook drives plans + transitions data
   const {
@@ -51,20 +51,20 @@ export const TransitionsPage: React.FC = () => {
     isLoading,
     selectPlan,
     startAddingTransition,
-    handlePlanClick,
+    handlePlanSubmit,
     cancelMode,
     deleteTransition,
   } = useTransitions(selectedBuildingId);
 
   // Once startAddingTransition flips mode to 'placing_from', auto-place the FROM
-  // point at the click that originally opened the modal.
+  // point at the polygon that originally opened the modal.
   useEffect(() => {
-    if (mode.type === 'placing_from' && pendingFromPoint) {
-      const { x, y } = pendingFromPoint;
-      setPendingFromPoint(null);
-      handlePlanClick(x, y);
+    if (mode.type === 'placing_from' && pendingFromPolygon) {
+      const geometry = pendingFromPolygon;
+      setPendingFromPolygon(null);
+      handlePlanSubmit(geometry);
     }
-  }, [mode.type, pendingFromPoint, handlePlanClick]);
+  }, [mode.type, pendingFromPolygon, handlePlanSubmit]);
 
   // Load buildings list once
   useEffect(() => {
@@ -157,13 +157,13 @@ export const TransitionsPage: React.FC = () => {
     return '';
   };
 
-  const handleCanvasClick = (x: number, y: number) => {
+  const handleCanvasSubmit = (geometry: number[][]) => {
     if (activeTool === 'teleport' && mode.type === 'idle' && selectedPlanId !== null) {
-      setPendingFromPoint({ x, y });
+      setPendingFromPolygon(geometry);
       setShowModal(true);
       return;
     }
-    handlePlanClick(x, y);
+    handlePlanSubmit(geometry);
   };
 
   // Derived cursor for canvas area
@@ -219,7 +219,7 @@ export const TransitionsPage: React.FC = () => {
               reconstructionId={selectedPlan.id}
               mode={mode}
               activeTool={activeTool}
-              onCanvasClick={handleCanvasClick}
+              onCanvasSubmit={handleCanvasSubmit}
               onDeleteTransition={activeTool === 'delete' ? deleteTransition : undefined}
             />
           ) : (
@@ -384,7 +384,7 @@ export const TransitionsPage: React.FC = () => {
           onCancel={() => {
             setShowModal(false);
             setActiveTool('pan');
-            setPendingFromPoint(null);
+            setPendingFromPolygon(null);
           }}
         />
       )}

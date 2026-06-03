@@ -13,6 +13,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { floorAssemblyApi } from '../api/floorAssemblyApi';
+import { floorsApi } from '../api/buildingsApi';
 import { reconstructionApi } from '../api/apiService';
 import { toastApi } from './useToast';
 import { writeActivePoint } from '../lib/controlPoints';
@@ -164,16 +165,26 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     setIsLoading(true);
     setError(null);
     try {
-      const data = await floorAssemblyApi.getFloorAssembly(id);
+      // Load the assembly + the floor (for its saved mask) in parallel. The floor
+      // fetch is non-fatal — a failure just falls back to regenerating the mask.
+      const [data, floor] = await Promise.all([
+        floorAssemblyApi.getFloorAssembly(id),
+        floorsApi.getById(id).catch(() => null),
+      ]);
       setFloorId(id);
       setAssembly(data);
       setMeshFileGlb(data.mesh_file_glb);
       setPixelsPerMeter(data.pixels_per_meter);
 
-      // Fetch the cropped floor-schema mask (the карта отсеков backdrop). Same
-      // crop the solver/builder use, so master points round-trip correctly.
+      // Backdrop = the карта отсеков. Prefer the operator's persisted Step-3 edit
+      // (floor.mask_file_url) so they bind to their cleaned mask; else regenerate
+      // it from the original schema via previewMask. Both live in the SAME
+      // cropped+rotated master frame, so master points round-trip with the
+      // solver/builder either way.
       const ms = data.master_schema;
-      if (ms.image_id) {
+      if (floor?.mask_file_url) {
+        setMasterMask(floor.mask_file_url);
+      } else if (ms.image_id) {
         const crop = ms.crop_bbox
           ? {
               x: ms.crop_bbox.x,

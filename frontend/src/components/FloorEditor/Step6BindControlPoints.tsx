@@ -25,6 +25,10 @@ import styles from './Step6BindControlPoints.module.css';
 
 type Tool = 'place' | 'delete';
 
+// Mirrors backend app/core/floor_stitching_constants.MAX_CONTROL_POINTS: each
+// side (эталон / карта) is capped at 20 — placing past it would 422 on save.
+const MAX_POINTS_PER_SIDE = 20;
+
 interface Step6BindControlPointsProps {
   sections: AssemblySection[];
   /** Cropped floor-schema binary mask (the карта-отсеков backdrop). */
@@ -123,6 +127,8 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
   const handleSectionPlace = useCallback(
     (id: string, x: number, y: number) => {
       if (activeSectionId === null || tool === 'delete') return;
+      // Cap NEW points (id === '') at MAX; moving an existing point is allowed.
+      if (id === '' && sectionPts.length >= MAX_POINTS_PER_SIDE) return;
       const pid = id !== '' ? id : nextNumberId(sectionPts.map((p) => p.id));
       onSetSectionPoint(activeSectionId, pid, x, y);
     },
@@ -132,6 +138,7 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
   const handleMasterPlace = useCallback(
     (id: string, x: number, y: number) => {
       if (activeSectionId === null || tool === 'delete') return;
+      if (id === '' && masterPts.length >= MAX_POINTS_PER_SIDE) return;
       const pid = id !== '' ? id : nextNumberId(masterPts.map((p) => p.point_id));
       onSetMasterPoint(activeSectionId, pid, x, y);
     },
@@ -264,6 +271,14 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
               ? 'Кликайте по эталону и по карте отсеков — точки нумеруются сами (1, 2, 3…). Один и тот же номер слева и справа = одна пара. Клик по точке выделяет её на обеих схемах.'
               : 'Кликните по точке, чтобы удалить её сразу с обеих схем.'}
           </div>
+
+          {(sectionPts.length >= MAX_POINTS_PER_SIDE ||
+            masterPts.length >= MAX_POINTS_PER_SIDE) && (
+            <div className={styles.statusHint}>
+              Достигнут предел — {MAX_POINTS_PER_SIDE} точек на схему. Удалите
+              лишние, чтобы добавить новые.
+            </div>
+          )}
 
           {activeSection === null ? (
             <div className={styles.emptyHint}>Выберите отсек</div>

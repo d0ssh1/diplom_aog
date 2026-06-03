@@ -45,12 +45,14 @@ class TransitionPointCreate(BaseModel):
     group_id: int
     position_x: float = Field(ge=0.0, le=1.0)
     position_y: float = Field(ge=0.0, le=1.0)
+    geometry: list[list[float]] | None = None
     label: str | None = None
 
 
 class TransitionPointUpdate(BaseModel):
     position_x: float | None = Field(default=None, ge=0.0, le=1.0)
     position_y: float | None = Field(default=None, ge=0.0, le=1.0)
+    geometry: list[list[float]] | None = None
     label: str | None = None
 
 
@@ -60,6 +62,7 @@ class TransitionPointResponse(BaseModel):
     group_id: int
     position_x: float
     position_y: float
+    geometry: list[list[float]] | None = None
     label: str | None
     snapped_node_id: str | None = None
 

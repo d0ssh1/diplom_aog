@@ -47,6 +47,7 @@
   width: 100%;
   padding: 0 0.875rem;
   height: 52px;
+  flex-shrink: 0; /* keep full height when sub-controls appear (don't squish) */
   background: #ffffff;
   border: 1px solid #e1e4e8;
   color: #0f172a;

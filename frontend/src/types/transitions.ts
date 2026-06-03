@@ -7,9 +7,11 @@ export interface FloorTransition {
   name: string;
   building_id: string | null;
   from_reconstruction_id: number;
+  from_geometry: number[][] | null;
   from_x: number;
   from_y: number;
   to_reconstruction_id: number;
+  to_geometry: number[][] | null;
   to_x: number;
   to_y: number;
   created_at: string;
@@ -18,9 +20,11 @@ export interface FloorTransition {
 export interface CreateTransitionRequest {
   name: string;
   from_reconstruction_id: number;
+  from_geometry?: number[][] | null;
   from_x: number;
   from_y: number;
   to_reconstruction_id: number;
+  to_geometry?: number[][] | null;
   to_x: number;
   to_y: number;
 }
@@ -28,7 +32,7 @@ export interface CreateTransitionRequest {
 export type TransitionEditorMode =
   | { type: 'idle' }
   | { type: 'placing_from'; name: string; to_reconstruction_id: number }
-  | { type: 'placing_to'; name: string; from_reconstruction_id: number; from_x: number; from_y: number };
+  | { type: 'placing_to'; name: string; from_reconstruction_id: number; from_geometry?: number[][]; from_x: number; from_y: number };
 
 export interface PathSegment3D {
   reconstruction_id: number;

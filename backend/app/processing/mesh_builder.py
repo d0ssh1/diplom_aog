@@ -75,6 +75,7 @@ def build_mesh_from_mask(
     floor_height: float = 3.0,
     pixels_per_meter: float = 50.0,
     vr: "VectorizationResult | None" = None,
+    transitions: list[list[list[float]]] | None = None,
 ) -> "trimesh.Trimesh":
     """
     Строит 3D-меш этажа из бинарной маски стен.
@@ -217,6 +218,25 @@ def build_mesh_from_mask(
         raise ImageProcessingError(
             "build_mesh_from_mask", "No wall meshes created",
         )
+
+    # Step 3.5: Extrude transitions
+    if transitions:
+        for t_geom in transitions:
+            try:
+                ext_pts = [(pt[0] * w * scale, h_m - pt[1] * h * scale) for pt in t_geom]
+                poly = ShapelyPolygon(ext_pts)
+                if not poly.is_valid:
+                    poly = poly.buffer(0)
+                if poly.is_valid and not poly.is_empty and poly.area > 0:
+                    t_mesh = extrude_wall(poly, height=0.05)
+                    if t_mesh is not None:
+                        t_mesh.apply_translation([0, 0, 0.01]) # slightly above floor
+                        # Green color for transitions
+                        colors = np.tile([34, 197, 94, 200], (len(t_mesh.vertices), 1)).astype(np.uint8)
+                        t_mesh.visual.vertex_colors = colors
+                        meshes.append(t_mesh)
+            except Exception as exc:
+                logger.debug("Failed to extrude transition: %s", exc)
 
     # Step 4: Combine
     if not meshes:

@@ -161,6 +161,22 @@ def _derive_ppm_floor(
     return anchor.section_id, ppm_floor
 
 
+# Russian labels for the pure solver's degenerate reasons (the English strings in
+# processing.registration are left untouched — translation is an operator-UI
+# concern, so it lives here at the service boundary). Unknown reasons fall through
+# verbatim so nothing is ever swallowed.
+_DEGENERATE_REASON_RU: dict[str, str] = {
+    "too few points": "слишком мало точек",
+    "baseline too short": "точки расположены слишком близко друг к другу",
+    "non-finite": "неустойчивое решение (расчёт не сошёлся)",
+}
+
+
+def _ru_degenerate_reason(reason: str) -> str:
+    """Translate a solver ``DegenerateControlPointsError.reason`` to Russian."""
+    return "Точки вырождены: " + _DEGENERATE_REASON_RU.get(reason, reason)
+
+
 # ── Internal in-memory solve record (atomicity — compute, THEN persist) ──────────
 
 
@@ -406,8 +422,8 @@ class FloorAssemblyService:
                 transform=None,
                 implied_ppm=None,
                 warnings=[
-                    f"Only {len(matched_ids)} matched control points "
-                    f"(need >= {MIN_CONTROL_POINTS})"
+                    f"Сопоставлено только {len(matched_ids)} "
+                    f"точек (нужно ≥ {MIN_CONTROL_POINTS})"
                 ],
                 ppm_section=ppm_section,
             )
@@ -450,7 +466,7 @@ class FloorAssemblyService:
                 status="degenerate",
                 transform=None,
                 implied_ppm=None,
-                warnings=[exc.reason],
+                warnings=[_ru_degenerate_reason(exc.reason)],
                 ppm_section=ppm_section,
             )
 
@@ -497,8 +513,8 @@ class FloorAssemblyService:
             spread = abs(ratio - 1.0)
             if spread > PPM_WARN_RATIO:
                 solve.warnings.append(
-                    f"ppm differs from floor anchor by {round(spread * 100)}% "
-                    f"— check control points"
+                    f"Масштаб отличается от опорного отсека на "
+                    f"{round(spread * 100)}% — проверьте точки"
                 )
 
         # Residual warning: convert master-pixel residual to metres via ppm_floor.
@@ -506,8 +522,8 @@ class FloorAssemblyService:
             residual_rms_m = solve.residual_rms_px / ppm_floor
             if residual_rms_m > RESIDUAL_WARN_M:
                 solve.warnings.append(
-                    f"control-point fit is loose ({residual_rms_m:.2f} m RMS) "
-                    f"— points may be misplaced"
+                    f"Точки подогнаны неточно (СКО {residual_rms_m:.2f} м) "
+                    f"— возможно, расставлены неверно"
                 )
 
     # ── UC4 — connectors ─────────────────────────────────────────────────────
@@ -620,13 +636,26 @@ class FloorAssemblyService:
         # Master-pixel canvas dims (Wm, Hm) = the cropped master-schema raster.
         master_w, master_h = await self._master_pixel_dims(floor)
 
-        # ── k: the SINGLE memory-guard scalar (06 §5.2). Source of truth. ──
+        # ── k: the SINGLE scale scalar (06 §5.2) — now UP- *and* downscales. ──
+        # The "карта отсеков" master schema is a low-res mini-map, so the solved
+        # section scales are tiny (e.g. 0.12×): warping a high-res section mask
+        # into the raw master-px canvas collapses every wall to sub-pixel and the
+        # floor extrudes as blank scraps with no outer walls. Fix: choose k so the
+        # MOST-detailed section (the smallest scale) rasterises at ~native
+        # resolution — k = 1 / min(scale) — instead of the old downscale-only
+        # guard. ppm is multiplied by the SAME k (consumer e), so the floor's
+        # metric size is unchanged; only the raster gets crisp enough to keep
+        # walls. Still capped at MAX_FLOOR_CANVAS_PX (a huge master scales DOWN).
+        section_scales = [
+            float(s.transform["scale"])
+            for s in ok_sections
+            if s.transform and _is_positive_finite(float(s.transform["scale"]))
+        ]
+        min_scale = min(section_scales) if section_scales else 1.0
         long_side = max(master_w, master_h)
-        k = (
-            MAX_FLOOR_CANVAS_PX / long_side
-            if long_side > MAX_FLOOR_CANVAS_PX
-            else 1.0
-        )
+        # max(1, 1/min_scale) never DOWNSAMPLES a section below native; the
+        # min(...) clamp keeps the canvas long side <= MAX_FLOOR_CANVAS_PX.
+        k = min(max(1.0, 1.0 / min_scale), MAX_FLOOR_CANVAS_PX / long_side)
         # (a) canvas dims × k.
         canvas_w = round(master_w * k)
         canvas_h = round(master_h * k)
@@ -666,15 +695,19 @@ class FloorAssemblyService:
             )
             included_ids.append(section.id)
 
-            # Low-detail warning compares the UN-scaled stored scale (NOT scale*k).
-            if base_scale < DETAIL_WARN_SCALE:
+            # Low-detail warning now compares the EFFECTIVE render scale
+            # (base_scale * k). With the upscale above every section normally
+            # renders at >= 1×, so this only fires when the canvas cap clamped k
+            # and a section is still downsampled below DETAIL_WARN_SCALE.
+            effective_scale = base_scale * k
+            if effective_scale < DETAIL_WARN_SCALE:
                 warnings.append(
                     BuildWarning(
                         section_id=section.id,
                         code="low_detail",
                         message=(
-                            f"Section {section.id} rendered at {base_scale:.2f}× "
-                            f"— master schema may be too low-res"
+                            f"Отсек {section.number} отрисован в масштабе "
+                            f"{effective_scale:.2f}× — карта отсеков слишком мелкая"
                         ),
                     )
                 )

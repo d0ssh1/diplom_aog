@@ -55,9 +55,11 @@ class FloorTransitionService:
             from_reconstruction_id=request.from_reconstruction_id,
             from_x=request.from_x,
             from_y=request.from_y,
+            from_geometry=request.from_geometry,
             to_reconstruction_id=request.to_reconstruction_id,
             to_x=request.to_x,
             to_y=request.to_y,
+            to_geometry=request.to_geometry,
         )
 
     async def get_by_building(self, building_id: str) -> list[FloorTransition]:
