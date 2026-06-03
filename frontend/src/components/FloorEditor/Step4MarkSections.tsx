@@ -202,6 +202,27 @@ export const Step4MarkSections: React.FC<Step4MarkSectionsProps> = ({
   useEffect(() => { drawRef.current = draw; }, [draw]);
   useEffect(() => { draw(); }, [draw, sectionDrafts]);
 
+  // Keep the drawing buffer in sync with the displayed/container size. The
+  // canvas has no CSS width/height, so its on-screen size equals the buffer
+  // attributes set in draw() from the container's clientW/H. Without these
+  // listeners the buffer goes stale whenever the layout reflows after the last
+  // draw (mask finishing load, sidebar/footer settling, window resize) — a
+  // stale buffer is what offsets the cursor from the image and breaks point
+  // placement.
+  useEffect(() => {
+    const handleResize = () => drawRef.current();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => drawRef.current());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   // Request the binary mask from the backend (same as step 3) and use it
   // as the canvas background. Loaded ONCE per (image, crop) — interacting
   // with the canvas must NOT refetch.

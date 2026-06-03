@@ -165,6 +165,28 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
 
   useEffect(() => { draw(); }, [draw, sectionDrafts, activeIdx]);
 
+  const drawRef = useRef(draw);
+  useEffect(() => { drawRef.current = draw; }, [draw]);
+
+  // Keep the drawing buffer in sync with the displayed/container size. The
+  // canvas has no CSS width/height, so its on-screen size equals the buffer
+  // attributes set in draw() from the container's clientW/H. Without these
+  // listeners the buffer goes stale on layout reflow (mask finishing load,
+  // window resize) — a stale buffer offsets clicks from the drawn sections.
+  useEffect(() => {
+    const handleResize = () => drawRef.current();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => drawRef.current());
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   useEffect(() => {
     if (schemaImageUrl) {
       const img = new Image();

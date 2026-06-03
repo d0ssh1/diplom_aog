@@ -48,6 +48,16 @@ export const TransitionPlanCanvas: React.FC<TransitionPlanCanvasProps> = ({
   }, [imageUrl]);
 
   const getCanvasSize = useCallback(() => {
+    // Source the size from the canvas's OWN painted box — the exact rect that
+    // getPos() uses for hit-testing. Reading the wrapper (container) instead can
+    // diverge from the canvas (border-box, inline-block quirks) and offsets clicks.
+    const cv = canvasRef.current;
+    if (cv) {
+      const r = cv.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        return { w: Math.round(r.width), h: Math.round(r.height) };
+      }
+    }
     const c = containerRef.current;
     return c ? { w: c.clientWidth, h: c.clientHeight } : { w: 800, h: 600 };
   }, []);
@@ -185,6 +195,17 @@ export const TransitionPlanCanvas: React.FC<TransitionPlanCanvasProps> = ({
     const handleResize = () => drawRef.current();
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  // Redraw whenever the canvas box itself changes size (mode banner toggling,
+  // sidebar reflow, etc.) so the drawing buffer never goes stale relative to the
+  // displayed size — a stale buffer is what offsets the cursor from the image.
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(() => drawRef.current());
+    ro.observe(el);
+    return () => ro.disconnect();
   }, []);
 
   const getPos = (e: React.MouseEvent<HTMLCanvasElement>) => {
