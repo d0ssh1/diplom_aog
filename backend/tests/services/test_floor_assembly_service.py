@@ -330,6 +330,42 @@ async def test_solve_persists_transform_for_valid_section():
 
 
 @pytest.mark.asyncio
+async def test_solve_transforms_persists_rotation(monkeypatch):
+    """The solved rotation_rad is written into the persisted transform dict."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor()
+    section = _section(
+        sid=10,
+        number=1,
+        master_points=[_master(f"cp-{i}", 0.1 * i, 0.1) for i in range(1, 4)],
+        reconstruction=_recon(
+            control_points=[_local(f"cp-{i}", 0.1 * i, 0.1) for i in range(1, 4)],
+            ppm=50.0,
+        ),
+    )
+    svc._section_repo.list_by_floor.return_value = [section]
+    svc._master_pixel_dims = AsyncMock(return_value=(200, 200))
+    svc._storage_load_mask_sync_guard = MagicMock(return_value=_mask(100, 100))
+    monkeypatch.setattr(
+        fas,
+        "solve_similarity",
+        MagicMock(
+            return_value=SimilarityResult(
+                scale=1.0, rotation_rad=0.5, tx=0.0, ty=0.0,
+                residual_rms=0.0, n_points=3,
+            )
+        ),
+    )
+
+    resp = await svc.solve_transforms(1)
+
+    # Persisted dict AND the response model both carry the solved rotation.
+    persisted = svc._section_repo.update_transform.await_args.args[1]
+    assert persisted["rotation_rad"] == pytest.approx(0.5)
+    assert resp.sections[0].transform.rotation_rad == pytest.approx(0.5)
+
+
+@pytest.mark.asyncio
 async def test_solve_response_carries_ppm_spread_warning_on_ok_section(monkeypatch):
     """Non-anchor section whose implied ppm differs > PPM_WARN_RATIO → ok + warning."""
     svc = _make_service()
@@ -361,8 +397,14 @@ async def test_solve_response_carries_ppm_spread_warning_on_ok_section(monkeypat
         "solve_similarity",
         MagicMock(
             side_effect=[
-                SimilarityResult(scale=1.0, tx=0.0, ty=0.0, residual_rms=0.0, n_points=4),
-                SimilarityResult(scale=1.3, tx=0.0, ty=0.0, residual_rms=0.0, n_points=3),
+                SimilarityResult(
+                    scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0,
+                    residual_rms=0.0, n_points=4,
+                ),
+                SimilarityResult(
+                    scale=1.3, rotation_rad=0.0, tx=0.0, ty=0.0,
+                    residual_rms=0.0, n_points=3,
+                ),
             ]
         ),
     )
@@ -399,7 +441,8 @@ async def test_solve_high_residual_section_is_ok_with_warning(monkeypatch):
         "solve_similarity",
         MagicMock(
             return_value=SimilarityResult(
-                scale=1.0, tx=0.0, ty=0.0, residual_rms=100.0, n_points=3
+                scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0, residual_rms=100.0,
+                n_points=3,
             )
         ),
     )
@@ -659,6 +702,80 @@ async def test_canvas_capped_at_max_px_scales_transforms_by_k(monkeypatch):
     assert cap_build.kwargs["pixels_per_meter"] == pytest.approx(50.0 * k)
     # Response echoes the UN-scaled metric ppm (the model's real scale).
     assert resp.pixels_per_meter == pytest.approx(50.0)
+
+
+@pytest.mark.asyncio
+async def test_build_mesh_threads_rotation_into_warp(monkeypatch):
+    """rotation_rad from the transform reaches SectionWarpInput, NOT k-scaled."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor(pixels_per_meter=10.0)
+    section = _section(
+        sid=10,
+        transform={"scale": 0.2, "rotation_rad": 0.7, "tx": 4.0, "ty": 6.0},
+    )
+    svc._section_repo.list_by_floor.return_value = [section]
+    svc._connector_repo.list_by_floor.return_value = []
+    svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
+    # Master 400x300, scale 0.2 → k = 1 / 0.2 = 5.
+    cap_assemble, _ = _patch_build_seams(svc, monkeypatch, master_dims=(400, 300))
+
+    await svc.build_floor_mesh(1)
+
+    warp_inputs = cap_assemble.args[0]
+    # scale/tx/ty are pre-multiplied by k; rotation_rad is k-invariant.
+    assert warp_inputs[0].scale == pytest.approx(0.2 * 5.0)
+    assert warp_inputs[0].rotation_rad == pytest.approx(0.7)
+
+
+@pytest.mark.asyncio
+async def test_build_mesh_legacy_transform_defaults_rotation_zero(monkeypatch):
+    """A legacy transform (no rotation_rad key) → warp input rotation_rad == 0.0."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor()
+    # Legacy dict: no "rotation_rad" key (solved before rotation existed).
+    section = _section(sid=10, transform={"scale": 1.0, "tx": 0.0, "ty": 0.0})
+    svc._section_repo.list_by_floor.return_value = [section]
+    svc._connector_repo.list_by_floor.return_value = []
+    svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
+    cap_assemble, _ = _patch_build_seams(svc, monkeypatch)
+
+    await svc.build_floor_mesh(1)
+
+    warp_inputs = cap_assemble.args[0]
+    assert warp_inputs[0].rotation_rad == 0.0
+
+
+@pytest.mark.asyncio
+async def test_build_mesh_excludes_misregistered_section_from_k(monkeypatch):
+    """A mis-registered section (high residual) must NOT bloat k / the canvas."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor(pixels_per_meter=12.0)
+    good = _section(
+        sid=10,
+        transform={
+            "scale": 0.8, "rotation_rad": 0.0, "tx": 0.0, "ty": 0.0,
+            "residual_rms_px": 6.0,  # 0.5 m at ppm 12 → trusted
+        },
+    )
+    bad = _section(
+        sid=20,
+        transform={
+            "scale": 0.18, "rotation_rad": 0.0, "tx": 0.0, "ty": 0.0,
+            "residual_rms_px": 437.0,  # 36 m → mis-registered, excluded from k
+        },
+    )
+    svc._section_repo.list_by_floor.return_value = [good, bad]
+    svc._connector_repo.list_by_floor.return_value = []
+    svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
+    # Master 400x300 → un-guarded k would be 1/0.18 ≈ 5.6 (canvas ~2224px); the
+    # robust k excludes the bad section → k = 1/0.8 = 1.25.
+    cap_assemble, _ = _patch_build_seams(svc, monkeypatch, master_dims=(400, 300))
+
+    resp = await svc.build_floor_mesh(1)
+
+    assert resp.canvas_size_px == (500, 375)  # round(400*1.25), round(300*1.25)
+    warp = {w.section_id: w for w in cap_assemble.args[0]}
+    assert warp[10].scale == pytest.approx(0.8 * 1.25)  # good section at native
 
 
 @pytest.mark.asyncio

@@ -64,7 +64,7 @@ export const useWizard = (): UseWizardReturn => {
   const navigate = useNavigate();
 
   const nextStep = useCallback(() => {
-    setState((s) => ({ ...s, step: Math.min(s.step + 1, 6) as WizardState['step'] }));
+    setState((s) => ({ ...s, step: Math.min(s.step + 1, 5) as WizardState['step'] }));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -148,7 +148,7 @@ export const useWizard = (): UseWizardReturn => {
         ...s,
         navGraphId: maskId,
         isLoading: false,
-        step: 5,
+        step: 4,
       }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения графа' }));
@@ -188,6 +188,19 @@ export const useWizard = (): UseWizardReturn => {
         state.doors
       );
       const reconstructionId = data.id as number;
+      // Bind to the selected floor right after creation so the uploaded plan lands
+      // on the floor even if the 3D build fails or the operator exits before the
+      // final save (early binding, ADR-24). Non-fatal — re-confirmed at save().
+      if (floorSelection.floorId !== null) {
+        try {
+          await reconstructionApi.patchReconstructionFloor(
+            reconstructionId,
+            floorSelection.floorId,
+          );
+        } catch {
+          /* non-fatal: floor binding is retried at save() */
+        }
+      }
       // Deferred persistence: there is no reconstructionId until build runs, so
       // section-local control points are held in state.controlPoints and flushed
       // here, right after the build creates the reconstruction. Non-fatal — a CP
@@ -208,12 +221,12 @@ export const useWizard = (): UseWizardReturn => {
         reconstructionId,
         meshUrl: detail.url as string | null,
         isLoading: false,
-        step: 6,
+        step: 5,
       }));
     } catch {
       setState((s) => ({ ...s, isLoading: false, error: 'Ошибка построения 3D-модели' }));
     }
-  }, [state.planFileId, state.editedMaskFileId, state.maskFileId, state.controlPoints]);
+  }, [state.planFileId, state.editedMaskFileId, state.maskFileId, state.controlPoints, floorSelection.floorId]);
 
   const setFloor = useCallback(
     async (buildingId: number | null, floorId: number | null): Promise<void> => {

@@ -3,8 +3,10 @@
 .body {
   display: flex;
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
+  box-sizing: border-box;
   font-family: 'Inter', sans-serif;
   background-color: #f9fafb;
 }
@@ -47,6 +49,7 @@
 .panel {
   width: 280px;
   flex-shrink: 0;
+  min-width: 0;
   background-color: #ffffff;
   border-left: 1px solid #e5e7eb;
   display: flex;
@@ -115,6 +118,34 @@
   font-size: 0.75rem;
   color: #475569;
   flex-shrink: 0;
+}
+
+/* Thickness slider row (metres) */
+.paramRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem 0.25rem;
+}
+
+.paramLabel {
+  font-size: 0.75rem;
+  color: #475569;
+  flex-shrink: 0;
+}
+
+.sliderValue {
+  font-size: 0.75rem;
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  min-width: 44px;
+  text-align: right;
+}
+
+.paramHint {
+  padding: 0 1rem 0.5rem;
+  font-size: 0.6875rem;
+  color: #9ca3af;
 }
 
 .slider {

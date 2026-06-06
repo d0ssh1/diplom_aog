@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from 'react';
+import React, { useEffect, useCallback, useState, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './FloorEditorPage.module.css';
 import { useFloorEditorWizard } from '../hooks/useFloorEditorWizard';
@@ -13,14 +13,15 @@ import { Step5BindPlans } from '../components/FloorEditor/Step5BindPlans';
 import { Step6BindControlPoints } from '../components/FloorEditor/Step6BindControlPoints';
 import { Step7SolveTransforms } from '../components/FloorEditor/Step7SolveTransforms';
 import { Step8Connectors } from '../components/FloorEditor/Step8Connectors';
+import { Step9NavGraph } from '../components/FloorEditor/Step9NavGraph';
 import { Step9FloorPreview } from '../components/FloorEditor/Step9FloorPreview';
 import { FloorOverview } from '../components/FloorEditor/FloorOverview';
 import { FloorSectionsTable } from '../components/FloorEditor/FloorSectionsTable';
 import { Toaster } from '../components/Toast/Toaster';
 
-// 5 wizard steps (upload→crop→walls→sections→bind) + 4 assembly steps APPENDED
-// after them (master CPs→solve→connectors→preview). Drives the progress dots.
-const TOTAL_STEPS = 9;
+// 5 wizard steps (upload→crop→walls→sections→bind) + 5 assembly steps APPENDED
+// after them (master CPs→solve→connectors→nav-graph→preview). Drives the dots.
+const TOTAL_STEPS = 10;
 
 export const FloorEditorPage: React.FC = () => {
   const navigate = useNavigate();
@@ -41,6 +42,21 @@ export const FloorEditorPage: React.FC = () => {
       void assembly.load(urlFloorId);
     }
   }, [urlFloorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The assembly steps (6–10) live on a SEPARATE hook (useFloorAssembly) that is
+  // read once at mount. Steps 1–5 (wizard) can change the floor's sections, schema
+  // and mask in between, so when the operator crosses from a wizard step (≤5) into
+  // step 6 we must re-read the assembly — otherwise step 6 shows the stale карта
+  // отсеков + section list captured when the page first opened. Only reload on the
+  // ≤5 → 6 crossing; staying within 6–10 keeps in-progress control points.
+  const prevStepRef = useRef<number | null>(null);
+  useEffect(() => {
+    const prev = prevStepRef.current;
+    prevStepRef.current = wizard.currentStep;
+    if (wizard.currentStep === 6 && prev !== null && prev <= 5) {
+      void assembly.reload();
+    }
+  }, [wizard.currentStep, assembly.reload]);
 
   const handleSaveAndExit = useCallback(async () => {
     await wizard.saveAll();
@@ -284,6 +300,7 @@ export const FloorEditorPage: React.FC = () => {
             masterMaskUrl={assembly.masterMaskUrl}
             connectorDrafts={assembly.connectorDrafts}
             isSaving={assembly.isSavingConnectors}
+            pixelsPerMeter={assembly.pixelsPerMeter}
             onChangeDrafts={assembly.setConnectorDrafts}
             onSave={assembly.replaceConnectors}
             onBack={wizard.prevStep}
@@ -297,6 +314,15 @@ export const FloorEditorPage: React.FC = () => {
         );
       case 9:
         return (
+          <Step9NavGraph
+            floorId={assembly.floorId}
+            masterMaskUrl={assembly.masterMaskUrl}
+            onBack={wizard.prevStep}
+            onNext={wizard.nextStep}
+          />
+        );
+      case 10:
+        return (
           <Step9FloorPreview
             previewGlbUrl={assembly.previewGlbUrl}
             buildResult={assembly.buildResult}
@@ -306,6 +332,7 @@ export const FloorEditorPage: React.FC = () => {
             onBuild={assembly.buildFloorMesh}
             onConfirm={assembly.confirmFloorMesh}
             onBack={wizard.prevStep}
+            floorId={assembly.floorId}
           />
         );
       default:

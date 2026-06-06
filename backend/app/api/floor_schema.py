@@ -56,6 +56,27 @@ async def update_floor_schema(
         )
 
 
+@router.delete("/floors/{floor_id}/schema", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_floor_schema(
+    floor_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    schema_svc: FloorSchemaService = Depends(get_floor_schema_service),
+) -> None:
+    """Fully clear a floor's schema image, crop, walls and mask (admin only).
+
+    Used by the editor's "delete карта отсеков" action so the operator can load a
+    brand-new floor map from scratch. Sections are removed separately by the
+    client (sections replace-all).
+    """
+    try:
+        await schema_svc.reset_schema(floor_id)
+    except FloorNotFoundError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Floor {e.floor_id} not found",
+        )
+
+
 @router.post("/floors/{floor_id}/extract-walls")
 async def extract_walls(
     floor_id: int,

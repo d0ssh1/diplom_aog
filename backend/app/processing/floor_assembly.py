@@ -1,9 +1,10 @@
 """Pure mask assembly for the stitched-floor pipeline — PURE layer.
 
-Warps each section wall mask by its solved uniform similarity ``(scale, tx, ty)``,
-OR-composites the warped masks into the master-pixel canvas, and rasterises the
-floor connectors as OPEN-polyline wall bands. Returns a binary ``{0, 255}`` mask
-ready for the unchanged ``build_mesh_from_mask`` (design pipeline spec §5.1).
+Warps each section wall mask by its solved uniform similarity
+``(scale, rotation_rad, tx, ty)``, OR-composites the warped masks into the
+master-pixel canvas, and rasterises the floor connectors as OPEN-polyline wall
+bands. Returns a binary ``{0, 255}`` mask ready for the unchanged
+``build_mesh_from_mask`` (design pipeline spec §5.1).
 
 NOTE: ``processing/`` is the PURE layer. This module imports ONLY ``cv2``,
 ``numpy`` and ``dataclasses`` — no core config, no DB/IO/Pydantic/ORM, no service.
@@ -17,6 +18,7 @@ pre-multiplied by ``k`` (pipeline spec §5.2). This function only honours the
 ``canvas_size`` it is handed — it never derives ``k`` or reads any constant.
 """
 
+import math
 from dataclasses import dataclass
 
 import cv2
@@ -27,11 +29,17 @@ import numpy as np
 class SectionWarpInput:
     """One section's wall mask plus its solved uniform-similarity transform.
 
+    The applied transform is ``scale * R(rotation_rad)`` plus translation, with
+    ``R(rotation_rad) = [[cos, -sin], [sin, cos]]``; ``rotation_rad == 0`` reduces
+    to the plain ``[[scale, 0, tx], [0, scale, ty]]`` warp (prior behaviour).
+
     Attributes:
         section_id: id of the source section (for callers; unused by the warp).
         mask: ``(Hs, Ws)`` uint8 binary ``{0, 255}`` section wall mask. Never
             mutated — ``warpAffine`` reads it into a fresh output array.
         scale: single isotropic scale ``s`` (same on both axes).
+        rotation_rad: section->master rotation in radians. Invariant to the
+            memory-guard factor ``k`` (which scales only scale/tx/ty).
         tx: translation in x, in master pixels.
         ty: translation in y, in master pixels.
     """
@@ -39,6 +47,7 @@ class SectionWarpInput:
     section_id: int
     mask: np.ndarray
     scale: float
+    rotation_rad: float
     tx: float
     ty: float
 
@@ -68,11 +77,11 @@ def assemble_floor_mask(
     """Warp + OR-composite section masks and rasterise connectors into one mask.
 
     Pure assembly per pipeline spec §5.1: each section mask is warped by its
-    ``(scale, tx, ty)`` into the master-pixel canvas with ``INTER_NEAREST`` (keeps
-    the result strictly binary) and ``borderValue=0`` (out-of-canvas pixels
-    contribute nothing); the warped masks are unioned with ``cv2.max`` so seam
-    overlaps stay ``255`` (never sum to ``510``); connectors are drawn as OPEN
-    polyline wall bands (no fill, no closing segment).
+    ``(scale, rotation_rad, tx, ty)`` into the master-pixel canvas with
+    ``INTER_NEAREST`` (keeps the result strictly binary) and ``borderValue=0``
+    (out-of-canvas pixels contribute nothing); the warped masks are unioned with
+    ``cv2.max`` so seam overlaps stay ``255`` (never sum to ``510``); connectors
+    are drawn as OPEN polyline wall bands (no fill, no closing segment).
 
     Args:
         sections: section masks plus their solved transforms. Input masks are
@@ -102,8 +111,12 @@ def assemble_floor_mask(
     # mask is never mutated: warpAffine writes into a fresh output array, and the
     # canvas is itself a fresh array.
     for section in sections:
+        # scale * R(rotation_rad): rotation_rad == 0 gives cos=scale, sin=0, i.e.
+        # the plain [[scale, 0, tx], [0, scale, ty]] warp (exact prior behaviour).
+        cos = section.scale * np.cos(section.rotation_rad)
+        sin = section.scale * np.sin(section.rotation_rad)
         affine = np.array(
-            [[section.scale, 0.0, section.tx], [0.0, section.scale, section.ty]],
+            [[cos, -sin, section.tx], [sin, cos, section.ty]],
             dtype=np.float64,
         )
         warped = cv2.warpAffine(
@@ -131,3 +144,55 @@ def assemble_floor_mask(
 
     # Step 4 — return the assembled binary canvas.
     return canvas
+
+
+def compute_canvas_factor(
+    sections: list[tuple[float, float]],
+    long_side_px: int,
+    ppm: float,
+    max_canvas_px: int,
+    trust_residual_m: float,
+) -> float:
+    """Memory-guard scale factor ``k`` for the assembled floor canvas (06 §5.2).
+
+    ``k`` upscales so the most-detailed section (the smallest solved scale)
+    rasterises at ~native resolution — ``k = 1 / min(scale)`` — clamped to
+    ``[1, max_canvas_px / long_side_px]``. A MIS-REGISTERED section has a
+    least-squares scale spuriously shrunk toward 0 (its points fit no single
+    similarity); left in, it would inflate ``k`` and over-upscale the whole floor.
+    Such sections — registration residual above ``trust_residual_m`` metres
+    (``residual_px / ppm``) — are excluded from the ``min``-scale estimate. If
+    every section is untrusted (or ``ppm`` is non-positive) all are used, so the
+    result is never worse than the un-guarded ``min``.
+
+    Pure: ``math`` only. The SERVICE owns this call so the mesh and nav builds
+    derive ``k`` IDENTICALLY (design ADR-9) — both pass the same arguments here.
+
+    Args:
+        sections: ``(scale, residual_rms_px)`` per buildable section (master px).
+        long_side_px: longer master-canvas dimension in pixels.
+        ppm: master pixels per metre (``ppm_floor``); metricises the residuals.
+        max_canvas_px: long-side cap for the assembled canvas (memory guard).
+        trust_residual_m: residual (metres) above which a section is excluded
+            from the min-scale estimate.
+
+    Returns:
+        The scale factor ``k >= 1.0`` (``1.0`` when no section has a positive
+        finite scale).
+    """
+    scales = [sc for sc, _ in sections if math.isfinite(sc) and sc > 0]
+    if not scales:
+        return 1.0
+    trusted = [
+        sc
+        for sc, residual_px in sections
+        if math.isfinite(sc)
+        and sc > 0
+        and ppm > 0
+        and residual_px / ppm <= trust_residual_m
+    ]
+    min_scale = min(trusted) if trusted else min(scales)
+    upscale = max(1.0, 1.0 / min_scale)
+    if long_side_px <= 0:
+        return upscale
+    return min(upscale, max_canvas_px / long_side_px)

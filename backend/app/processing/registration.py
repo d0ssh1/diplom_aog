@@ -1,14 +1,17 @@
-"""Uniform (isotropic) similarity least-squares solver — PURE layer.
+"""Uniform similarity least-squares solver (Umeyama) — PURE layer.
 
-Fits a single isotropic scale ``s`` plus translation ``(tx, ty)`` mapping a set
-of section-pixel control points onto their master-pixel counterparts::
+Fits a single isotropic scale ``s``, a proper rotation ``R(theta)`` and a
+translation ``(tx, ty)`` mapping section-pixel control points onto their
+master-pixel counterparts::
 
-    X = s * x + tx
-    Y = s * y + ty
+    [X, Y] = s * R(theta) @ [x, y] + [tx, ty]
 
-No rotation, no shear, no per-axis scale (3 DOF). A single scalar ``s`` is applied
-to both axes, so it is structurally impossible to emit ``sx != sy`` — this is the
-mathematical core of "a square cabinet stays square" (design AC4).
+This is the closed-form least-squares similarity (Umeyama 1991), reflection-
+prevented so ``scale >= 0`` always: a mirrored target maps to the NEAREST proper
+rotation (``det(R) = +1``), surfacing as a large residual rather than a negative
+scale. A single scalar ``s`` is applied to both axes (no shear, no per-axis
+scale), so a square cabinet stays square (design AC4); no rotation (``theta ~ 0``)
+is the strict sub-case reproducing the prior scale+translation fit.
 
 NOTE: ``processing/`` is the PURE layer. This module imports ONLY ``numpy`` and
 ``dataclasses`` — no core config, no DB/IO/Pydantic/ORM, no OpenCV. The solver
@@ -49,8 +52,13 @@ class DegenerateControlPointsError(Exception):
 class SimilarityResult:
     """Result of a uniform-similarity fit, in master-pixel space.
 
+    The mapping is ``y = scale * R(rotation_rad) @ x + (tx, ty)`` with
+    ``R(rotation_rad) = [[cos, -sin], [sin, cos]]``.
+
     Attributes:
-        scale: single isotropic scale factor ``s`` (same on both axes).
+        scale: single isotropic scale factor ``s`` (same on both axes), ``>= 0``.
+        rotation_rad: section->master rotation in radians,
+            ``atan2(R[1, 0], R[0, 0])``; ``~ 0`` for an unrotated section.
         tx: translation in x (master pixels).
         ty: translation in y (master pixels).
         residual_rms: root-mean-square of per-point residuals (master pixels).
@@ -58,6 +66,7 @@ class SimilarityResult:
     """
 
     scale: float
+    rotation_rad: float
     tx: float
     ty: float
     residual_rms: float
@@ -98,10 +107,11 @@ def solve_similarity(
     dst: np.ndarray,
     min_baseline_px: float,
 ) -> SimilarityResult:
-    """Fit a uniform similarity ``(scale, tx, ty)`` mapping ``src`` onto ``dst``.
+    """Fit a similarity ``(scale, rotation_rad, tx, ty)`` of ``src`` onto ``dst``.
 
-    Closed-form least squares for a single isotropic scale plus translation
-    (no rotation, no shear). See pipeline spec §2.3.
+    Closed-form Umeyama least-squares similarity: a single isotropic scale, a
+    proper rotation and a translation (no shear, no per-axis scale). Reflection
+    is prevented (``scale >= 0``). See pipeline spec §1.
 
     Args:
         src: ``(N, 2)`` float64 section-pixel coordinates, ``N >= 3``.
@@ -112,8 +122,8 @@ def solve_similarity(
             diagonal via ``R_MIN_BASELINE_FRAC``).
 
     Returns:
-        SimilarityResult with the fitted ``scale``, ``tx``, ``ty``, the
-        ``residual_rms`` in master pixels, and ``n_points``.
+        SimilarityResult with the fitted ``scale``, ``rotation_rad``, ``tx``,
+        ``ty``, the ``residual_rms`` in master pixels, and ``n_points``.
 
     Raises:
         DegenerateControlPointsError: if there are fewer than three points, the
@@ -122,8 +132,9 @@ def solve_similarity(
 
     Notes:
         The inputs ``src`` and ``dst`` are never mutated — centring creates new
-        arrays. A single scalar ``scale`` is applied to both axes, so per-axis
-        scale (``sx != sy``) is structurally impossible (AC4).
+        arrays. A single scalar ``scale`` is applied to both axes (no per-axis
+        scale, AC4); a mirrored target is corrected to the nearest proper
+        rotation, never raised as an error.
     """
     # Step 1 — validate shapes.
     if src.shape != dst.shape:
@@ -152,28 +163,42 @@ def solve_similarity(
     src_centred = src - src_mean
     dst_centred = dst - dst_mean
 
-    # Step 5 — denominator is the total centred variance of the source points.
-    denom = float((src_centred * src_centred).sum())
-    if denom <= _DENOM_EPS:
+    # Step 5 — source variance (Umeyama denominator); guards coincident points.
+    var_s = float((src_centred * src_centred).sum() / n)
+    if var_s <= _DENOM_EPS:
         raise DegenerateControlPointsError("baseline too short")
 
-    # Step 6 — closed-form isotropic scale + translation.
-    numer = float((src_centred * dst_centred).sum())
-    scale = numer / denom
-    tx = float(dst_mean[0] - scale * src_mean[0])
-    ty = float(dst_mean[1] - scale * src_mean[1])
+    # Step 6 — closed-form Umeyama similarity (scale + proper rotation +
+    # translation). The cross-covariance SVD gives the rotation; a reflection in
+    # the raw fit is corrected to the nearest proper rotation (det = +1) via
+    # ``s_corr``, so ``scale`` stays >= 0 (a true mismatch shows as a high
+    # residual rather than a negative scale).
+    sigma = (dst_centred.T @ src_centred) / n
+    u_mat, sing, vt_mat = np.linalg.svd(sigma)
+    s_corr = np.eye(2)
+    if np.linalg.det(u_mat) * np.linalg.det(vt_mat) < 0.0:
+        s_corr[1, 1] = -1.0
+    rot = u_mat @ s_corr @ vt_mat
+    scale = float((sing * np.diag(s_corr)).sum() / var_s)
+    translation = dst_mean - scale * (rot @ src_mean)
+    tx = float(translation[0])
+    ty = float(translation[1])
+    rotation_rad = float(np.arctan2(rot[1, 0], rot[0, 0]))
 
-    # Step 7 — residual RMS in master pixels.
-    pred = scale * src + np.array([tx, ty], dtype=np.float64)
+    # Step 7 — residual RMS in master pixels (full similarity applied).
+    pred = (scale * (rot @ src.T)).T + np.array([tx, ty], dtype=np.float64)
     residual_rms = float(np.sqrt(np.mean(((dst - pred) ** 2).sum(axis=1))))
 
     # Step 8 — non-finite guard (numerical failure).
-    if not all(np.isfinite(v) for v in (scale, tx, ty, residual_rms)):
+    if not all(
+        np.isfinite(v) for v in (scale, rotation_rad, tx, ty, residual_rms)
+    ):
         raise DegenerateControlPointsError("non-finite")
 
     # Step 9 — return.
     return SimilarityResult(
         scale=scale,
+        rotation_rad=rotation_rad,
         tx=tx,
         ty=ty,
         residual_rms=residual_rms,

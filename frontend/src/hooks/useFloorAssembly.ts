@@ -33,7 +33,15 @@ export interface ConnectorDraft {
   /** Server id when the draft originated from a saved connector; absent for new. */
   id?: number;
   points: [number, number][];
+  /** Wall thickness in real metres — applied at build as thickness_m * ppm * k. */
+  thickness_m: number;
 }
+
+/**
+ * Default connector thickness in metres. A touch thicker than the backend's
+ * DEFAULT_CONNECTOR_THICKNESS_M fallback so corridor walls read clearly in 3D.
+ */
+export const DEFAULT_CONNECTOR_THICKNESS_M = 0.3;
 
 export interface UseFloorAssemblyReturn {
   floorId: number | null;
@@ -89,11 +97,20 @@ export interface UseFloorAssemblyReturn {
   confirmFloorMesh: () => Promise<void>;
 }
 
-const connectorsToDrafts = (connectors: Connector[]): ConnectorDraft[] =>
-  connectors.map((c) => ({ id: c.id, points: c.points }));
+/** Map server connectors → local drafts; default thickness when server is null. */
+export const connectorsToDrafts = (connectors: Connector[]): ConnectorDraft[] =>
+  connectors.map((c) => ({
+    id: c.id,
+    points: c.points,
+    thickness_m: c.thickness_m ?? DEFAULT_CONNECTOR_THICKNESS_M,
+  }));
 
-const draftsToInputs = (drafts: ConnectorDraft[]): ConnectorInput[] =>
-  drafts.map((d) => ({ points: d.points }));
+/** Map local drafts → replace-all API inputs, carrying thickness_m through. */
+export const draftsToInputs = (drafts: ConnectorDraft[]): ConnectorInput[] =>
+  drafts.map((d) => ({
+    points: d.points,
+    thickness_m: d.thickness_m,
+  }));
 
 const masterPointsFromSections = (
   sections: AssemblySection[],

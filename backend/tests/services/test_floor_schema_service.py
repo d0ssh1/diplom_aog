@@ -151,3 +151,65 @@ async def test_update_mask_missing_floor_raises_not_found():
         await svc.update_mask(floor_id=999, mask_file_id="mask-uuid")
 
     svc._floor_repo.update_mask.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_schema_same_image_preserves_derived():
+    """Re-saving the SAME image keeps crop and does not clear walls/mask."""
+    floor = _make_floor(id=101, schema_image_id="img-1", schema_crop_bbox={"x": 0.1})
+    svc = _make_svc(floor=floor)
+
+    with patch.object(svc, "_find_image", return_value="/tmp/uploads/plans/img-1.jpg"):
+        await svc.upload_schema(floor_id=101, image_id="img-1")
+
+    call_kwargs = svc._floor_repo.update_schema.call_args.kwargs
+    assert call_kwargs["schema_crop_bbox"] == {"x": 0.1}  # crop preserved
+    svc._floor_repo.update_wall_polygons.assert_not_awaited()
+    svc._floor_repo.update_mask.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_upload_schema_new_image_clears_derived():
+    """Uploading a DIFFERENT image drops the stale crop, walls and mask."""
+    floor = _make_floor(id=101, schema_image_id="old-img", schema_crop_bbox={"x": 0.1})
+    svc = _make_svc(floor=floor)
+
+    with patch.object(svc, "_find_image", return_value="/tmp/uploads/plans/new.jpg"):
+        await svc.upload_schema(floor_id=101, image_id="new-img")
+
+    call_kwargs = svc._floor_repo.update_schema.call_args.kwargs
+    assert call_kwargs["schema_image_id"] == "new-img"
+    assert call_kwargs["schema_crop_bbox"] is None  # old crop dropped
+    svc._floor_repo.update_wall_polygons.assert_awaited_once_with(101, [])
+    svc._floor_repo.update_mask.assert_awaited_once_with(101, None)
+
+
+@pytest.mark.asyncio
+async def test_reset_schema_clears_all_fields():
+    """reset_schema nulls schema image, crop, walls and mask."""
+    floor = _make_floor(
+        id=101,
+        schema_image_id="img-1",
+        schema_crop_bbox={"x": 0.1},
+        wall_polygons=[[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]],
+    )
+    svc = _make_svc(floor=floor)
+
+    await svc.reset_schema(floor_id=101)
+
+    schema_kwargs = svc._floor_repo.update_schema.call_args.kwargs
+    assert schema_kwargs["schema_image_id"] is None
+    assert schema_kwargs["schema_crop_bbox"] is None
+    svc._floor_repo.update_wall_polygons.assert_awaited_once_with(101, [])
+    svc._floor_repo.update_mask.assert_awaited_once_with(101, None)
+
+
+@pytest.mark.asyncio
+async def test_reset_schema_missing_floor_raises_not_found():
+    """reset_schema raises FloorNotFoundError when the floor is absent."""
+    svc = _make_svc(floor=None)
+
+    with pytest.raises(FloorNotFoundError):
+        await svc.reset_schema(floor_id=999)
+
+    svc._floor_repo.update_schema.assert_not_awaited()

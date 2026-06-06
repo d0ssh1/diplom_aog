@@ -6,12 +6,15 @@ Covers every row of docs/features/floor-stitching/04-testing.md
 numpy / cv2, tiny synthetic masks, no DB/IO.
 """
 
+import cv2
 import numpy as np
+import pytest
 
 from app.processing.floor_assembly import (
     ConnectorRaster,
     SectionWarpInput,
     assemble_floor_mask,
+    compute_canvas_factor,
 )
 from app.processing.registration import solve_similarity
 
@@ -42,7 +45,9 @@ def test_warp_identity_places_mask_at_origin():
     # Arrange — a 4x4 white block in the top-left of a 4x4 mask, identity warp,
     # 8x8 canvas.
     mask = tiny_mask((4, 4), [(0, 0, 3, 3)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=1.0, tx=0.0, ty=0.0)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
 
     # Act
     result = assemble_floor_mask([section], (8, 8), [], default_wall_thickness_px=1)
@@ -57,7 +62,9 @@ def test_warp_identity_places_mask_at_origin():
 def test_warp_translation_places_mask_offset():
     # Arrange — a 4x4 block, translated by (tx=3, ty=2) on an 8x8 canvas.
     mask = tiny_mask((4, 4), [(0, 0, 3, 3)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=1.0, tx=3.0, ty=2.0)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=3.0, ty=2.0
+    )
 
     # Act
     result = assemble_floor_mask([section], (8, 8), [], default_wall_thickness_px=1)
@@ -73,7 +80,9 @@ def test_warp_translation_places_mask_offset():
 def test_warp_uniform_scale_preserves_square():
     # Arrange — a 4x4 square at the origin, scaled by 2 on a 16x16 canvas.
     mask = tiny_mask((4, 4), [(0, 0, 3, 3)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=2.0, tx=0.0, ty=0.0)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=2.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
 
     # Act
     result = assemble_floor_mask([section], (16, 16), [], default_wall_thickness_px=1)
@@ -90,8 +99,12 @@ def test_assemble_composites_two_masks_via_or():
     # warps. Block A covers cols 0..5, block B cols 3..8; they overlap on 3..5.
     mask_a = tiny_mask((10, 10), [(0, 0, 5, 9)])
     mask_b = tiny_mask((10, 10), [(3, 0, 8, 9)])
-    section_a = SectionWarpInput(section_id=1, mask=mask_a, scale=1.0, tx=0.0, ty=0.0)
-    section_b = SectionWarpInput(section_id=2, mask=mask_b, scale=1.0, tx=0.0, ty=0.0)
+    section_a = SectionWarpInput(
+        section_id=1, mask=mask_a, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
+    section_b = SectionWarpInput(
+        section_id=2, mask=mask_b, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
 
     # Act
     result = assemble_floor_mask(
@@ -110,7 +123,9 @@ def test_assemble_composites_two_masks_via_or():
 def test_assemble_output_is_binary_uint8():
     # Arrange — a scaled section plus a connector; the output must remain binary.
     mask = tiny_mask((6, 6), [(1, 1, 4, 4)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=1.7, tx=2.0, ty=1.0)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.7, rotation_rad=0.0, tx=2.0, ty=1.0
+    )
     connector = ConnectorRaster(
         points_px=np.array([[2, 8], [12, 8]], dtype=np.int32),
         thickness_px=2,
@@ -135,8 +150,12 @@ def test_assemble_does_not_mutate_input_masks():
     points = np.array([[1, 6], [6, 6]], dtype=np.int32)
     points_copy = points.copy()
     sections = [
-        SectionWarpInput(section_id=1, mask=mask_a, scale=2.0, tx=1.0, ty=1.0),
-        SectionWarpInput(section_id=2, mask=mask_b, scale=1.0, tx=0.0, ty=0.0),
+        SectionWarpInput(
+            section_id=1, mask=mask_a, scale=2.0, rotation_rad=0.0, tx=1.0, ty=1.0
+        ),
+        SectionWarpInput(
+            section_id=2, mask=mask_b, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+        ),
     ]
     connector = ConnectorRaster(points_px=points, thickness_px=2)
 
@@ -190,10 +209,14 @@ def test_canvas_equals_master_crop_dims():
     # sizing, no section-driven upscale). canvas_size is (Wm, Hm).
     master_crop = (24, 13)  # (Wm, Hm)
     mask = tiny_mask((5, 5), [(0, 0, 4, 4)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=1.0, tx=0.0, ty=0.0)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
 
     # Act
-    result = assemble_floor_mask([section], master_crop, [], default_wall_thickness_px=1)
+    result = assemble_floor_mask(
+        [section], master_crop, [], default_wall_thickness_px=1
+    )
 
     # Assert — numpy shape is (Hm, Wm) == (13, 24).
     assert result.shape == (13, 24), "canvas dims must equal the master crop dims"
@@ -205,7 +228,7 @@ def test_warp_fully_outside_canvas_contributes_nothing():
     # guards against a future borderValue regression.
     mask = tiny_mask((4, 4), [(0, 0, 3, 3)])
     section = SectionWarpInput(
-        section_id=1, mask=mask, scale=1.0, tx=100.0, ty=100.0
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=100.0, ty=100.0
     )
 
     # Act
@@ -226,16 +249,79 @@ def test_assemble_empty_sections_returns_zero_canvas():
     assert np.all(result == 0), "empty input must yield an all-zero canvas"
 
 
+# --- Rotated warp (this feature) ---------------------------------------------
+
+
+def test_section_warp_input_has_rotation():
+    # Arrange / Act — the warp input carries an explicit rotation field.
+    mask = tiny_mask((4, 4), [(0, 0, 3, 3)])
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.5, tx=0.0, ty=0.0
+    )
+
+    # Assert
+    assert section.rotation_rad == 0.5
+
+
+def test_assemble_zero_rotation_matches_scale_only():
+    # Arrange — an asymmetric mask + a scale+shift transform, rotation_rad=0.
+    mask = tiny_mask((8, 8), [(1, 1, 5, 3)])  # asymmetric (wider than tall)
+    scale, tx, ty = 1.7, 4.0, 3.0
+    canvas_size = (24, 24)  # (Wm, Hm)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=scale, rotation_rad=0.0, tx=tx, ty=ty
+    )
+
+    # Act — the assembler with rotation_rad=0.
+    result = assemble_floor_mask(
+        [section], canvas_size, [], default_wall_thickness_px=1
+    )
+    # Expected — the previous scale-only affine, hand-rolled.
+    affine = np.array([[scale, 0.0, tx], [0.0, scale, ty]], dtype=np.float64)
+    expected = cv2.warpAffine(
+        mask, affine, canvas_size, flags=cv2.INTER_NEAREST, borderValue=0
+    )
+
+    # Assert — rotation_rad=0 is byte-identical to the old scale-only warp.
+    np.testing.assert_array_equal(result, expected)
+
+
+def test_assemble_rotates_section_mask_90deg():
+    # Arrange — a mask wider than tall (occupied bbox 5 wide x 2 tall). After a
+    # 90° rotation the occupied bbox must become taller than wide (w/h swap).
+    mask = tiny_mask((10, 10), [(1, 1, 5, 2)])  # cols 1..5 (w=5), rows 1..2 (h=2)
+    canvas_size = (40, 40)
+    # Translate so the rotated mask lands well inside the canvas.
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=np.pi / 2,
+        tx=20.0, ty=5.0,
+    )
+
+    # Act
+    result = assemble_floor_mask(
+        [section], canvas_size, [], default_wall_thickness_px=1
+    )
+
+    # Assert — something landed, and the occupied bbox is now taller than wide.
+    ys, xs = np.where(result == 255)
+    assert xs.size > 0, "rotated mask must land on the canvas"
+    bbox_w = xs.max() - xs.min() + 1
+    bbox_h = ys.max() - ys.min() + 1
+    assert bbox_h > bbox_w, "90° rotation must swap the bbox aspect (taller now)"
+
+
 # --- Non-displacement maths (AC4) --------------------------------------------
 
 
 def test_uniform_warp_preserves_relative_positions():
     # Arrange — two separate white blocks on one section mask; warp by a uniform
-    # (scale, tx, ty). Their centre-to-centre vector must scale by exactly s with
-    # the angle unchanged.
+    # (scale, tx, ty) with no rotation. Their centre-to-centre vector must scale
+    # by exactly s with the angle unchanged.
     scale, tx, ty = 2.0, 3.0, 5.0
     mask = tiny_mask((20, 20), [(2, 2, 3, 3), (10, 10, 11, 11)])
-    section = SectionWarpInput(section_id=1, mask=mask, scale=scale, tx=tx, ty=ty)
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=scale, rotation_rad=0.0, tx=tx, ty=ty
+    )
     # Original block centres (x, y): block A ~ (2.5, 2.5), block B ~ (10.5, 10.5).
     centre_a = np.array([2.5, 2.5])
     centre_b = np.array([10.5, 10.5])
@@ -286,6 +372,7 @@ def test_solve_pixel_space_not_normalized_no_aspect_skew():
         section_id=1,
         mask=section_mask,
         scale=transform.scale,
+        rotation_rad=transform.rotation_rad,
         tx=transform.tx,
         ty=transform.ty,
     )
@@ -303,3 +390,46 @@ def test_solve_pixel_space_not_normalized_no_aspect_skew():
     assert region_w == region_h, "square must stay square in pixel-space solve"
     # Sanity: the recovered scale is the known isotropic value (no skew folded in).
     assert abs(transform.scale - true_scale) < 1e-6
+
+
+# --- compute_canvas_factor (robust memory-guard k) ---------------------------
+
+
+def test_compute_canvas_factor_upscales_to_native():
+    # A single 0.25× section → k = 1/0.25 = 4 (cap not binding).
+    k = compute_canvas_factor(
+        [(0.25, 0.0)], long_side_px=500, ppm=10.0,
+        max_canvas_px=4000, trust_residual_m=3.0,
+    )
+    assert k == pytest.approx(4.0)
+
+
+def test_compute_canvas_factor_excludes_high_residual_section():
+    # Good 0.8× (0.5 m residual) + mis-registered 0.18× (36 m) → k from 0.8 only.
+    k = compute_canvas_factor(
+        [(0.8, 6.0), (0.18, 437.0)], long_side_px=400, ppm=12.0,
+        max_canvas_px=4000, trust_residual_m=3.0,
+    )
+    assert k == pytest.approx(1.25)  # 1/0.8, NOT the bloated 1/0.18 ≈ 5.6
+
+
+def test_compute_canvas_factor_all_untrusted_uses_all():
+    # Every section mis-registered → fall back to all (no worse than un-guarded).
+    k = compute_canvas_factor(
+        [(0.8, 500.0), (0.18, 600.0)], long_side_px=400, ppm=12.0,
+        max_canvas_px=4000, trust_residual_m=3.0,
+    )
+    assert k == pytest.approx(1.0 / 0.18)  # min(all scales) drives k
+
+
+def test_compute_canvas_factor_clamped_by_canvas_cap():
+    # Upscale 1/0.1 = 10 but the cap 4000/4000 = 1 binds.
+    k = compute_canvas_factor(
+        [(0.1, 0.0)], long_side_px=4000, ppm=10.0,
+        max_canvas_px=4000, trust_residual_m=3.0,
+    )
+    assert k == pytest.approx(1.0)
+
+
+def test_compute_canvas_factor_no_sections_returns_one():
+    assert compute_canvas_factor([], 500, 10.0, 4000, 3.0) == 1.0

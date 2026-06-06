@@ -1,6 +1,7 @@
 """Pydantic models for the Floor Stitching feature (Phase 02).
 
-Exact JSON shapes are the contract in ``docs/features/floor-stitching/05-api-contract.md``.
+Exact JSON shapes are the contract in
+``docs/features/floor-stitching/05-api-contract.md``.
 These models ARE that contract — request validation and response serialisation
 both flow through here. Pure declarations only; no business logic.
 
@@ -62,12 +63,19 @@ class MasterControlPoint(BaseModel):
 class SectionTransform(BaseModel):
     """Solved uniform-similarity transform (read-only to clients).
 
+    The transform maps section pixels to master pixels as
+    ``y = scale * R(rotation_rad) @ x + (tx, ty)``. ``rotation_rad`` is additive
+    and defaults to ``0.0`` so legacy ``section.transform`` blobs (written before
+    rotation existed, with no ``rotation_rad`` key) still deserialise — as an
+    unrotated section — with no DB migration.
+
     Stored on ``section.transform``. ``solved_at`` is timezone-aware UTC (set in
     Phase 07) so Pydantic v2 serialises the ``+00:00``/``Z`` offset the contract
     shows; a naive datetime would emit no offset and break the contract test.
     """
 
     scale: float
+    rotation_rad: float = 0.0
     tx: float
     ty: float
     residual_rms_px: float

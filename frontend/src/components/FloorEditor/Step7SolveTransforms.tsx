@@ -72,6 +72,9 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
+  // Each ok section's wall mask, loaded once for the warped semi-transparent
+  // overlay (keyed by section id).
+  const sectionImgsRef = useRef<Map<number, HTMLImageElement>>(new Map());
 
   const sectionIndexById = new Map<number, number>();
   sections.forEach((s, i) => sectionIndexById.set(s.section_id, i));
@@ -106,6 +109,9 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
 
     if (solveResult === null) return;
 
+    const kx = dw / masterW; // master-px → canvas-px scale (x)
+    const ky = dh / masterH; // master-px → canvas-px scale (y)
+
     for (const result of solveResult.sections) {
       if (result.status !== 'ok' || result.transform === null) continue;
       const section = sections.find((s) => s.section_id === result.section_id);
@@ -114,33 +120,71 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
       if (secW <= 0 || secH <= 0) continue;
 
       const { scale, tx, ty } = result.transform;
-      // Warp the section's four px corners → master px → normalised → canvas px.
-      const corners: [number, number][] = [
-        [0, 0],
-        [secW, 0],
-        [secW, secH],
-        [0, secH],
-      ];
+      // Apply the FULL solved similarity scale·R(rotation_rad) + translation so
+      // the footprint shows the TRUE placement — size AND tilt — exactly like the
+      // 3D build. rotation_rad defaults to 0 for legacy transforms.
+      const rot = result.transform.rotation_rad ?? 0;
+      const cos = Math.cos(rot);
+      const sin = Math.sin(rot);
       const idx = sectionIndexById.get(section.section_id) ?? 0;
       const color = getSectionColor(idx, section.section_id);
 
+      // section-px (sxp, syp) → canvas-px under the rotated similarity.
+      const toCanvas = (sxp: number, syp: number): [number, number] => {
+        const mpx = scale * (cos * sxp - sin * syp) + tx; // master px
+        const mpy = scale * (sin * sxp + cos * syp) + ty;
+        return [dx + kx * mpx, dy + ky * mpy];
+      };
+
+      // Overlay the section's OWN wall mask, warped by the SAME similarity, so the
+      // operator sees the real walls land on the карта отсеков (not just a box).
+      // invert+multiply paints the white-on-black mask as dark walls over the
+      // white backdrop — only walls show; the black background stays transparent.
+      const maskImg = sectionImgsRef.current.get(section.section_id);
+      if (maskImg && maskImg.naturalWidth > 0 && maskImg.naturalHeight > 0) {
+        const iw = maskImg.naturalWidth;
+        const ih = maskImg.naturalHeight;
+        const rx = secW / iw; // image-px → section-px (≈ 1)
+        const ry = secH / ih;
+        ctx.save();
+        // image-px (ix, iy) → canvas-px: folds (rx,ry) · scale·R · (kx,ky) + offset.
+        ctx.setTransform(
+          kx * scale * cos * rx,
+          ky * scale * sin * rx,
+          -kx * scale * sin * ry,
+          ky * scale * cos * ry,
+          dx + kx * tx,
+          dy + ky * ty,
+        );
+        ctx.globalAlpha = 0.55;
+        ctx.filter = 'invert(1)';
+        ctx.globalCompositeOperation = 'multiply';
+        ctx.drawImage(maskImg, 0, 0, iw, ih);
+        ctx.restore(); // back to identity transform / no filter / source-over
+      }
+
+      // Coloured rotated footprint: a light identity tint + the outline.
       ctx.beginPath();
-      corners.forEach(([px, py], i) => {
-        const mx = (scale * px + tx) / masterW; // master-normalised
-        const my = (scale * py + ty) / masterH;
-        const cx = dx + mx * dw;
-        const cy = dy + my * dh;
+      (
+        [
+          [0, 0],
+          [secW, 0],
+          [secW, secH],
+          [0, secH],
+        ] as [number, number][]
+      ).forEach(([px, py], i) => {
+        const [cx, cy] = toCanvas(px, py);
         if (i === 0) ctx.moveTo(cx, cy);
         else ctx.lineTo(cx, cy);
       });
       ctx.closePath();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.globalAlpha = 0.12;
+      ctx.globalAlpha = 0.08;
       ctx.fillStyle = color;
       ctx.fill();
       ctx.globalAlpha = 1;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
   }, [solveResult, sections]);
 
@@ -168,6 +212,29 @@ export const Step7SolveTransforms: React.FC<Step7SolveTransformsProps> = ({
       cancelled = true;
     };
   }, [masterMaskUrl, draw]);
+
+  // Load each ok section's wall mask once (for the warped semi-transparent
+  // overlay). Stored in a ref keyed by section id; redraw as each image arrives.
+  useEffect(() => {
+    if (solveResult === null) return;
+    let cancelled = false;
+    for (const result of solveResult.sections) {
+      if (result.status !== 'ok') continue;
+      const section = sections.find((s) => s.section_id === result.section_id);
+      if (!section || !section.mask_url) continue;
+      if (sectionImgsRef.current.has(section.section_id)) continue;
+      const img = new Image();
+      // Reserve immediately so a re-render does not re-request the same mask.
+      sectionImgsRef.current.set(section.section_id, img);
+      img.onload = () => {
+        if (!cancelled) draw();
+      };
+      img.src = section.mask_url;
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [solveResult, sections, draw]);
 
   // Redraw on overlay/solve change + on resize.
   useEffect(() => {

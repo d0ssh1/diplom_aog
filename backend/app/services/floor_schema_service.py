@@ -50,6 +50,12 @@ class FloorSchemaService:
     async def upload_schema(self, floor_id: int, image_id: str) -> None:
         """Assign an already-uploaded file as the floor schema image.
 
+        When the image actually CHANGES (a different карта отсеков is uploaded),
+        the previously derived data — crop, wall_polygons and the edited mask —
+        describe the OLD image and are no longer valid, so they are cleared. This
+        keeps a re-uploaded map from inheriting the previous map's walls/mask.
+        Re-saving the SAME image (e.g. the crop-commit path) preserves everything.
+
         Raises:
             FloorNotFoundError: if floor absent.
             FloorSchemaError: if image_id not found in storage.
@@ -64,12 +70,44 @@ class FloorSchemaService:
         if not image_path:
             raise FloorSchemaError(f"Image file '{image_id}' not found in storage")
 
+        image_changed = floor.schema_image_id != image_id
         await self._floor_repo.update_schema(
             floor_id=floor_id,
             schema_image_id=image_id,
-            schema_crop_bbox=floor.schema_crop_bbox,
+            # Drop the old crop on a new image; keep it when re-saving the same one.
+            schema_crop_bbox=None if image_changed else floor.schema_crop_bbox,
         )
+        if image_changed:
+            await self._floor_repo.update_wall_polygons(floor_id, [])
+            await self._floor_repo.update_mask(floor_id, None)
+            logger.info(
+                "upload_schema: image changed → cleared crop/walls/mask (floor_id=%d)",
+                floor_id,
+            )
         logger.debug("upload_schema done: floor_id=%d, image_id=%s", floor_id, image_id)
+
+    async def reset_schema(self, floor_id: int) -> None:
+        """Fully clear the floor schema so a brand-new карта отсеков can be loaded.
+
+        Nulls schema_image_id, schema_crop_bbox, wall_polygons and mask_file_id.
+        Sections are removed separately by the caller (sections replace-all), since
+        they live in their own table / repository.
+
+        Raises FloorNotFoundError if floor absent.
+        """
+        logger.info("reset_schema: floor_id=%d", floor_id)
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+
+        await self._floor_repo.update_schema(
+            floor_id=floor_id,
+            schema_image_id=None,
+            schema_crop_bbox=None,
+        )
+        await self._floor_repo.update_wall_polygons(floor_id, [])
+        await self._floor_repo.update_mask(floor_id, None)
+        logger.debug("reset_schema done: floor_id=%d", floor_id)
 
     # ── Crop bbox ─────────────────────────────────────────────────────────────
 

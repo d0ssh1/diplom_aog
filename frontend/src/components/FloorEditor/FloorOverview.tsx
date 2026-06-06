@@ -437,7 +437,7 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
             onClick={() => setDeleteModalOpen(true)}
             type="button"
           >
-            Удалить план отсеков
+            Удалить карту отсеков
           </button>
           <button
             className={styles.btnSave}
@@ -492,9 +492,9 @@ export const FloorOverview: React.FC<FloorOverviewProps> = ({
       {deleteModalOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(15,23,42,0.4)', backdropFilter: 'blur(4px)' }} onClick={() => setDeleteModalOpen(false)}>
           <div style={{ background: '#fff', padding: '2rem', maxWidth: '420px', width: '100%', borderRadius: '0', boxShadow: '0 10px 40px rgba(0,0,0,0.1)' }} onClick={(e) => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 1rem', fontSize: '1.25rem', fontWeight: 600, color: '#0f172a' }}>Удалить план отсеков?</h3>
+            <h3 style={{ margin: '0 0 1rem', fontSize: '1.25rem', fontWeight: 600, color: '#0f172a' }}>Удалить карту отсеков?</h3>
             <p style={{ margin: '0 0 2rem', fontSize: '0.9375rem', color: '#64748b', lineHeight: 1.5 }}>
-              Все отсеки и их привязки к планам будут удалены. Загруженная схема этажа и стены сохранятся — вы сможете заново разметить отсеки. Действие нельзя отменить.
+              Будут удалены отсеки и их привязки, а также сама карта отсеков: загруженная схема этажа, кадрирование, стены и маска. Вы вернётесь к шагу загрузки, чтобы загрузить новую карту отсеков. Действие нельзя отменить.
             </p>
             <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
               <button

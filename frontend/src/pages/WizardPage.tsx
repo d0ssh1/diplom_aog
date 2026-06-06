@@ -5,7 +5,9 @@ import { useFileUpload } from '../hooks/useFileUpload';
 import { WizardShell } from '../components/Wizard/WizardShell';
 import { StepUpload } from '../components/Wizard/StepUpload';
 import { StepPreprocess } from '../components/Wizard/StepPreprocess';
-import { StepControlPoints } from '../components/Wizard/StepControlPoints';
+// СКРЫТО (опорные точки теперь ставятся при создании отсеков). Чтобы вернуть
+// этап — раскомментируйте импорт + case 3 ниже и верните нумерацию шагов на 6.
+// import { StepControlPoints } from '../components/Wizard/StepControlPoints';
 import { StepWallEditor } from '../components/Wizard/StepWallEditor';
 import { StepNavGraph } from '../components/Wizard/StepNavGraph';
 import { StepView3D } from '../components/Wizard/StepView3D';
@@ -42,10 +44,7 @@ export const WizardPage: React.FC = () => {
     } else if (state.step === 2) {
       await wizard.calculateMask();
       wizard.nextStep();
-    } else if (state.step === 3) {
-      // Control points are held in state and flushed at build (deferred save).
-      wizard.nextStep();
-    } else if (state.step === 4 && canvasRef.current) {
+    } else if (state.step === 3 && canvasRef.current) {
       const blob = await canvasRef.current.getBlob();
       const { rooms, doors } = canvasRef.current.getAnnotations();
       const canvasState = await canvasRef.current.getCanvasState?.();
@@ -53,9 +52,9 @@ export const WizardPage: React.FC = () => {
       if (editedMaskId) {
         await wizard.buildNavGraph(editedMaskId, rooms, doors);
       }
-    } else if (state.step === 5) {
+    } else if (state.step === 4) {
       await wizard.buildMesh(state.editedMaskFileId ?? state.maskFileId ?? undefined);
-    } else if (state.step === 6) {
+    } else if (state.step === 5) {
       await wizard.save(state.planName);
     }
   };
@@ -63,7 +62,7 @@ export const WizardPage: React.FC = () => {
   const handlePrev = () => {
     if (state.step === 1) {
       navigate('/admin');
-    } else if (state.step === 4) {
+    } else if (state.step === 3) {
       if (!window.confirm('Вернуться на шаг 2? Все нарисованные стены и разметка будут потеряны.')) return;
       wizard.prevStep();
     } else {
@@ -73,13 +72,12 @@ export const WizardPage: React.FC = () => {
 
   const isNextDisabled =
     (state.step === 1 && (upload.files.length === 0 || wizard.selectedFloorId === null || !state.planName.trim())) ||
-    (state.step === 3 && state.controlPoints.length < 3) ||
     state.isLoading;
 
   const nextLabel =
-    state.step === 4 ? '> ПОСТРОИТЬ ГРАФ' :
-    state.step === 5 ? '> ПОСТРОИТЬ 3D' :
-    state.step === 6 ? 'СОХРАНИТЬ И ВЫЙТИ' :
+    state.step === 3 ? '> ПОСТРОИТЬ ГРАФ' :
+    state.step === 4 ? '> ПОСТРОИТЬ 3D' :
+    state.step === 5 ? 'СОХРАНИТЬ И ВЫЙТИ' :
     undefined;
 
   const maskUrl = `/api/v1/uploads/masks/${state.editedMaskFileId ?? state.maskFileId}.png`;
@@ -112,18 +110,8 @@ export const WizardPage: React.FC = () => {
             }
           />
         );
+      // case «Опорные точки» СКРЫТ — точки ставятся при создании отсеков.
       case 3:
-        return (
-          <StepControlPoints
-            photoUrl={state.planUrl}
-            maskUrl={maskUrl}
-            points={state.controlPoints}
-            onAddPoint={wizard.addControlPoint}
-            onMovePoint={wizard.moveControlPoint}
-            onDeletePoint={wizard.deleteControlPoint}
-          />
-        );
-      case 4:
         return (
           <StepWallEditor
             maskUrl={maskUrl}
@@ -140,14 +128,14 @@ export const WizardPage: React.FC = () => {
             initialDoors={state.doors}
           />
         );
-      case 5:
+      case 4:
         return (
           <StepNavGraph
             navGraphId={state.navGraphId}
             maskUrl={maskUrl}
           />
         );
-      case 6:
+      case 5:
         return (
           <StepView3D
             meshUrl={state.meshUrl}
@@ -168,13 +156,13 @@ export const WizardPage: React.FC = () => {
   return (
     <WizardShell
       currentStep={state.step}
-      totalSteps={6}
+      totalSteps={5}
       onNext={handleNext}
       onPrev={handlePrev}
       onClose={() => navigate('/admin/buildings')}
       nextDisabled={isNextDisabled}
       nextLabel={nextLabel}
-      hideFooter={state.step === 6}
+      hideFooter={state.step === 5}
     >
       {renderStep()}
     </WizardShell>

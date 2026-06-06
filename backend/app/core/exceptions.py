@@ -146,3 +146,17 @@ class FloorAssemblyConflictError(Exception):
     def __init__(self, detail: str) -> None:
         self.detail = detail
         super().__init__(detail)
+
+
+class FloorNavGraphNotFoundError(Exception):
+    """Floor nav graph JSON not built yet (route request -> 404).
+
+    Message is RU to match the other floor-assembly error messages surfaced to the
+    operator (round-2 decision). The router maps this type to 404 via str(exc).
+    """
+
+    def __init__(self, floor_id: int) -> None:
+        self.floor_id = floor_id
+        super().__init__(
+            "Граф навигации не построен — запустите построение графа этажа"
+        )

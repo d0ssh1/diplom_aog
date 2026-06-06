@@ -39,6 +39,7 @@ from app.core.exceptions import (
     SectionValidationError,
 )
 from app.core.floor_stitching_constants import (
+    CANVAS_TRUST_RESIDUAL_M,
     DEFAULT_CONNECTOR_THICKNESS_M,
     DETAIL_WARN_SCALE,
     FLOOR_HEIGHT,
@@ -76,6 +77,7 @@ from app.processing.floor_assembly import (
     ConnectorRaster,
     SectionWarpInput,
     assemble_floor_mask,
+    compute_canvas_factor,
 )
 from app.processing.mesh_builder import build_mesh_from_mask
 from app.processing.registration import (
@@ -478,6 +480,7 @@ class FloorAssemblyService:
         # datetime when SectionTransform(**transform) is built (Phase 02 contract).
         transform = {
             "scale": result.scale,
+            "rotation_rad": result.rotation_rad,
             "tx": result.tx,
             "ty": result.ty,
             "residual_rms_px": result.residual_rms,
@@ -647,16 +650,27 @@ class FloorAssemblyService:
         # guard. ppm is multiplied by the SAME k (consumer e), so the floor's
         # metric size is unchanged; only the raster gets crisp enough to keep
         # walls. Still capped at MAX_FLOOR_CANVAS_PX (a huge master scales DOWN).
-        section_scales = [
-            float(s.transform["scale"])
-            for s in ok_sections
-            if s.transform and _is_positive_finite(float(s.transform["scale"]))
-        ]
-        min_scale = min(section_scales) if section_scales else 1.0
+        # The shared helper derives k = 1/min(scale), clamped to the canvas cap.
+        # A MIS-REGISTERED section (high residual) has a spuriously shrunk scale
+        # that would inflate k and over-upscale the WHOLE floor, so it is excluded
+        # from the min-scale estimate. The nav service calls the SAME helper with
+        # the same arguments so both builds size the canvas IDENTICALLY (ADR-9).
         long_side = max(master_w, master_h)
-        # max(1, 1/min_scale) never DOWNSAMPLES a section below native; the
-        # min(...) clamp keeps the canvas long side <= MAX_FLOOR_CANVAS_PX.
-        k = min(max(1.0, 1.0 / min_scale), MAX_FLOOR_CANVAS_PX / long_side)
+        k = compute_canvas_factor(
+            [
+                (
+                    float(s.transform["scale"]),
+                    float(s.transform.get("residual_rms_px", 0.0)),
+                )
+                for s in ok_sections
+                if s.transform
+                and _is_positive_finite(float(s.transform["scale"]))
+            ],
+            long_side_px=long_side,
+            ppm=ppm_floor,
+            max_canvas_px=MAX_FLOOR_CANVAS_PX,
+            trust_residual_m=CANVAS_TRUST_RESIDUAL_M,
+        )
         # (a) canvas dims × k.
         canvas_w = round(master_w * k)
         canvas_h = round(master_h * k)
@@ -684,12 +698,17 @@ class FloorAssemblyService:
             mask_bin = np.where(mask.copy() > 127, 255, 0).astype(np.uint8)
 
             base_scale = float(transform["scale"])
-            # (b) section transform pre-multiplied by k.
+            # Legacy transforms (solved before rotation existed) carry no
+            # "rotation_rad" key → default 0.0 (unrotated). The angle is NOT
+            # k-scaled (rotation is invariant to the uniform memory-guard scale).
+            base_rot = float(transform.get("rotation_rad", 0.0))
+            # (b) section transform pre-multiplied by k (angle passed unscaled).
             warp_inputs.append(
                 SectionWarpInput(
                     section_id=section.id,
                     mask=mask_bin,
                     scale=base_scale * k,
+                    rotation_rad=base_rot,
                     tx=float(transform["tx"]) * k,
                     ty=float(transform["ty"]) * k,
                 )

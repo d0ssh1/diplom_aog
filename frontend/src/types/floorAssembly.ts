@@ -23,6 +23,8 @@ export interface MasterControlPoint {
 
 export interface SectionTransform {
   scale: number;
+  /** Section→master rotation in radians (atan2(R[1,0],R[0,0])); 0 for legacy. */
+  rotation_rad: number;
   tx: number;
   ty: number;
   residual_rms_px: number;

@@ -55,6 +55,55 @@ def make_points(
     return src, dst
 
 
+def make_points_rot(
+    n: int,
+    scale: float,
+    deg: float,
+    shift: tuple[float, float],
+    noise: float = 0.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Synthetic ``(src, dst)`` pair with a known similarity INCLUDING rotation.
+
+    The destination is ``dst = scale * (R(deg) @ src) + shift`` (+ optional
+    Gaussian noise), where ``R(deg)`` is a proper rotation by ``deg`` degrees.
+    Source points are the same well-spread circle as ``make_points``.
+
+    Args:
+        n: number of point pairs (``>= 1``).
+        scale: isotropic scale applied to ``src`` before rotation.
+        deg: rotation angle in degrees (section->master).
+        shift: ``(tx, ty)`` translation applied after scale+rotation.
+        noise: standard deviation of optional Gaussian noise added to ``dst``.
+
+    Returns:
+        ``(src, dst)`` as ``(n, 2)`` float64 arrays.
+    """
+    rng = np.random.default_rng(seed=7)
+    angles = np.linspace(0.0, 2.0 * np.pi, num=n, endpoint=False)
+    radius = 100.0
+    src = np.stack(
+        [50.0 + radius * np.cos(angles), 60.0 + radius * np.sin(angles)],
+        axis=1,
+    ).astype(np.float64)
+    theta = np.deg2rad(deg)
+    rot = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]],
+        dtype=np.float64,
+    )
+    dst = (scale * (rot @ src.T)).T + np.array(shift, dtype=np.float64)
+    if noise > 0.0:
+        dst = dst + rng.normal(0.0, noise, size=dst.shape)
+    return src, dst
+
+
+def _signed_area(tri: np.ndarray) -> float:
+    """Signed area of a triangle ``(3, 2)``; its sign encodes the winding."""
+    return 0.5 * (
+        (tri[1, 0] - tri[0, 0]) * (tri[2, 1] - tri[0, 1])
+        - (tri[2, 0] - tri[0, 0]) * (tri[1, 1] - tri[0, 1])
+    )
+
+
 def test_solve_identity_returns_unit_scale_zero_shift():
     # Arrange
     src, dst = make_points(3, scale=1.0, shift=(0.0, 0.0))
@@ -165,8 +214,13 @@ def test_solve_reports_residual_rms():
     # Act
     result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
 
-    # Assert — hand-computed RMS of residuals matches the reported value.
-    pred = result.scale * src + np.array([result.tx, result.ty])
+    # Assert — hand-computed RMS of residuals (full similarity) matches the value.
+    theta = result.rotation_rad
+    rot = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]],
+        dtype=np.float64,
+    )
+    pred = (result.scale * (rot @ src.T)).T + np.array([result.tx, result.ty])
     expected_rms = np.sqrt(np.mean(((dst - pred) ** 2).sum(axis=1)))
     assert result.residual_rms == pytest.approx(expected_rms, abs=1e-9)
     assert result.residual_rms > 0.0
@@ -229,18 +283,26 @@ def test_solve_does_not_mutate_inputs():
 
 
 def test_uniform_warp_preserves_cabinet_aspect_ratio():
-    # Arrange — a known unit square in section-px and a recovered transform.
-    src, dst = make_points(4, scale=2.5, shift=(7.0, -4.0))
+    # Arrange — a known unit square and a recovered transform WITH rotation, to
+    # prove a square stays square under a rotated similarity too (AC4).
+    src, dst = make_points_rot(4, scale=2.5, deg=50.0, shift=(7.0, -4.0))
     result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
     square = np.array(
         [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0]],
         dtype=np.float64,
     )
+    theta = result.rotation_rad
+    rot = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]],
+        dtype=np.float64,
+    )
 
-    # Act — apply X = s*x + tx, Y = s*y + ty to the square corners.
-    warped = result.scale * square + np.array([result.tx, result.ty])
+    # Act — apply the FULL similarity y = s*R*x + t to the square corners.
+    warped = (result.scale * (rot @ square.T)).T + np.array(
+        [result.tx, result.ty]
+    )
 
-    # Assert — the warped quad is still a square: equal side lengths.
+    # Assert — the warped quad is still a square: equal adjacent side lengths.
     width = np.hypot(*(warped[1] - warped[0]))
     height = np.hypot(*(warped[2] - warped[1]))
     assert width == pytest.approx(height, rel=1e-9)
@@ -248,19 +310,25 @@ def test_uniform_warp_preserves_cabinet_aspect_ratio():
     assert width == pytest.approx(result.scale * 10.0, rel=1e-9)
 
 
-def test_uniform_warp_preserves_relative_positions():
-    # Arrange — two element centres in section-px and a recovered transform.
-    src, dst = make_points(4, scale=1.8, shift=(15.0, 22.0))
+def test_uniform_warp_rotates_relative_positions():
+    # Arrange — a recovered transform WITH rotation (35°), scale and shift.
+    src, dst = make_points_rot(5, scale=1.8, deg=35.0, shift=(15.0, 22.0))
     result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
     a = np.array([20.0, 30.0], dtype=np.float64)
     b = np.array([60.0, 90.0], dtype=np.float64)
+    theta = result.rotation_rad
+    rot = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]],
+        dtype=np.float64,
+    )
+    t = np.array([result.tx, result.ty])
 
-    # Act — warp both centres.
-    wa = result.scale * a + np.array([result.tx, result.ty])
-    wb = result.scale * b + np.array([result.tx, result.ty])
+    # Act — warp both centres with the FULL similarity (s*R*x + t).
+    wa = result.scale * (rot @ a) + t
+    wb = result.scale * (rot @ b) + t
 
-    # Assert — centre-to-centre distance scales by exactly s; direction angle
-    # is unchanged (pure isotropic scale + translation, no rotation/shear).
+    # Assert — centre-to-centre distance scales by exactly s; the direction angle
+    # ROTATES by exactly result.rotation_rad (isotropic scale + proper rotation).
     orig_vec = b - a
     warped_vec = wb - wa
     assert np.hypot(*warped_vec) == pytest.approx(
@@ -268,4 +336,104 @@ def test_uniform_warp_preserves_relative_positions():
     )
     orig_angle = np.arctan2(orig_vec[1], orig_vec[0])
     warped_angle = np.arctan2(warped_vec[1], warped_vec[0])
-    assert warped_angle == pytest.approx(orig_angle, abs=1e-12)
+    expected_angle = orig_angle + result.rotation_rad
+    # cos of the difference == 1 handles angle wrap robustly.
+    assert np.cos(warped_angle - expected_angle) == pytest.approx(1.0, abs=1e-12)
+
+
+def test_solve_pure_rotation_recovers_angle():
+    # Arrange — pure 30° rotation, unit scale, no shift.
+    src, dst = make_points_rot(5, scale=1.0, deg=30.0, shift=(0.0, 0.0))
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert
+    assert result.scale == pytest.approx(1.0, abs=1e-6)
+    assert result.rotation_rad == pytest.approx(np.deg2rad(30.0), abs=1e-6)
+    assert result.residual_rms == pytest.approx(0.0, abs=1e-6)
+
+
+def test_solve_rotation_scale_shift_recovers_all():
+    # Arrange — 40° rotation + 1.7 scale + shift, all at once.
+    src, dst = make_points_rot(6, scale=1.7, deg=40.0, shift=(25.0, -12.0))
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert — every component recovered.
+    assert result.scale == pytest.approx(1.7, abs=1e-6)
+    assert result.rotation_rad == pytest.approx(np.deg2rad(40.0), abs=1e-6)
+    assert result.tx == pytest.approx(25.0, abs=1e-4)
+    assert result.ty == pytest.approx(-12.0, abs=1e-4)
+    assert result.residual_rms == pytest.approx(0.0, abs=1e-6)
+
+
+def test_solve_rotation_over_90_keeps_positive_scale():
+    # Arrange — 135° rotation: the case that yielded a NEGATIVE scale with the
+    # old rotation-free solver (mirrored/tiny section).
+    src, dst = make_points_rot(5, scale=0.8, deg=135.0, shift=(10.0, 5.0))
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert — scale stays positive; the angle is recovered.
+    assert result.scale > 0.0
+    assert result.scale == pytest.approx(0.8, abs=1e-6)
+    assert result.rotation_rad == pytest.approx(np.deg2rad(135.0), abs=1e-6)
+
+
+def test_solve_rotation_180_recovers_angle():
+    # Arrange — 180° rotation.
+    src, dst = make_points_rot(6, scale=1.0, deg=180.0, shift=(0.0, 0.0))
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert — angle is ±π (atan2 wraps); scale positive.
+    assert result.scale == pytest.approx(1.0, abs=1e-6)
+    assert abs(result.rotation_rad) == pytest.approx(np.pi, abs=1e-6)
+    assert result.scale > 0.0
+
+
+def test_solve_mirrored_points_prevents_reflection():
+    # Arrange — dst is a genuine REFLECTION of an ASYMMETRIC src (flip across the
+    # x-axis about the centroid). A reflection has det = -1 and, unguarded, would
+    # corrupt the fit; the solver must return the NEAREST PROPER rotation instead.
+    src = np.array(
+        [[0.0, 0.0], [120.0, 10.0], [140.0, 80.0], [40.0, 110.0], [-10.0, 50.0]],
+        dtype=np.float64,
+    )
+    centroid = src.mean(axis=0)
+    reflect = np.array([[1.0, 0.0], [0.0, -1.0]], dtype=np.float64)
+    dst = (reflect @ (src - centroid).T).T + centroid
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert — scale never goes negative; the recovered transform is a PROPER
+    # rotation (det = +1), so warping a triangle preserves its winding (no flip).
+    assert result.scale > 0.0
+    theta = result.rotation_rad
+    rot = np.array(
+        [[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]],
+        dtype=np.float64,
+    )
+    tri = np.array([[0.0, 0.0], [10.0, 0.0], [0.0, 5.0]], dtype=np.float64)
+    warped = (result.scale * (rot @ tri.T)).T
+    assert np.sign(_signed_area(warped)) == np.sign(_signed_area(tri)), (
+        "reflection must be prevented (triangle winding preserved)"
+    )
+    assert result.residual_rms > 0.0
+
+
+def test_solve_result_has_rotation_field():
+    # Arrange — an unrotated fit still exposes the field (≈ 0).
+    src, dst = make_points(3, scale=1.0, shift=(0.0, 0.0))
+
+    # Act
+    result = solve_similarity(src, dst, LENIENT_BASELINE_PX)
+
+    # Assert
+    assert hasattr(result, "rotation_rad")
+    assert result.rotation_rad == pytest.approx(0.0, abs=1e-9)

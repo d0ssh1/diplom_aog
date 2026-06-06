@@ -14,11 +14,11 @@ import type {
 } from '../types/hierarchy';
 
 export type EditorMode = 'wizard' | 'overview' | 'table';
-// Steps 6–9 (master control points, solve, connectors, preview) are APPENDED
-// after the original 1–5 (upload→crop→walls→sections→bind). Appending keeps
-// 1–5 numbering stable, so resetFloor's setCurrentStep(4) and the goToStep(1)/
-// goToStep(3) calls in FloorEditorPage stay correct.
-export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9;
+// Steps 6–10 (master control points, solve, connectors, nav-graph, preview) are
+// APPENDED after the original 1–5 (upload→crop→walls→sections→bind). Appending
+// keeps 1–5 numbering stable, so resetFloor's setCurrentStep(4) and the
+// goToStep(1)/goToStep(3) calls in FloorEditorPage stay correct.
+export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 
 export interface Point2D {
   x: number;
@@ -167,7 +167,7 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
   }, []);
 
   const nextStep = useCallback(() => {
-    setCurrentStep((s) => (Math.min(s + 1, 9) as WizardStep));
+    setCurrentStep((s) => (Math.min(s + 1, 10) as WizardStep));
   }, []);
 
   const prevStep = useCallback(() => {
@@ -286,19 +286,30 @@ export const useFloorEditorWizard = (): UseFloorEditorWizardReturn => {
     setIsLoading(true);
     setError(null);
     try {
+      // Full wipe: remove the sections AND clear the whole floor schema (image,
+      // crop, walls, mask) so the operator can load a brand-new карта отсеков from
+      // scratch. Then drop back to step 1 (upload). Sections live in their own
+      // table, so they're cleared via the sections replace-all; the schema fields
+      // via DELETE /floors/{id}/schema.
       await sectionsApi.replace(floorId, { sections: [] });
+      await floorSchemaApi.resetSchema(floorId);
       setSectionDrafts([]);
+      setSchemaImageId(null);
+      setSchemaImageUrl(null);
+      setCropBboxState(null);
+      setWallPolygonsState(null);
+      setEditedMaskUrl(null);
       setIsDirty(false);
-      setCurrentStep(4);
+      setCurrentStep(1);
       setModeState('wizard');
-      toastApi.success('План отсеков удалён');
+      toastApi.success('Карта отсеков удалена — загрузите новую');
     } catch {
       // Show as toast, not full-page error — user can retry without losing state.
-      toastApi.error('Ошибка удаления плана отсеков');
+      toastApi.error('Ошибка удаления карты отсеков');
     } finally {
       setIsLoading(false);
     }
-  }, [floorId]);
+  }, [floorId, setEditedMaskUrl]);
 
   const addSectionDraft = useCallback(
     (geometry: SectionGeometry, number: number, color?: string) => {

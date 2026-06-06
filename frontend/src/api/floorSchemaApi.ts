@@ -36,4 +36,8 @@ export const floorSchemaApi = {
     apiClient
       .put(`/floors/${floorId}/mask`, { mask_file_id: maskFileId })
       .then((r) => r.data as FloorWithSchema),
+
+  // DELETE /api/v1/floors/{id}/schema — fully clear schema image, crop, walls, mask
+  resetSchema: (floorId: number): Promise<void> =>
+    apiClient.delete(`/floors/${floorId}/schema`).then(() => undefined),
 };

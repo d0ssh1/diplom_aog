@@ -149,13 +149,22 @@ export const Step6BindControlPoints: React.FC<Step6BindControlPointsProps> = ({
     if (activeSectionId !== null) void onSave(activeSectionId);
   }, [activeSectionId, onSave]);
 
-  // Auto-save the active section's points before advancing (so nothing is lost).
+  // Save EVERY bound section that has points before advancing — not just the
+  // ACTIVE one. Otherwise a section the operator placed but didn't manually save
+  // (and that wasn't active when they hit "Далее") reaches the solve with no
+  // persisted points and is reported as "0 точек" / skipped.
   const handleNext = useCallback(async () => {
-    if (activeSectionId !== null && allIds.length > 0) {
-      await onSave(activeSectionId);
+    for (const s of sections) {
+      if (s.reconstruction_id === null) continue;
+      const hasPts =
+        (sectionPointsBySection[s.section_id]?.length ?? 0) > 0 ||
+        (masterPointsBySection[s.section_id]?.length ?? 0) > 0;
+      if (hasPts) {
+        await onSave(s.section_id);
+      }
     }
     onNext();
-  }, [activeSectionId, allIds.length, onSave, onNext]);
+  }, [sections, sectionPointsBySection, masterPointsBySection, onSave, onNext]);
 
   return (
     <div className={wizardStyles.layout}>

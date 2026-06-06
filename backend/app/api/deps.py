@@ -13,6 +13,7 @@ from app.db.repositories.floor_transition_repo import FloorTransitionRepository
 from app.db.repositories.floor_connector_repo import FloorConnectorRepository
 from app.services.building_service import BuildingService
 from app.services.floor_assembly_service import FloorAssemblyService
+from app.services.floor_nav_service import FloorNavService
 from app.services.floor_schema_service import FloorSchemaService
 from app.services.floor_service import FloorService
 from app.services.mask_service import MaskService
@@ -195,4 +196,19 @@ async def get_floor_assembly_service(
         reconstruction_repo=reconstruction_repo,
         connector_repo=connector_repo,
         storage=storage,
+    )
+
+
+async def get_floor_nav_service(
+    floor_repo: FloorRepository = Depends(get_floor_repo),
+    section_repo: SectionRepository = Depends(get_section_repo),
+    connector_repo: FloorConnectorRepository = Depends(get_floor_connector_repo),
+    storage: FileStorage = Depends(get_file_storage),
+) -> FloorNavService:
+    return FloorNavService(
+        floor_repo=floor_repo,
+        section_repo=section_repo,
+        connector_repo=connector_repo,
+        storage=storage,
+        upload_dir=str(settings.UPLOAD_DIR),
     )

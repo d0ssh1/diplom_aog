@@ -9,10 +9,17 @@
 // that hook fetches a *reconstruction* by integer id and cannot load a preview
 // GLB by url.
 //
-// Presentational only — build/confirm state + actions live in useFloorAssembly.
+// The НАВИГАЦИЯ panel finds a route between two rooms using the graph built on the
+// previous step (Step9NavGraph); the route renders as a NavigationPath child of the
+// MeshViewer (R3F), and room boxes via MeshViewer's existing rooms3D prop.
+//
+// Presentational only — build/confirm state lives in useFloorAssembly; the nav
+// state lives in useFloorNavGraph.
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import MeshViewer from '../MeshViewer';
+import { NavigationPath } from '../MeshViewer/NavigationPath';
+import { useFloorNavGraph } from '../../hooks/useFloorNavGraph';
 import type { BuildFloorPreviewResponse } from '../../types/floorAssembly';
 import wizardStyles from './WizardStep.module.css';
 import styles from './Step9FloorPreview.module.css';
@@ -26,6 +33,8 @@ interface Step9FloorPreviewProps {
   onBuild: () => Promise<void>;
   onConfirm: () => Promise<void>;
   onBack: () => void;
+  /** Floor whose nav graph the НАВИГАЦИЯ panel operates on (null disables it). */
+  floorId: number | null;
 }
 
 export const Step9FloorPreview: React.FC<Step9FloorPreviewProps> = ({
@@ -37,18 +46,56 @@ export const Step9FloorPreview: React.FC<Step9FloorPreviewProps> = ({
   onBuild,
   onConfirm,
   onBack,
+  floorId,
 }) => {
   const excluded = buildResult?.excluded_sections ?? [];
   const warnings = buildResult?.warnings ?? [];
 
+  const nav = useFloorNavGraph();
+  const [fromRoom, setFromRoom] = useState('');
+  const [toRoom, setToRoom] = useState('');
+
+  // Load room boxes for the overlay once the floor is known. The graph itself is
+  // built on demand via the «Построить граф навигации» button.
+  useEffect(() => {
+    if (floorId !== null) void nav.loadRooms3d(floorId);
+  }, [floorId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Endpoint boxes for the NavigationPath highlight (optional — from rooms3d).
+  const fromRoom3D = nav.rooms3d.find((r) => r.id === fromRoom);
+  const toRoom3D = nav.rooms3d.find((r) => r.id === toRoom);
+
   return (
     <div className={wizardStyles.layout}>
       <div className={styles.body}>
-        {/* Center — 3D preview of the stitched floor */}
+        {/* Center — 3D preview of the stitched floor + route overlay */}
         <div className={styles.viewerPanel}>
           {previewGlbUrl ? (
             // PREVIEW GLB url straight from buildFloorMesh — not useMeshViewer.
-            <MeshViewer url={previewGlbUrl} format="glb" />
+            <MeshViewer
+              url={previewGlbUrl}
+              format="glb"
+              rooms3D={nav.rooms3d}
+              showRooms={nav.rooms3d.length > 0}
+            >
+              {nav.routeResult?.status === 'found' && (
+                <NavigationPath
+                  coordinates={nav.routeResult.path_3d}
+                  fromRoom3D={
+                    fromRoom3D
+                      ? { position: fromRoom3D.position, size: fromRoom3D.size }
+                      : undefined
+                  }
+                  toRoom3D={
+                    toRoom3D
+                      ? { position: toRoom3D.position, size: toRoom3D.size }
+                      : undefined
+                  }
+                  fromRoomName={fromRoom3D?.name}
+                  toRoomName={toRoom3D?.name}
+                />
+              )}
+            </MeshViewer>
           ) : (
             <div className={styles.viewerEmpty}>
               {isBuilding
@@ -58,7 +105,7 @@ export const Step9FloorPreview: React.FC<Step9FloorPreviewProps> = ({
           )}
         </div>
 
-        {/* Right panel — build/confirm + notices */}
+        {/* Right panel — build/confirm + notices + navigation */}
         <aside className={styles.panel}>
           <div className={styles.panelTitle}>СБОРКА ЭТАЖА</div>
 
@@ -129,6 +176,83 @@ export const Step9FloorPreview: React.FC<Step9FloorPreviewProps> = ({
           >
             {isConfirming ? 'Сохранение…' : 'Сохранить этаж'}
           </button>
+
+          {/* ── НАВИГАЦИЯ ─────────────────────────────────────────────── */}
+          {/* The graph is built on the previous step (Step9NavGraph); here we rely
+              on server-persisted state — rooms load on mount via loadRooms3d. */}
+          <section className={styles.navPanel}>
+            <div className={styles.panelTitle}>НАВИГАЦИЯ</div>
+
+            {nav.rooms3d.length === 0 && (
+              <div className={styles.navHint}>
+                Постройте граф навигации на предыдущем шаге
+              </div>
+            )}
+
+            {nav.rooms3d.length > 0 && (
+              <>
+                <div className={styles.infoBlock}>
+                  <div className={styles.infoRow}>
+                    <span className={styles.infoLabel}>Кабинетов</span>
+                    <span className={styles.infoValue}>
+                      {nav.rooms3d.length}
+                    </span>
+                  </div>
+                </div>
+
+                <select
+                  className={styles.navSelect}
+                  value={fromRoom}
+                  onChange={(e) => setFromRoom(e.target.value)}
+                >
+                  <option value="">— Откуда —</option>
+                  {nav.rooms3d.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name || r.id}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className={styles.navSelect}
+                  value={toRoom}
+                  onChange={(e) => setToRoom(e.target.value)}
+                >
+                  <option value="">— Куда —</option>
+                  {nav.rooms3d.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      {r.name || r.id}
+                    </option>
+                  ))}
+                </select>
+
+                <button
+                  type="button"
+                  className={styles.buildBtn}
+                  onClick={() =>
+                    floorId !== null && void nav.findRoute(floorId, fromRoom, toRoom)
+                  }
+                  disabled={
+                    floorId === null || nav.isRouting || !fromRoom || !toRoom
+                  }
+                >
+                  {nav.isRouting ? 'Ищу…' : 'Найти маршрут'}
+                </button>
+
+                {nav.routeResult?.status === 'found' &&
+                  nav.routeResult.total_distance_m !== null && (
+                    <div className={styles.infoBlock}>
+                      <div className={styles.infoRow}>
+                        <span className={styles.infoLabel}>Длина</span>
+                        <span className={styles.infoValue}>
+                          {nav.routeResult.total_distance_m.toFixed(1)} м
+                        </span>
+                      </div>
+                    </div>
+                  )}
+              </>
+            )}
+          </section>
         </aside>
       </div>
 

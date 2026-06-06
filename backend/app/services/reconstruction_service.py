@@ -228,15 +228,27 @@ class ReconstructionService:
                 ),
             )
 
-            # 12.5 Fetch transitions
+            # 12.5 Fetch transitions (optional cosmetic markers for inter-floor
+            # connectors). This is NOT essential to the floor mesh, so a failure
+            # here must never sink the core 3D build — otherwise schema drift in
+            # an auxiliary table (e.g. a missing column) would take down the whole
+            # pipeline. Degrade gracefully to "no markers" and keep building.
             transition_geoms = []
             if self._transition_repo:
-                transitions = await self._transition_repo.get_by_reconstruction(reconstruction.id)
-                for t in transitions:
-                    if t.from_reconstruction_id == reconstruction.id and t.from_geometry:
-                        transition_geoms.append(t.from_geometry)
-                    if t.to_reconstruction_id == reconstruction.id and t.to_geometry:
-                        transition_geoms.append(t.to_geometry)
+                rid = reconstruction.id
+                try:
+                    transitions = await self._transition_repo.get_by_reconstruction(rid)
+                    for t in transitions:
+                        if t.from_reconstruction_id == rid and t.from_geometry:
+                            transition_geoms.append(t.from_geometry)
+                        if t.to_reconstruction_id == rid and t.to_geometry:
+                            transition_geoms.append(t.to_geometry)
+                except Exception as exc:
+                    logger.warning(
+                        "Skipping transition markers for reconstruction %d: %s",
+                        rid,
+                        exc,
+                    )
 
             # 13. Build 3D mesh from binary mask
             mesh = build_mesh_from_mask(
@@ -265,7 +277,9 @@ class ReconstructionService:
                 e,
                 exc_info=True,
             )
-            safe_msg = "Ошибка построения модели"
+            # Surface the real cause (type + message) so failures are diagnosable
+            # instead of a generic string. Truncated to stay bounded.
+            safe_msg = f"Ошибка построения модели: {type(e).__name__}: {str(e)[:300]}"
             reconstruction = await self._repo.update_mesh(
                 reconstruction.id, None, None, status=4, error_message=safe_msg
             )

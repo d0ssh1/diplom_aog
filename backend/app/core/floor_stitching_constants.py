@@ -58,6 +58,22 @@ non-fatal warning when ``residual_rms_px / ppm_floor > RESIDUAL_WARN_M``
 evaluated when ``ppm_floor`` is a positive finite number.
 """
 
+CANVAS_TRUST_RESIDUAL_M = 3.0
+"""Max registration residual (metres) for a section to drive the canvas factor k.
+
+The memory-guard factor ``k = 1 / min(section_scale)`` upscales so the most-
+detailed section rasterises at ~native resolution. A MIS-REGISTERED section
+(points that fit no single similarity) has its least-squares scale spuriously
+shrunk toward 0; left in, it would inflate ``k`` and over-upscale the WHOLE floor
+(bloating the canvas and the nav-graph skeleton). Sections whose residual exceeds
+this metric threshold (``residual_rms_px / ppm_floor > CANVAS_TRUST_RESIDUAL_M``)
+are therefore excluded from the ``min``-scale estimate that sets ``k`` — they
+still build, they just do not drive the floor's resolution. Set well above
+``RESIDUAL_WARN_M`` (0.5 m) so a merely-loose section still counts; only badly-
+broken ones are dropped. If every section is untrusted, all are used (no worse
+than the un-guarded ``min``).
+"""
+
 DEFAULT_CONNECTOR_THICKNESS_M = 0.15
 """Default connector wall thickness when a line omits ``thickness_m``.
 
