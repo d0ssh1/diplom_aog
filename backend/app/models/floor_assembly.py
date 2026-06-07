@@ -17,6 +17,8 @@ from app.core.floor_stitching_constants import (
     MAX_CONNECTOR_POINTS,
     MAX_CONNECTORS,
     MAX_CONTROL_POINTS,
+    MAX_CUTOUT_POINTS,
+    MAX_CUTOUTS,
 )
 from app.models.floors import CropBboxModel
 
@@ -139,6 +141,54 @@ class ConnectorInput(BaseModel):
         return v
 
 
+class Cutout(BaseModel):
+    """A cutout zone — a CLOSED polygon (rectangle = 4 corners) that ERASES walls.
+
+    ``points`` is an ordered list of >= 3 master-norm ``[0, 1]`` vertices (an
+    area, not a line — that is the only shape difference from ``Connector``).
+    ``id`` is a 0-based index assigned server-side by list order (the JSON column
+    has no child PK); clients use it only to key list rows.
+    """
+
+    id: int
+    points: list[tuple[float, float]] = Field(..., min_length=3)
+
+    @field_validator("points")
+    @classmethod
+    def _coords_in_range(
+        cls, v: list[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
+        for idx, (x, y) in enumerate(v):
+            if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                raise ValueError(
+                    f"point[{idx}] coords must be in [0, 1], got [{x}, {y}]"
+                )
+        return v
+
+
+class CutoutInput(BaseModel):
+    """A cutout in a replace-all request — same as ``Cutout`` without ``id``."""
+
+    points: list[tuple[float, float]] = Field(..., min_length=3)
+
+    @field_validator("points")
+    @classmethod
+    def _coords_in_range(
+        cls, v: list[tuple[float, float]]
+    ) -> list[tuple[float, float]]:
+        if len(v) > MAX_CUTOUT_POINTS:
+            raise ValueError(
+                f"Too many points in cutout zone "
+                f"(max {MAX_CUTOUT_POINTS}), got {len(v)}"
+            )
+        for idx, (x, y) in enumerate(v):
+            if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+                raise ValueError(
+                    f"point[{idx}] coords must be in [0, 1], got [{x}, {y}]"
+                )
+        return v
+
+
 # ── Request models ──────────────────────────────────────────────────────────────
 
 
@@ -199,6 +249,21 @@ class ReplaceConnectorsRequest(BaseModel):
         if len(v) > MAX_CONNECTORS:
             raise ValueError(
                 f"Too many connectors (max {MAX_CONNECTORS}), got {len(v)}"
+            )
+        return v
+
+
+class ReplaceCutoutsRequest(BaseModel):
+    """PUT /floors/{id}/cutouts — atomic replace of all cutout zones."""
+
+    cutouts: list[CutoutInput]
+
+    @field_validator("cutouts")
+    @classmethod
+    def _capped(cls, v: list[CutoutInput]) -> list[CutoutInput]:
+        if len(v) > MAX_CUTOUTS:
+            raise ValueError(
+                f"Too many cutouts (max {MAX_CUTOUTS}), got {len(v)}"
             )
         return v
 
@@ -273,6 +338,13 @@ class ConnectorsResponse(BaseModel):
     connectors: list[Connector]
 
 
+class CutoutsResponse(BaseModel):
+    """GET/PUT /floors/{id}/cutouts response."""
+
+    floor_id: int
+    cutouts: list[Cutout]
+
+
 # ── Response: UC5 — build preview / confirm ──────────────────────────────────────
 
 
@@ -308,6 +380,7 @@ class BuildFloorPreviewResponse(BaseModel):
     excluded_sections: list[ExcludedSection]
     warnings: list[BuildWarning]
     connector_count: int
+    cutout_count: int
 
 
 class ConfirmMeshResponse(BaseModel):
@@ -379,3 +452,4 @@ class FloorAssemblyResponse(BaseModel):
     master_schema: MasterSchemaInfo
     sections: list[AssemblySection]
     connectors: list[Connector]
+    cutouts: list[Cutout] = []

@@ -29,6 +29,12 @@ MAX_CONNECTORS = 50
 MAX_CONNECTOR_POINTS = 64
 """Max vertices per connector polyline."""
 
+MAX_CUTOUTS = 50
+"""Per-floor cutout-zone cap."""
+
+MAX_CUTOUT_POINTS = 64
+"""Max vertices per cutout polygon (rectangle = 4)."""
+
 # ── Canvas / mask assembly ──────────────────────────────────────────────────────
 MAX_FLOOR_CANVAS_PX = 4000
 """Long-side cap for the assembled canvas (memory guard, master px)."""

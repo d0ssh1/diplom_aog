@@ -12,6 +12,7 @@ import pytest
 
 from app.processing.floor_assembly import (
     ConnectorRaster,
+    CutoutRaster,
     SectionWarpInput,
     assemble_floor_mask,
     compute_canvas_factor,
@@ -433,3 +434,94 @@ def test_compute_canvas_factor_clamped_by_canvas_cap():
 
 def test_compute_canvas_factor_no_sections_returns_one():
     assert compute_canvas_factor([], 500, 10.0, 4000, 3.0) == 1.0
+
+
+# --- Cutout erase pass (this feature) ----------------------------------------
+
+
+def test_assemble_cutout_erases_zone_to_zero():
+    # A fully-white section; a cutout rectangle erases its interior to 0.
+    mask = tiny_mask((10, 10), [(0, 0, 9, 9)])
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
+    cutout = CutoutRaster(
+        points_px=np.array([[2, 2], [6, 2], [6, 6], [2, 6]], dtype=np.int32)
+    )
+    result = assemble_floor_mask(
+        [section], (10, 10), [], default_wall_thickness_px=1, cutouts=[cutout]
+    )
+    assert np.all(result[3:6, 3:6] == 0), "cutout interior must be erased"
+    assert result[0, 0] == 255, "wall outside the cutout remains"
+
+
+def test_assemble_cutout_overrides_overlapping_connector():
+    # A connector wall band crossed by a cutout → the overlapped pixels are 0
+    # (the cutout is drawn LAST).
+    connector = ConnectorRaster(
+        points_px=np.array([[1, 5], [9, 5]], dtype=np.int32), thickness_px=3
+    )
+    cutout = CutoutRaster(
+        points_px=np.array([[3, 3], [7, 3], [7, 7], [3, 7]], dtype=np.int32)
+    )
+    result = assemble_floor_mask(
+        [], (10, 10), [connector], default_wall_thickness_px=3, cutouts=[cutout]
+    )
+    assert np.all(result[4:7, 4:7] == 0), "cutout erases the overlapping connector"
+    assert result[5, 1] == 255, "connector outside the cutout remains a wall"
+
+
+def test_assemble_no_cutouts_matches_walls_and_connectors():
+    # cutouts=None and cutouts=[] are byte-identical to the pre-param behaviour.
+    mask = tiny_mask((8, 8), [(1, 1, 5, 5)])
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.3, rotation_rad=0.0, tx=1.0, ty=1.0
+    )
+    connector = ConnectorRaster(
+        points_px=np.array([[1, 7], [10, 7]], dtype=np.int32), thickness_px=2
+    )
+    base = assemble_floor_mask(
+        [section], (12, 12), [connector], default_wall_thickness_px=2
+    )
+    none_cut = assemble_floor_mask(
+        [section], (12, 12), [connector], default_wall_thickness_px=2, cutouts=None
+    )
+    empty_cut = assemble_floor_mask(
+        [section], (12, 12), [connector], default_wall_thickness_px=2, cutouts=[]
+    )
+    np.testing.assert_array_equal(base, none_cut)
+    np.testing.assert_array_equal(base, empty_cut)
+
+
+def test_assemble_cutout_clipped_to_canvas():
+    # A polygon extending past the canvas fills only the in-bounds part, no error.
+    mask = tiny_mask((10, 10), [(0, 0, 9, 9)])
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
+    cutout = CutoutRaster(
+        points_px=np.array([[5, 5], [50, 5], [50, 50], [5, 50]], dtype=np.int32)
+    )
+    result = assemble_floor_mask(
+        [section], (10, 10), [], default_wall_thickness_px=1, cutouts=[cutout]
+    )
+    assert result.shape == (10, 10)
+    assert np.all(result[6:10, 6:10] == 0), "in-bounds part of the polygon erased"
+    assert result[0, 0] == 255, "outside the polygon stays a wall"
+
+
+def test_assemble_cutouts_do_not_mutate_inputs():
+    # The section mask and the cutout point array are unchanged after the call.
+    mask = tiny_mask((8, 8), [(0, 0, 7, 7)])
+    mask_copy = mask.copy()
+    section = SectionWarpInput(
+        section_id=1, mask=mask, scale=1.0, rotation_rad=0.0, tx=0.0, ty=0.0
+    )
+    points = np.array([[1, 1], [5, 1], [5, 5], [1, 5]], dtype=np.int32)
+    points_copy = points.copy()
+    cutout = CutoutRaster(points_px=points)
+    assemble_floor_mask(
+        [section], (8, 8), [], default_wall_thickness_px=1, cutouts=[cutout]
+    )
+    np.testing.assert_array_equal(mask, mask_copy)
+    np.testing.assert_array_equal(points, points_copy)

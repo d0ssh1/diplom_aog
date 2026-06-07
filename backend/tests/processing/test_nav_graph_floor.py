@@ -254,3 +254,49 @@ def test_floor_graph_empty_mask_raises_error():
     """An empty array raises ImageProcessingError."""
     with pytest.raises(ImageProcessingError):
         build_floor_graph_from_mask(np.zeros((0, 0), dtype=np.uint8), [], [], 0, 0)
+
+
+def make_two_section_mask(w: int = 400, h: int = 200) -> np.ndarray:
+    """A bordered canvas split by a vertical divider → two enclosed sections."""
+    mask = np.zeros((h, w), dtype=np.uint8)
+    mask[:5, :] = 255
+    mask[-5:, :] = 255
+    mask[:, :5] = 255
+    mask[:, -5:] = 255
+    mask[:, 195:205] = 255
+    return mask
+
+
+def test_floor_graph_two_sections_each_have_skeleton():
+    """R1: BOTH sections get a corridor skeleton (was: only the biggest)."""
+    graph = build_floor_graph_from_mask(make_two_section_mask(), [], [], 400, 200)
+    corridor_pos = [
+        d["pos"] for _, d in graph.nodes(data=True)
+        if d.get("type") == "corridor_node"
+    ]
+    assert any(pos[0] < 195 for pos in corridor_pos), "left section skeleton"
+    assert any(pos[0] > 205 for pos in corridor_pos), "right section skeleton"
+
+
+def test_floor_graph_threads_wall_mask_and_max_snap(monkeypatch):
+    """build_floor_graph_from_mask passes wall_mask + bounds to integrate_semantics."""
+    import app.processing.nav_graph as ng
+
+    captured: dict = {}
+
+    def spy(G, rooms, doors, w, h, wall_mask=None,
+            max_snap_dist_px=float("inf"), skip_px=0.0):
+        captured["wall_mask"] = wall_mask
+        captured["max_snap_dist_px"] = max_snap_dist_px
+        captured["skip_px"] = skip_px
+        return G
+
+    monkeypatch.setattr(ng, "integrate_semantics", spy)
+
+    mask = make_l_mask()
+    build_floor_graph_from_mask(mask, [], [], 200, 200)
+
+    assert captured["wall_mask"] is not None
+    assert captured["wall_mask"].shape == mask.shape
+    assert captured["max_snap_dist_px"] != float("inf")
+    assert captured["skip_px"] > 0.0

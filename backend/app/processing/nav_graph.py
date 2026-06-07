@@ -91,55 +91,67 @@ def extract_corridor_mask(
     border_labels.update(int(v) for v in labels[:, w_mask - 1].flat)
     border_labels.discard(0)
 
+    # Экстерьер = самый большой компонент, КАСАЮЩИЙСЯ границы изображения (плюс
+    # любой граничный компонент крупнее max_corridor_area — слипшийся/протёкший
+    # блоб). ВНУТРЕННИЕ (не-граничные) компоненты сохраняются при ЛЮБОМ размере:
+    # одна секция может законно занимать >50% канвы. R1: сохраняем КАЖДЫЙ
+    # внутренний компонент (а не только самый большой) → у каждой физически
+    # отдельной секции появляется свой скелет.
     max_corridor_area = h_mask * w_mask * 0.5
-    biggest_label = -1
-    biggest_area = 0
 
+    exterior_label = -1
+    exterior_area = 0
+    for label_id in border_labels:
+        area = int(stats[label_id, cv2.CC_STAT_AREA])
+        if area > exterior_area:
+            exterior_area = area
+            exterior_label = label_id
+
+    exterior_labels: set[int] = set()
+    if exterior_label != -1:
+        exterior_labels.add(exterior_label)
+    for label_id in border_labels:
+        if int(stats[label_id, cv2.CC_STAT_AREA]) > max_corridor_area:
+            exterior_labels.add(label_id)
+
+    # Порог шума — мелкие пятна отбрасываем.
+    min_corridor_area_px = max(1.0, corridor_threshold ** 2)
+
+    # 8. Грубая маска коридора — объединение ВСЕХ внутренних (не-граничных)
+    # компонентов выше порога шума.
+    corridor_rough = np.zeros_like(wall_mask)
+    kept_components = 0
     for label_id in range(1, num_labels):
         if label_id in border_labels:
             continue
-        area = int(stats[label_id, cv2.CC_STAT_AREA])
-        if area > max_corridor_area:
+        if int(stats[label_id, cv2.CC_STAT_AREA]) < min_corridor_area_px:
             continue
-        if area > biggest_area:
-            biggest_area = area
-            biggest_label = label_id
+        corridor_rough[labels == label_id] = 255
+        kept_components += 1
 
-    # Фоллбэк: все компоненты касаются границ — берём самый большой
-    # НЕ-экстерьерный border-компонент
-    if biggest_label == -1:
+    # Фоллбэк: внутренних компонентов нет (всё касается границы) — сохраняем ВСЕ
+    # не-экстерьерные граничные компоненты (а не только самый большой, как было).
+    if kept_components == 0:
         logger.warning(
-            "extract_corridor_mask: all components touch border, using biggest non-exterior"
+            "extract_corridor_mask: no interior components, using non-exterior border components"
         )
-        exterior_label = -1
-        exterior_area = 0
-        for label_id in range(1, num_labels):
-            if label_id in border_labels:
-                area = int(stats[label_id, cv2.CC_STAT_AREA])
-                if area > exterior_area:
-                    exterior_area = area
-                    exterior_label = label_id
-
-        for label_id in range(1, num_labels):
-            if label_id == exterior_label:
+        for label_id in border_labels:
+            if label_id in exterior_labels:
                 continue
-            area = int(stats[label_id, cv2.CC_STAT_AREA])
-            if area > biggest_area:
-                biggest_area = area
-                biggest_label = label_id
+            if int(stats[label_id, cv2.CC_STAT_AREA]) < min_corridor_area_px:
+                continue
+            corridor_rough[labels == label_id] = 255
+            kept_components += 1
 
-        # Последний resort — взять экстерьер
-        if biggest_label == -1:
-            biggest_label = exterior_label
-            biggest_area = exterior_area
+    # Последний resort: одна секция, целиком на границе (нет L/R стен) — берём
+    # сам экстерьер, иначе одно-секционные планы остались бы без коридора.
+    if kept_components == 0 and exterior_label != -1:
+        corridor_rough[labels == exterior_label] = 255
+        kept_components += 1
 
-    if biggest_label == -1:
+    if kept_components == 0:
         logger.warning("extract_corridor_mask: no free space found")
         return np.zeros_like(wall_mask)
-
-    # 8. Грубая маска коридора
-    corridor_rough = np.zeros_like(wall_mask)
-    corridor_rough[labels == biggest_label] = 255
 
     # 9. Расширяем обратно → пересекаем с оригиналом → точные границы
     dilate_px = max(1, min(int(wall_thickness_px) if wall_thickness_px > 0 else 1, _MAX_DILATE_PX))
@@ -162,11 +174,11 @@ def extract_corridor_mask(
     # 11. Логирование
     logger.info(
         "extract_corridor_mask: %dx%d, threshold=%.1f (ratio=%.1f * %.1fpx), "
-        "components=%d, biggest=%.0f%%, manual_sub=%d, %.1fms",
+        "components=%d, kept=%d, manual_sub=%d, %.1fms",
         mask_width, mask_height,
         corridor_threshold, corridor_ratio, wall_thickness_px,
         num_labels - 1,
-        biggest_area / max(1, np.sum(free_space > 0)) * 100,
+        kept_components,
         manual_subtracted,
         (time.perf_counter() - t0) * 1000,
     )
@@ -266,9 +278,28 @@ def integrate_semantics(
     doors: list[dict],
     mask_width: int,
     mask_height: int,
+    wall_mask: np.ndarray | None = None,
+    max_snap_dist_px: float = float("inf"),
+    skip_px: float = 0.0,
 ) -> nx.Graph:
     """
     Интегрирует семантические объекты (комнаты, двери) в топологический граф коридоров.
+
+    R5 — ограниченный snap двери к коридору. Кандидат на привязку принимается,
+    только если он (а) ближе ``max_snap_dist_px`` и (б) виден из двери по прямой
+    (seeded line-of-sight через ``_los_clear``). Если ни один кандидат не проходит
+    оба условия, дверь остаётся узлом без ребра к коридору (честный «нет пути»
+    вместо привязки через стену к чужой секции).
+
+    Args:
+        wall_mask: ассемблированная маска этажа (uint8, стены=255) для LOS-проверки.
+            ``None`` (по умолчанию) отключает оба ограничения → прежнее
+            безусловное поведение (используется одиночным ``nav_service``).
+        max_snap_dist_px: максимальная дистанция дверь→коридор. ``inf`` = без
+            ограничения (прежнее поведение).
+        skip_px: на сколько пикселей «отступить» от двери вдоль луча перед
+            LOS-проверкой, чтобы собственная стена дверного проёма не считалась
+            препятствием (см. ``_los_clear``).
     """
     t0 = time.perf_counter()
 
@@ -346,6 +377,17 @@ def integrate_semantics(
             proj_dist = geom_line.project(door_pt)
             snap_pt = geom_line.interpolate(proj_dist)
             dist_to_corridor = door_pt.distance(snap_pt)
+
+            # R5 (а): слишком далеко — это снимает «прыжки» через открытый зазор.
+            if dist_to_corridor > max_snap_dist_px:
+                continue
+            # R5 (б): между дверью и коридором стена — отбрасываем (защита от
+            # привязки к скелету ЧУЖОЙ секции). Луч засевается за собственной
+            # стеной дверного проёма (см. _los_clear, 🔴-1).
+            if wall_mask is not None and not _los_clear(
+                (dmx, dmy), (snap_pt.x, snap_pt.y), wall_mask, skip_px
+            ):
+                continue
 
             if dist_to_corridor < best_dist:
                 best_dist = dist_to_corridor
@@ -560,6 +602,30 @@ def _line_of_sight(p1: tuple, p2: tuple, wall_mask: np.ndarray) -> bool:
             y1 += sy
 
     return True
+
+
+def _los_clear(
+    door_xy: tuple[float, float],
+    snap_xy: tuple[float, float],
+    wall_mask: np.ndarray,
+    skip_px: float,
+) -> bool:
+    """LOS от двери до точки привязки коридора, засеянная на skip_px от двери.
+
+    Центр двери лежит НА (часто запечатанном бинаризацией) дверном проёме —
+    т.е. на пикселе-стене, поэтому «сырой» ``_line_of_sight`` упал бы на самом
+    первом пикселе. Сдвигаем старт луча на ``skip_px`` в сторону точки привязки,
+    за пределы собственной стены проёма, и проверяем оставшуюся часть линии
+    (🔴-1: без этого ни одна дверь не привязалась бы → граф без рёбер).
+    """
+    dx = snap_xy[0] - door_xy[0]
+    dy = snap_xy[1] - door_xy[1]
+    dist = math.hypot(dx, dy)
+    if dist <= skip_px:           # точка привязки внутри «засеянной» зоны → рядом
+        return True
+    ux, uy = dx / dist, dy / dist
+    seed = (door_xy[0] + ux * skip_px, door_xy[1] + uy * skip_px)
+    return _line_of_sight(seed, snap_xy, wall_mask)
 
 
 def simplify_path(

@@ -49,6 +49,18 @@ export interface ConnectorInput {
   connects?: number[] | null;
 }
 
+// A cutout zone — a CLOSED polygon (rectangle = 4 corners) that ERASES walls for
+// BOTH the nav graph and the 3D mesh. >= 3 points; id is a 0-based list index.
+export interface Cutout {
+  id: number;
+  points: [number, number][];
+}
+
+// A cutout in a replace-all request — Cutout without the server-assigned id.
+export interface CutoutInput {
+  points: [number, number][];
+}
+
 // === UC1 / UC2: control points ===
 
 export interface ControlPointsResponse {
@@ -91,6 +103,13 @@ export interface ConnectorsResponse {
   connectors: Connector[];
 }
 
+// === UC4b: cutouts ===
+
+export interface CutoutsResponse {
+  floor_id: number;
+  cutouts: Cutout[];
+}
+
 // === UC5: build preview / confirm ===
 
 export interface ExcludedSection {
@@ -115,6 +134,7 @@ export interface BuildFloorPreviewResponse {
   excluded_sections: ExcludedSection[];
   warnings: BuildWarning[];
   connector_count: number;
+  cutout_count: number;
 }
 
 export interface ConfirmMeshResponse {
@@ -162,4 +182,5 @@ export interface FloorAssemblyResponse {
   master_schema: MasterSchemaInfo;
   sections: AssemblySection[];
   connectors: Connector[];
+  cutouts: Cutout[];
 }

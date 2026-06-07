@@ -47,6 +47,7 @@ from app.db.repositories.floor_repo import FloorRepository
 from app.db.repositories.section_repo import SectionRepository
 from app.processing.floor_assembly import (
     ConnectorRaster,
+    CutoutRaster,
     SectionWarpInput,
     assemble_floor_mask,
     compute_canvas_factor,
@@ -256,11 +257,25 @@ class FloorNavService:
                 ConnectorRaster(points_px=points_px, thickness_px=thickness_px)
             )
 
+        # Cutouts → CutoutRaster. SAME k-scaled canvas_w/canvas_h as build_floor_mesh
+        # (ADR-9) → a cutout erases identical pixels in the nav mask and the 3D mesh.
+        cutouts_raster: list[CutoutRaster] = []
+        for raw in (floor.nav_cutouts or []):
+            pts = raw.get("points", [])
+            if len(pts) < 3:
+                continue
+            points_px = np.array(
+                [[round(px * canvas_w), round(py * canvas_h)] for px, py in pts],
+                dtype=np.int32,
+            )
+            cutouts_raster.append(CutoutRaster(points_px=points_px))
+
         assembled = assemble_floor_mask(
             warp_inputs,
             (canvas_w, canvas_h),
             connectors_raster,
             default_wall_thickness_px=default_thickness_px,
+            cutouts=cutouts_raster,
         )
 
         floor_rooms = transform_rooms_to_floor_canvas(

@@ -222,6 +222,33 @@
   flex-shrink: 0;
 }
 
+.cutoutDot {
+  width: 12px;
+  height: 12px;
+  background: rgba(34, 197, 94, 0.5);
+  border: 1px solid rgba(22, 163, 74, 0.9);
+  flex-shrink: 0;
+}
+
+.toggleRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 1rem 0.75rem;
+  font-size: 0.75rem;
+  color: #475569;
+  cursor: pointer;
+}
+
+.toggleRow input {
+  cursor: pointer;
+}
+
+.toggleRow.disabled {
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
 .connName {
   flex: 1;
 }

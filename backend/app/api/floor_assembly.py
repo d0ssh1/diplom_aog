@@ -32,8 +32,10 @@ from app.models.floor_assembly import (
     ConfirmMeshRequest,
     ConfirmMeshResponse,
     ConnectorsResponse,
+    CutoutsResponse,
     FloorAssemblyResponse,
     ReplaceConnectorsRequest,
+    ReplaceCutoutsRequest,
     SaveMasterControlPointsRequest,
     SectionControlPointsResponse,
     SolveTransformsResponse,
@@ -150,6 +152,39 @@ async def put_connectors(
     """
     with _map_domain_errors():
         return await svc.replace_connectors(floor_id, req.connectors)
+
+
+@router.get(
+    "/floors/{floor_id}/cutouts",
+    response_model=CutoutsResponse,
+)
+async def get_cutouts(
+    floor_id: int,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: FloorAssemblyService = Depends(get_floor_assembly_service),
+) -> CutoutsResponse:
+    """List a floor's cutout zones. 404 floor missing."""
+    with _map_domain_errors():
+        return await svc.get_cutouts(floor_id)
+
+
+@router.put(
+    "/floors/{floor_id}/cutouts",
+    response_model=CutoutsResponse,
+)
+async def put_cutouts(
+    floor_id: int,
+    req: ReplaceCutoutsRequest,
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    svc: FloorAssemblyService = Depends(get_floor_assembly_service),
+) -> CutoutsResponse:
+    """Atomically replace ALL cutout zones for a floor.
+
+    404 floor missing · 422 invalid payload (caps/coords enforced by the request
+    model; each zone needs >= 3 points). An empty list clears the floor.
+    """
+    with _map_domain_errors():
+        return await svc.replace_cutouts(floor_id, req.cutouts)
 
 
 @router.post(

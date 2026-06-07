@@ -34,7 +34,11 @@ from app.core.floor_stitching_constants import (
     DEFAULT_CONNECTOR_THICKNESS_M,
     MAX_FLOOR_CANVAS_PX,
 )
-from app.models.floor_assembly import ConnectorInput, MasterControlPoint
+from app.models.floor_assembly import (
+    ConnectorInput,
+    CutoutInput,
+    MasterControlPoint,
+)
 from app.processing.registration import SimilarityResult
 from app.services.floor_assembly_service import (
     FloorAssemblyService,
@@ -101,6 +105,7 @@ def _floor(
     mesh_file_glb: str | None = None,
     schema_image_id: str | None = "schema-1",
     schema_crop_bbox=None,
+    nav_cutouts=None,
 ):
     return SimpleNamespace(
         id=fid,
@@ -109,6 +114,7 @@ def _floor(
         schema_image_id=schema_image_id,
         schema_crop_bbox=schema_crop_bbox,
         schema_image=SimpleNamespace(url="/api/v1/uploads/plans/schema-1.png"),
+        nav_cutouts=nav_cutouts,
     )
 
 
@@ -542,6 +548,81 @@ def test_replace_connectors_line_one_point_returns_422():
         ConnectorInput(points=[(0.1, 0.1)])
 
 
+# ── UC4b: cutouts (floors.nav_cutouts JSON column) ────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_returns_saved():
+    """The JSON column is mapped to indexed Cutout models."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor(
+        nav_cutouts=[
+            {"points": [[0.4, 0.5], [0.55, 0.5], [0.55, 0.62], [0.4, 0.62]]},
+            {"points": [[0.1, 0.1], [0.2, 0.1], [0.2, 0.2]]},
+        ]
+    )
+
+    resp = await svc.get_cutouts(1)
+
+    assert resp.floor_id == 1
+    assert [c.id for c in resp.cutouts] == [0, 1]
+    assert resp.cutouts[0].points[0] == (0.4, 0.5)
+
+
+@pytest.mark.asyncio
+async def test_cutouts_missing_floor_raises():
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = None
+    with pytest.raises(FloorNotFoundError):
+        await svc.get_cutouts(999)
+
+
+@pytest.mark.asyncio
+async def test_replace_cutouts_valid_persists():
+    """replace_cutouts writes the whole list to the nav_cutouts column once."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor()
+    saved = [{"points": [[0.4, 0.5], [0.55, 0.5], [0.55, 0.62], [0.4, 0.62]]}]
+    svc._floor_repo.update_nav_cutouts.return_value = _floor(nav_cutouts=saved)
+
+    items = [
+        CutoutInput(points=[(0.4, 0.5), (0.55, 0.5), (0.55, 0.62), (0.4, 0.62)])
+    ]
+    resp = await svc.replace_cutouts(1, items)
+
+    svc._floor_repo.update_nav_cutouts.assert_awaited_once()
+    floor_arg, payload_arg = svc._floor_repo.update_nav_cutouts.await_args.args
+    assert floor_arg == 1
+    assert payload_arg == [
+        {"points": [[0.4, 0.5], [0.55, 0.5], [0.55, 0.62], [0.4, 0.62]]}
+    ]
+    assert resp.cutouts[0].id == 0
+
+
+@pytest.mark.asyncio
+async def test_replace_cutouts_empty_clears():
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor()
+    svc._floor_repo.update_nav_cutouts.return_value = _floor(nav_cutouts=[])
+
+    resp = await svc.replace_cutouts(1, [])
+
+    floor_arg, payload_arg = svc._floor_repo.update_nav_cutouts.await_args.args
+    assert payload_arg == []
+    assert resp.cutouts == []
+
+
+@pytest.mark.asyncio
+async def test_replace_cutouts_missing_floor_raises():
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = None
+    with pytest.raises(FloorNotFoundError):
+        await svc.replace_cutouts(
+            999, [CutoutInput(points=[(0.1, 0.1), (0.2, 0.1), (0.2, 0.2)])]
+        )
+    svc._floor_repo.update_nav_cutouts.assert_not_called()
+
+
 # ── UC5: build (preview) ─────────────────────────────────────────────────────────
 
 
@@ -584,6 +665,26 @@ async def test_build_includes_only_ok_sections(monkeypatch):
 
     assert resp.included_sections == [10]
     assert 20 not in resp.included_sections
+
+
+@pytest.mark.asyncio
+async def test_build_mesh_passes_cutouts_to_assemble(monkeypatch):
+    """floors.nav_cutouts → CutoutRaster list handed to assemble_floor_mask."""
+    svc = _make_service()
+    svc._floor_repo.get_by_id.return_value = _floor(
+        nav_cutouts=[{"points": [[0.4, 0.5], [0.6, 0.5], [0.6, 0.7], [0.4, 0.7]]}]
+    )
+    section = _section(sid=10, transform={"scale": 1.0, "tx": 0.0, "ty": 0.0})
+    svc._section_repo.list_by_floor.return_value = [section]
+    svc._connector_repo.list_by_floor.return_value = []
+    svc._load_section_mask_for_build = MagicMock(return_value=_mask(50, 50))
+    cap_assemble, _ = _patch_build_seams(svc, monkeypatch)
+
+    resp = await svc.build_floor_mesh(1)
+
+    assert "cutouts" in cap_assemble.kwargs
+    assert len(cap_assemble.kwargs["cutouts"]) == 1
+    assert resp.cutout_count == 1
 
 
 @pytest.mark.asyncio

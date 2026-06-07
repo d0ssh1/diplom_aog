@@ -174,3 +174,105 @@ async def test_nav_canvas_excludes_misregistered_section(tmp_path, monkeypatch):
         round(master_w * expected_k),
         round(master_h * expected_k),
     ]
+
+
+@pytest.mark.asyncio
+async def test_mesh_and_nav_apply_same_cutouts(tmp_path, monkeypatch):
+    """A cutout de-normalises to BYTE-IDENTICAL pixels in both builds (ADR-9).
+
+    Both services compute the same k / canvas (pinned above) and use the same
+    ``round(px*canvas_w), round(py*canvas_h)`` de-norm, so a saved cutout reaches
+    3D and nav identically — the "one edit, both outputs" guarantee.
+    """
+    import app.services.floor_assembly_service as fas
+    import app.services.floor_nav_service as fns
+    from app.services.floor_assembly_service import FloorAssemblyService
+
+    master_w, master_h = 200, 150
+    ppm, min_scale = 50.0, 0.5
+    cutout_json = [{"points": [[0.4, 0.5], [0.6, 0.5], [0.6, 0.7], [0.4, 0.7]]}]
+
+    mask = np.zeros((master_h, master_w), dtype=np.uint8)
+    mask[0:4, :] = 255
+    mask[-4:, :] = 255
+    mask[:, 0:4] = 255
+    mask[:, -4:] = 255
+
+    def _floor() -> MagicMock:
+        f = MagicMock()
+        f.id = 1
+        f.pixels_per_meter = ppm
+        f.schema_image_id = "schema-1"
+        f.schema_crop_bbox = None
+        f.nav_cutouts = cutout_json
+        return f
+
+    def _section() -> MagicMock:
+        s = MagicMock()
+        s.id = 10
+        s.transform = {
+            "scale": min_scale, "rotation_rad": 0.0, "tx": 0.0, "ty": 0.0,
+        }
+        recon = MagicMock()
+        recon.id = 100
+        recon.mask_file_id = "mask-100"
+        recon.vectorization_data = json.dumps({"rooms": []})
+        s.reconstruction = recon
+        return s
+
+    captured: dict = {}
+
+    # ── nav path ──
+    nav_floor_repo = AsyncMock()
+    nav_floor_repo.get_by_id.return_value = _floor()
+    nav_section_repo = AsyncMock()
+    nav_section_repo.list_by_floor.return_value = [_section()]
+    nav_connector_repo = AsyncMock()
+    nav_connector_repo.list_by_floor.return_value = []
+    nav_storage = MagicMock()
+    nav_storage.find_file.return_value = "/fake/path.png"
+    nav = FloorNavService(
+        floor_repo=nav_floor_repo, section_repo=nav_section_repo,
+        connector_repo=nav_connector_repo, storage=nav_storage,
+        upload_dir=str(tmp_path),
+    )
+    monkeypatch.setattr(
+        "app.services.floor_nav_service.cv2.imread", lambda *a, **k: mask
+    )
+    nav_orig = fns.assemble_floor_mask
+
+    def nav_spy(*args, **kwargs):
+        captured["nav"] = kwargs.get("cutouts")
+        return nav_orig(*args, **kwargs)
+
+    monkeypatch.setattr(fns, "assemble_floor_mask", nav_spy)
+    await nav.build_floor_nav_graph(1)
+
+    # ── mesh path (build + storage seams patched — no trimesh / IO) ──
+    mesh = FloorAssemblyService(
+        floor_repo=AsyncMock(), section_repo=AsyncMock(),
+        reconstruction_repo=AsyncMock(), connector_repo=AsyncMock(),
+        storage=AsyncMock(),
+    )
+    mesh._floor_repo.get_by_id.return_value = _floor()
+    mesh._section_repo.list_by_floor.return_value = [_section()]
+    mesh._connector_repo.list_by_floor.return_value = []
+    mesh._master_pixel_dims = AsyncMock(return_value=(master_w, master_h))
+    mesh._load_section_mask_for_build = MagicMock(return_value=mask)
+    mesh._storage.save_floor_preview_mesh.return_value = ("id", "/url.glb")
+    monkeypatch.setattr(fas, "build_mesh_from_mask", lambda *a, **k: object())
+    mesh_orig = fas.assemble_floor_mask
+
+    def mesh_spy(*args, **kwargs):
+        captured["mesh"] = kwargs.get("cutouts")
+        return mesh_orig(*args, **kwargs)
+
+    monkeypatch.setattr(fas, "assemble_floor_mask", mesh_spy)
+    await mesh.build_floor_mesh(1)
+
+    # ── both rasterise the cutout to the SAME master pixels ──
+    assert captured["nav"] is not None and captured["mesh"] is not None
+    assert len(captured["nav"]) == 1 and len(captured["mesh"]) == 1
+    np.testing.assert_array_equal(
+        captured["nav"][0].points_px, captured["mesh"][0].points_px
+    )

@@ -23,6 +23,8 @@ from app.models.floor_assembly import (
     ConfirmMeshResponse,
     Connector,
     ConnectorsResponse,
+    Cutout,
+    CutoutsResponse,
     ExcludedSection,
     FloorAssemblyResponse,
     MasterControlPoint,
@@ -39,6 +41,8 @@ def _mock_svc() -> MagicMock:
     svc.solve_transforms = AsyncMock()
     svc.get_connectors = AsyncMock()
     svc.replace_connectors = AsyncMock()
+    svc.get_cutouts = AsyncMock()
+    svc.replace_cutouts = AsyncMock()
     svc.build_floor_mesh = AsyncMock()
     svc.confirm_floor_mesh = AsyncMock()
     svc.get_assembly = AsyncMock()
@@ -218,6 +222,136 @@ async def test_connectors_line_too_few_points_returns_422(client, auth_headers):
         _clear()
 
 
+# ── UC4b: cutouts ────────────────────────────────────────────────────────────────
+# NOTE: the design contract labels validation failures "400", but FastAPI returns
+# 422 for Pydantic request-body validation (same as the connector slice above).
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_200(client, auth_headers):
+    svc = _mock_svc()
+    svc.get_cutouts.return_value = CutoutsResponse(
+        floor_id=1,
+        cutouts=[
+            Cutout(id=0, points=[(0.4, 0.5), (0.55, 0.5), (0.55, 0.62), (0.4, 0.62)])
+        ],
+    )
+    _use(svc)
+    try:
+        resp = await client.get("/api/v1/floors/1/cutouts", headers=auth_headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["floor_id"] == 1
+        assert len(data["cutouts"]) == 1
+        assert data["cutouts"][0]["id"] == 0
+        assert data["cutouts"][0]["points"][0] == [0.4, 0.5]
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_get_cutouts_floor_not_found_404(client, auth_headers):
+    svc = _mock_svc()
+    svc.get_cutouts.side_effect = FloorNotFoundError(99)
+    _use(svc)
+    try:
+        resp = await client.get("/api/v1/floors/99/cutouts", headers=auth_headers)
+        assert resp.status_code == 404
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts_valid_200(client, auth_headers):
+    svc = _mock_svc()
+    svc.replace_cutouts.return_value = CutoutsResponse(
+        floor_id=1,
+        cutouts=[
+            Cutout(id=0, points=[(0.4, 0.5), (0.55, 0.5), (0.55, 0.62), (0.4, 0.62)])
+        ],
+    )
+    _use(svc)
+    try:
+        resp = await client.put(
+            "/api/v1/floors/1/cutouts",
+            json={"cutouts": [
+                {"points": [[0.4, 0.5], [0.55, 0.5], [0.55, 0.62], [0.4, 0.62]]}
+            ]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["cutouts"][0]["id"] == 0
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts_empty_clears_200(client, auth_headers):
+    svc = _mock_svc()
+    svc.replace_cutouts.return_value = CutoutsResponse(floor_id=1, cutouts=[])
+    _use(svc)
+    try:
+        resp = await client.put(
+            "/api/v1/floors/1/cutouts",
+            json={"cutouts": []},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["cutouts"] == []
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts_coord_out_of_range_422(client, auth_headers):
+    """A coord outside [0,1] is rejected by the request model (422)."""
+    svc = _mock_svc()
+    _use(svc)
+    try:
+        resp = await client.put(
+            "/api/v1/floors/1/cutouts",
+            json={"cutouts": [{"points": [[0.4, 0.5], [1.4, 0.5], [0.55, 0.62]]}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        svc.replace_cutouts.assert_not_called()
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts_too_few_points_422(client, auth_headers):
+    """A 2-vertex cutout (needs >= 3 for an area) is rejected by the model (422)."""
+    svc = _mock_svc()
+    _use(svc)
+    try:
+        resp = await client.put(
+            "/api/v1/floors/1/cutouts",
+            json={"cutouts": [{"points": [[0.4, 0.5], [0.55, 0.5]]}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 422
+        svc.replace_cutouts.assert_not_called()
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
+async def test_put_cutouts_floor_not_found_404(client, auth_headers):
+    svc = _mock_svc()
+    svc.replace_cutouts.side_effect = FloorNotFoundError(99)
+    _use(svc)
+    try:
+        resp = await client.put(
+            "/api/v1/floors/99/cutouts",
+            json={"cutouts": [{"points": [[0.4, 0.5], [0.55, 0.5], [0.55, 0.62]]}]},
+            headers=auth_headers,
+        )
+        assert resp.status_code == 404
+    finally:
+        _clear()
+
+
 # ── UC5: build / confirm ─────────────────────────────────────────────────────────
 
 
@@ -236,6 +370,7 @@ async def test_build_mesh_happy_pins_excluded_reason(client, auth_headers):
         excluded_sections=[ExcludedSection(section_id=20, reason="mask_missing")],
         warnings=[BuildWarning(section_id=10, code="low_detail", message="low res")],
         connector_count=2,
+        cutout_count=1,
     )
     _use(svc)
     try:
@@ -247,6 +382,7 @@ async def test_build_mesh_happy_pins_excluded_reason(client, auth_headers):
         assert data["excluded_sections"][0]["reason"] == "mask_missing"
         assert data["warnings"][0]["code"] == "low_detail"
         assert data["connector_count"] == 2
+        assert data["cutout_count"] == 1
     finally:
         _clear()
 

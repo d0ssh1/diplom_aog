@@ -303,11 +303,17 @@ export const FloorEditorPage: React.FC = () => {
             pixelsPerMeter={assembly.pixelsPerMeter}
             onChangeDrafts={assembly.setConnectorDrafts}
             onSave={assembly.replaceConnectors}
+            cutoutDrafts={assembly.cutoutDrafts}
+            onChangeCutouts={assembly.setCutoutDrafts}
+            sections={assembly.sections}
+            solveResult={assembly.solveResult}
             onBack={wizard.prevStep}
             onNext={async () => {
-              // Persist drawn connectors before advancing (commit-on-Далее, like
-              // crop/walls) so the build on step 9 actually includes them.
+              // Persist drawn connectors AND cutout zones before advancing
+              // (commit-on-Далее, like crop/walls) so the build on step 9
+              // includes both.
               await assembly.replaceConnectors();
+              await assembly.replaceCutouts();
               wizard.nextStep();
             }}
           />

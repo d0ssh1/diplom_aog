@@ -2,9 +2,10 @@
 
 Warps each section wall mask by its solved uniform similarity
 ``(scale, rotation_rad, tx, ty)``, OR-composites the warped masks into the
-master-pixel canvas, and rasterises the floor connectors as OPEN-polyline wall
-bands. Returns a binary ``{0, 255}`` mask ready for the unchanged
-``build_mesh_from_mask`` (design pipeline spec §5.1).
+master-pixel canvas, rasterises the floor connectors as OPEN-polyline wall
+bands, and finally ERASES cutout zones (fill ``0``) so they become passable for
+nav AND un-extruded in 3D. Returns a binary ``{0, 255}`` mask ready for the
+unchanged ``build_mesh_from_mask`` (design pipeline spec §5.1).
 
 NOTE: ``processing/`` is the PURE layer. This module imports ONLY ``cv2``,
 ``numpy`` and ``dataclasses`` — no core config, no DB/IO/Pydantic/ORM, no service.
@@ -68,20 +69,42 @@ class ConnectorRaster:
     thickness_px: int
 
 
+@dataclass(frozen=True)
+class CutoutRaster:
+    """One cutout zone as a CLOSED polygon in master-pixel coordinates.
+
+    A cutout ERASES walls: its interior is filled with ``0`` (free) so the zone
+    becomes passable for the nav graph AND un-extruded in the 3D mesh. It is the
+    subtractive mirror of ``ConnectorRaster`` (which adds wall bands).
+
+    Attributes:
+        points_px: ``(M, 2)`` int32 master-pixel vertices, ``M >= 3``. The polygon
+            is FILLED (``cv2.fillPoly``), not stroked — the whole interior is
+            erased. Out-of-canvas vertices are safe (``fillPoly`` clips).
+    """
+
+    points_px: np.ndarray
+
+
 def assemble_floor_mask(
     sections: list[SectionWarpInput],
     canvas_size: tuple[int, int],
     connectors: list[ConnectorRaster],
     default_wall_thickness_px: int,
+    cutouts: list[CutoutRaster] | None = None,
 ) -> np.ndarray:
-    """Warp + OR-composite section masks and rasterise connectors into one mask.
+    """Warp + OR-composite section masks, rasterise connectors, erase cutouts.
 
     Pure assembly per pipeline spec §5.1: each section mask is warped by its
     ``(scale, rotation_rad, tx, ty)`` into the master-pixel canvas with
     ``INTER_NEAREST`` (keeps the result strictly binary) and ``borderValue=0``
     (out-of-canvas pixels contribute nothing); the warped masks are unioned with
     ``cv2.max`` so seam overlaps stay ``255`` (never sum to ``510``); connectors
-    are drawn as OPEN polyline wall bands (no fill, no closing segment).
+    are drawn as OPEN polyline wall bands (no fill, no closing segment); finally
+    each cutout zone is FILLED with ``0`` (free), drawn LAST so it erases section
+    walls AND any overlapping connector inside its polygon. Because BOTH the 3D
+    mesh build and the nav build call this one function, a saved cutout reaches
+    both outputs from a single edit.
 
     Args:
         sections: section masks plus their solved transforms. Input masks are
@@ -93,6 +116,9 @@ def assemble_floor_mask(
         default_wall_thickness_px: fallback wall-band thickness (master pixels)
             used when a connector's own ``thickness_px`` is falsy; expected
             ``>= 1``.
+        cutouts: closed-polygon zones to erase (fill with ``0``) AFTER walls and
+            connectors. ``None``/empty leaves the mask exactly as before this
+            param existed (defaulted so existing callers stay valid).
 
     Returns:
         ``(Hm, Wm)`` uint8 binary mask with values strictly in ``{0, 255}``.
@@ -102,6 +128,7 @@ def assemble_floor_mask(
         not this function's: the pure function trusts that section masks are
         already ``{0, 255}``.
     """
+    cutouts = cutouts or []
     # Step 1 — allocate the canvas. canvas_size is (Wm, Hm) but a numpy array is
     # (rows, cols) = (Hm, Wm); mixing these would transpose the whole floor.
     width_m, height_m = canvas_size
@@ -142,7 +169,14 @@ def assemble_floor_mask(
             thickness=max(1, thickness),
         )
 
-    # Step 4 — return the assembled binary canvas.
+    # Step 4 — erase cutout zones (free space). Drawn LAST so a cutout wins over
+    # section walls AND any overlapping connector inside its polygon (ADR-2:
+    # "definitely a passage"). fillPoly clips out-of-canvas vertices; the canvas
+    # stays strictly binary because color=0 cannot introduce other values.
+    for cutout in cutouts:
+        cv2.fillPoly(canvas, [cutout.points_px], color=0)
+
+    # Step 5 — return the assembled binary canvas.
     return canvas
 
 

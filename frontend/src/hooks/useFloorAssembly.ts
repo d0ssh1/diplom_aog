@@ -23,6 +23,8 @@ import type {
   Connector,
   ConnectorInput,
   ControlPoint,
+  Cutout,
+  CutoutInput,
   FloorAssemblyResponse,
   MasterControlPoint,
   SolveTransformsResponse,
@@ -35,6 +37,13 @@ export interface ConnectorDraft {
   points: [number, number][];
   /** Wall thickness in real metres — applied at build as thickness_m * ppm * k. */
   thickness_m: number;
+}
+
+/** A cutout zone being drawn/edited on the master canvas (local draft). */
+export interface CutoutDraft {
+  /** Server id (list index) when the draft originated from a saved cutout. */
+  id?: number;
+  points: [number, number][];
 }
 
 /**
@@ -88,6 +97,12 @@ export interface UseFloorAssemblyReturn {
   replaceConnectors: () => Promise<void>;
   isSavingConnectors: boolean;
 
+  // --- UC4b: cutouts ---
+  cutoutDrafts: CutoutDraft[];
+  setCutoutDrafts: (drafts: CutoutDraft[]) => void;
+  replaceCutouts: () => Promise<void>;
+  isSavingCutouts: boolean;
+
   // --- UC5: build preview → confirm ---
   buildResult: BuildFloorPreviewResponse | null;
   previewGlbUrl: string | null;
@@ -111,6 +126,14 @@ export const draftsToInputs = (drafts: ConnectorDraft[]): ConnectorInput[] =>
     points: d.points,
     thickness_m: d.thickness_m,
   }));
+
+/** Map server cutouts → local drafts (id + points only). */
+export const cutoutsToDrafts = (cutouts: Cutout[]): CutoutDraft[] =>
+  cutouts.map((c) => ({ id: c.id, points: c.points }));
+
+/** Map local cutout drafts → replace-all API inputs. */
+export const draftsToCutoutInputs = (drafts: CutoutDraft[]): CutoutInput[] =>
+  drafts.map((d) => ({ points: d.points }));
 
 const masterPointsFromSections = (
   sections: AssemblySection[],
@@ -174,6 +197,9 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
   const [connectorDrafts, setConnectorDrafts] = useState<ConnectorDraft[]>([]);
   const [isSavingConnectors, setIsSavingConnectors] = useState(false);
 
+  const [cutoutDrafts, setCutoutDrafts] = useState<CutoutDraft[]>([]);
+  const [isSavingCutouts, setIsSavingCutouts] = useState(false);
+
   const [buildResult, setBuildResult] = useState<BuildFloorPreviewResponse | null>(null);
   const [isBuilding, setIsBuilding] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
@@ -226,6 +252,7 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
       setSectionPointsBySection(sectionPointsFromSections(data.sections));
       setMasterPointsBySection(masterPointsFromSections(data.sections));
       setConnectorDrafts(connectorsToDrafts(data.connectors));
+      setCutoutDrafts(cutoutsToDrafts(data.cutouts ?? []));
       // Reset transient per-build state — those come from POSTs, never the read.
       setSolveResult(null);
       setBuildResult(null);
@@ -384,6 +411,24 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     }
   }, [floorId, connectorDrafts]);
 
+  const replaceCutouts = useCallback(async (): Promise<void> => {
+    if (floorId === null) return;
+    setIsSavingCutouts(true);
+    setError(null);
+    try {
+      const res = await floorAssemblyApi.replaceCutouts(
+        floorId,
+        draftsToCutoutInputs(cutoutDrafts),
+      );
+      setCutoutDrafts(cutoutsToDrafts(res.cutouts));
+      toastApi.success('Вырезы сохранены');
+    } catch {
+      toastApi.error('Ошибка сохранения вырезов');
+    } finally {
+      setIsSavingCutouts(false);
+    }
+  }, [floorId, cutoutDrafts]);
+
   // --- UC5 -----------------------------------------------------------------
   const buildFloorMesh = useCallback(async (): Promise<void> => {
     if (floorId === null) return;
@@ -462,6 +507,10 @@ export const useFloorAssembly = (): UseFloorAssemblyReturn => {
     setConnectorDrafts,
     replaceConnectors,
     isSavingConnectors,
+    cutoutDrafts,
+    setCutoutDrafts,
+    replaceCutouts,
+    isSavingCutouts,
     buildResult,
     previewGlbUrl: buildResult?.glb_url ?? null,
     isBuilding,

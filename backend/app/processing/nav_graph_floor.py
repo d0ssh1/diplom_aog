@@ -35,6 +35,14 @@ from app.core.exceptions import ImageProcessingError
 
 logger = logging.getLogger(__name__)
 
+# Door→corridor snap bounds (R5, 06-pipeline-spec [B2]). The distance cap is
+# deliberately LOOSE — its only job is to reject absurd cross-canvas snaps; the
+# seeded line-of-sight does the real cross-section rejection. Derived from wall
+# thickness so the bounds scale with the plan's pixel resolution.
+SNAP_RATIO: float = 12.0
+MIN_SNAP_PX: float = 12.0
+MAX_SNAP_PX_CAP: float = 80.0
+
 
 @dataclass(frozen=True)
 class SectionRoomInput:
@@ -275,6 +283,14 @@ def build_floor_graph_from_mask(
     if wall_thickness_px <= 0:
         wall_thickness_px = 3.0  # fallback
 
+    # R5 snap bounds derived locally from wall thickness (ADR-12) — no ppm
+    # threading. The seeded LOS (skip_px past the door's own wall) is the real
+    # cross-section gate; max_snap_dist_px only rejects absurd cross-canvas snaps.
+    max_snap_dist_px = min(
+        MAX_SNAP_PX_CAP, max(MIN_SNAP_PX, SNAP_RATIO * wall_thickness_px)
+    )
+    skip_px = wall_thickness_px + 1.0
+
     corridor_mask = extract_corridor_mask(
         assembled_mask, floor_rooms, canvas_w, canvas_h, wall_thickness_px
     )
@@ -282,6 +298,7 @@ def build_floor_graph_from_mask(
     graph = build_topology_graph(skeleton)
     graph = prune_dendrites(graph, min_branch_length=20.0)
     graph = integrate_semantics(
-        graph, floor_rooms, floor_doors, canvas_w, canvas_h
+        graph, floor_rooms, floor_doors, canvas_w, canvas_h,
+        assembled_mask, max_snap_dist_px, skip_px,
     )
     return graph

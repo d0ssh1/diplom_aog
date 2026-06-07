@@ -63,6 +63,9 @@ from app.models.floor_assembly import (
     ConnectorInput,
     ConnectorsResponse,
     ControlPoint,
+    Cutout,
+    CutoutInput,
+    CutoutsResponse,
     ExcludedSection,
     FloorAssemblyResponse,
     MasterControlPoint,
@@ -75,6 +78,7 @@ from app.models.floor_assembly import (
 from app.models.floors import CropBboxModel
 from app.processing.floor_assembly import (
     ConnectorRaster,
+    CutoutRaster,
     SectionWarpInput,
     assemble_floor_mask,
     compute_canvas_factor,
@@ -584,6 +588,53 @@ class FloorAssemblyService:
             connectors=[self._connector_to_model(r) for r in rows],
         )
 
+    # ── UC4b — cutouts (zones that ERASE walls; stored on floors.nav_cutouts) ──
+
+    async def get_cutouts(self, floor_id: int) -> CutoutsResponse:
+        """List a floor's cutout zones (stored as the ``nav_cutouts`` JSON column).
+
+        Raises FloorNotFoundError (404) if the floor is absent.
+        """
+        logger.debug("get_cutouts: floor_id=%d", floor_id)
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if floor is None:
+            raise FloorNotFoundError(floor_id)
+
+        return CutoutsResponse(
+            floor_id=floor_id,
+            cutouts=[
+                self._cutout_to_model(c, i)
+                for i, c in enumerate(floor.nav_cutouts or [])
+            ],
+        )
+
+    async def replace_cutouts(
+        self, floor_id: int, items: list[CutoutInput]
+    ) -> CutoutsResponse:
+        """Atomically replace ALL cutout zones for a floor.
+
+        Per-zone ``>= 3`` points, coord range, ``MAX_CUTOUT_POINTS`` and
+        ``MAX_CUTOUTS`` caps are enforced by ``ReplaceCutoutsRequest`` /
+        ``CutoutInput``. An empty ``items`` list clears the floor (valid, 200).
+        The whole list is written to the single ``nav_cutouts`` column.
+
+        Raises FloorNotFoundError (404) if the floor is absent.
+        """
+        logger.info("replace_cutouts: floor_id=%d, count=%d", floor_id, len(items))
+        floor = await self._floor_repo.get_by_id(floor_id)
+        if floor is None:
+            raise FloorNotFoundError(floor_id)
+
+        payload = [{"points": [list(pt) for pt in item.points]} for item in items]
+        floor = await self._floor_repo.update_nav_cutouts(floor_id, payload)
+        return CutoutsResponse(
+            floor_id=floor_id,
+            cutouts=[
+                self._cutout_to_model(c, i)
+                for i, c in enumerate(floor.nav_cutouts or [])
+            ],
+        )
+
     # ── UC5 — build (preview) / confirm / assembly read ──────────────────────
 
     async def build_floor_mesh(
@@ -767,12 +818,27 @@ class FloorAssemblyService:
                 ConnectorRaster(points_px=points_px, thickness_px=thickness_px)
             )
 
+        # ── Cutouts → CutoutRaster (master-pixel, SAME k-scaled canvas, ADR-9) ──
+        # De-normalised over the IDENTICAL canvas_w/canvas_h the nav build uses, so
+        # a cutout erases the same pixels in BOTH 3D and nav outputs.
+        cutouts_raster: list[CutoutRaster] = []
+        for raw in (floor.nav_cutouts or []):
+            pts = raw.get("points", [])
+            if len(pts) < 3:
+                continue
+            points_px = np.array(
+                [[round(px * canvas_w), round(py * canvas_h)] for px, py in pts],
+                dtype=np.int32,
+            )
+            cutouts_raster.append(CutoutRaster(points_px=points_px))
+
         # ── Assemble + extrude (builder UNCHANGED) ──
         combined = assemble_floor_mask(
             warp_inputs,
             canvas_size,
             connectors_raster,
             default_wall_thickness_px=default_thickness_px,
+            cutouts=cutouts_raster,
         )
 
         try:
@@ -804,6 +870,7 @@ class FloorAssemblyService:
             excluded_sections=excluded,
             warnings=warnings,
             connector_count=len(connectors_raster),
+            cutout_count=len(cutouts_raster),
         )
 
     async def confirm_floor_mesh(
@@ -891,6 +958,10 @@ class FloorAssemblyService:
             master_schema=master_schema,
             sections=assembly_sections,
             connectors=[self._connector_to_model(r) for r in connector_rows],
+            cutouts=[
+                self._cutout_to_model(c, i)
+                for i, c in enumerate(floor.nav_cutouts or [])
+            ],
         )
 
     # ── Private helpers (IO / mapping) ───────────────────────────────────────
@@ -1273,3 +1344,12 @@ class FloorAssemblyService:
             thickness_m=row.thickness_m,
             connects=row.connects,
         )
+
+    @staticmethod
+    def _cutout_to_model(raw: dict, idx: int) -> Cutout:
+        """Map one ``nav_cutouts`` JSON entry to the ``Cutout`` response model.
+
+        ``id`` is the 0-based list index (the column has no child PK).
+        """
+        points = [(float(p[0]), float(p[1])) for p in raw.get("points", [])]
+        return Cutout(id=idx, points=points)

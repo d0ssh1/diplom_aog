@@ -152,6 +152,21 @@ class FloorRepository(BaseRepository):
         await self._session.refresh(floor)
         return floor
 
+    async def update_nav_cutouts(
+        self,
+        floor_id: int,
+        nav_cutouts: list,
+    ) -> Floor:
+        """UPDATE nav_cutouts field (wizard step 8). Raises FloorNotFoundError."""
+        logger.debug("update_nav_cutouts: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.nav_cutouts = nav_cutouts
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor
+
     async def update_pixels_per_meter(
         self,
         floor_id: int,

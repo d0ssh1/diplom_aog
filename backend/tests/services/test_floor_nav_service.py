@@ -28,6 +28,7 @@ def make_floor(ppm: float = 50.0) -> MagicMock:
     f.pixels_per_meter = ppm
     f.schema_image_id = "schema-1"
     f.schema_crop_bbox = None  # no crop → full (decoded) dims
+    f.nav_cutouts = None  # no cutouts by default
     return f
 
 
@@ -117,6 +118,31 @@ async def test_build_floor_nav_graph_saves_json(svc, tmp_path):
     assert "nodes_count" in result
     assert result["floor_id"] == 1
     assert result["canvas_size_px"] == [200, 150]
+
+
+@pytest.mark.asyncio
+async def test_build_nav_passes_cutouts_to_assemble(tmp_path, monkeypatch, small_mask):
+    """floors.nav_cutouts → CutoutRaster list handed to assemble_floor_mask."""
+    import app.services.floor_nav_service as fns
+
+    floor = make_floor()
+    floor.nav_cutouts = [
+        {"points": [[0.3, 0.3], [0.6, 0.3], [0.6, 0.6], [0.3, 0.6]]}
+    ]
+    svc = _make_svc(tmp_path, monkeypatch, small_mask, floor=floor)
+
+    captured: dict = {}
+    orig = fns.assemble_floor_mask
+
+    def spy(*args, **kwargs):
+        captured["cutouts"] = kwargs.get("cutouts")
+        return orig(*args, **kwargs)
+
+    monkeypatch.setattr(fns, "assemble_floor_mask", spy)
+    await svc.build_floor_nav_graph(1)
+
+    assert captured["cutouts"] is not None
+    assert len(captured["cutouts"]) == 1
 
 
 @pytest.mark.asyncio

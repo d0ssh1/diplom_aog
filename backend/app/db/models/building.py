@@ -77,6 +77,10 @@ class Floor(Base):
     # Path to the assembled (stitched) floor GLB mesh
     mesh_file_glb: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
+    # Cutout zones (wizard step 8) — polygons that ERASE walls for nav + 3D.
+    # Format: [{"points": [[x,y], ...]}, ...] normalised [0,1] over the master canvas.
+    nav_cutouts: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     # Relationships

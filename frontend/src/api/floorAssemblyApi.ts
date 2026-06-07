@@ -14,6 +14,8 @@ import type {
   ConnectorsResponse,
   ControlPoint,
   ControlPointsResponse,
+  CutoutInput,
+  CutoutsResponse,
   FloorAssemblyResponse,
   MasterControlPoint,
   SectionControlPointsResponse,
@@ -70,6 +72,21 @@ export const floorAssemblyApi = {
     apiClient
       .put(`/floors/${floorId}/connectors`, { connectors })
       .then((r) => r.data as ConnectorsResponse),
+
+  // GET /api/v1/floors/{id}/cutouts — list cutout zones (UC4b)
+  getCutouts: (floorId: number): Promise<CutoutsResponse> =>
+    apiClient
+      .get(`/floors/${floorId}/cutouts`)
+      .then((r) => r.data as CutoutsResponse),
+
+  // PUT /api/v1/floors/{id}/cutouts — atomic replace of all cutout zones (UC4b)
+  replaceCutouts: (
+    floorId: number,
+    cutouts: CutoutInput[],
+  ): Promise<CutoutsResponse> =>
+    apiClient
+      .put(`/floors/${floorId}/cutouts`, { cutouts })
+      .then((r) => r.data as CutoutsResponse),
 
   // POST /api/v1/floors/{id}/build-mesh — assemble a preview GLB (UC5 build)
   buildFloorMesh: (floorId: number): Promise<BuildFloorPreviewResponse> =>
