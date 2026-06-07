@@ -55,6 +55,7 @@ from app.processing.floor_assembly import (
 from app.processing.nav_graph import (
     deserialize_nav_graph,
     find_route,
+    los_prune,
     serialize_nav_graph,
     transform_2d_to_3d,
 )
@@ -292,6 +293,19 @@ class FloorNavService:
         with open(self._nav_path(floor_id), "w") as f:
             json.dump(nav_data, f)
 
+        # Persist the assembled wall mask next to the JSON so find_floor_route can
+        # LOS-straighten the path later (same array as the 3D mesh — ADR-9).
+        # Wrapped so a write failure never breaks the build (06-pipeline-spec §A).
+        try:
+            if not cv2.imwrite(self._floor_mask_path(floor_id), assembled):
+                logger.warning(
+                    "floor mask persist returned False: floor_id=%d", floor_id
+                )
+        except Exception:
+            logger.warning(
+                "floor mask persist failed: floor_id=%d", floor_id, exc_info=True
+            )
+
         rooms_count = len(
             [n for n, d in graph.nodes(data=True) if d.get("type") == "room"]
         )
@@ -374,6 +388,23 @@ class FloorNavService:
         scale_factor = metadata["scale_factor"]
         mask_h = metadata["mask_height"]
         mask_w = metadata["mask_width"]
+
+        # LOS-straighten like the single-plan nav_service. The shape== guard is
+        # wall-safety: _line_of_sight treats out-of-bounds pixels as "not wall",
+        # so a stale/smaller mask could let los_prune cut THROUGH a wall
+        # (06-pipeline-spec §C). On mismatch/missing mask → skip, keeping the
+        # simplify_path result.
+        try:
+            wall_mask = cv2.imread(
+                self._floor_mask_path(floor_id), cv2.IMREAD_GRAYSCALE
+            )
+            if wall_mask is not None and wall_mask.shape == (mask_h, mask_w):
+                route["path_coords_2d"] = los_prune(
+                    route["path_coords_2d"], wall_mask
+                )
+        except Exception:
+            pass  # LOS optional — fallback on simplify_path
+
         path_3d = transform_2d_to_3d(
             route["path_coords_2d"], mask_w, mask_h, scale_factor, y_offset=0.1
         )
@@ -497,6 +528,15 @@ class FloorNavService:
         """Return the nav JSON path for a floor, creating the nav dir if needed."""
         os.makedirs(self._nav_dir, exist_ok=True)
         return os.path.join(self._nav_dir, f"floor_{floor_id}_nav.json")
+
+    def _floor_mask_path(self, floor_id: int) -> str:
+        """Return the persisted assembled-mask PNG path, creating the nav dir.
+
+        Mirror of ``_nav_path`` — the mask lives next to the nav JSON so route
+        queries can LOS-straighten the path (06-pipeline-spec §A).
+        """
+        os.makedirs(self._nav_dir, exist_ok=True)
+        return os.path.join(self._nav_dir, f"floor_{floor_id}_mask.png")
 
     @staticmethod
     def _read_rooms(reconstruction) -> list[dict]:  # type: ignore[no-untyped-def]

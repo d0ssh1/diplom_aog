@@ -14,6 +14,9 @@ from app.processing.nav_graph import (
     find_route,
     transform_2d_to_3d,
     simplify_path,
+    los_prune,
+    bridge_graph_components,
+    _line_of_sight,
 )
 
 
@@ -447,3 +450,147 @@ class TestIntegrateSemanticsBoundedSnap:
             self._corridor_graph(), self._rooms(), self._door(y_norm=0.05), 200, 200,
         )
         assert self._has_corridor_edge(G)
+
+
+class TestLosPrune:
+    """los_prune was historically untested (research §Gaps)."""
+
+    def test_los_prune_clear_straight_returns_endpoints(self):
+        """Collinear points with no walls collapse to first + last."""
+        coords = [(10, 10), (20, 10), (30, 10), (40, 10)]
+        mask = np.zeros((50, 50), dtype=np.uint8)
+        result = los_prune(coords, mask)
+        assert result[0] == (10, 10)
+        assert result[-1] == (40, 10)
+        assert len(result) == 2
+
+    def test_los_prune_wall_between_keeps_midpoint(self):
+        """A wall stub forces an intermediate detour point to be kept."""
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        mask[0:40, 30] = 255  # wall column x=30 with a gap below row 40
+        coords = [(10, 10), (30, 55), (50, 10)]
+        result = los_prune(coords, mask)
+        assert len(result) >= 3
+
+    def test_los_prune_result_segments_are_wall_clear(self):
+        """Every consecutive segment of the result passes _line_of_sight."""
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        mask[0:40, 30] = 255
+        coords = [(10, 10), (20, 10), (30, 55), (40, 10), (50, 10)]
+        result = los_prune(coords, mask)
+        for a, b in zip(result, result[1:]):
+            assert _line_of_sight(a, b, mask)
+
+    def test_los_prune_short_path_returns_unchanged(self):
+        """Fewer than 3 points returns the input unchanged."""
+        coords = [(1, 1), (2, 2)]
+        mask = np.zeros((10, 10), dtype=np.uint8)
+        assert los_prune(coords, mask) == coords
+
+    def test_los_prune_no_walls_returns_two_points(self):
+        """A zigzag with no walls collapses to exactly the two endpoints."""
+        coords = [(5, 5), (10, 8), (15, 5), (20, 9), (25, 5)]
+        mask = np.zeros((40, 40), dtype=np.uint8)
+        result = los_prune(coords, mask)
+        assert len(result) == 2
+        assert result[0] == (5, 5)
+        assert result[-1] == (25, 5)
+
+
+class TestBridgeGraphComponents:
+    """bridge_graph_components — LOS-gated Kruskal stitching of fragments."""
+
+    @staticmethod
+    def _add_nodes(G: nx.Graph, nodes: dict) -> None:
+        for n, (x, y) in nodes.items():
+            G.add_node(n, type="corridor_node", pos=(x, y))
+
+    def test_bridge_connects_clear_gap_one_component(self):
+        """Two components ~10px apart in open space → merged into one."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a1": (10, 10), "a2": (10, 20),
+                            "b1": (10, 30), "b2": (10, 40)})
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        assert nx.number_connected_components(G) == 1
+
+    def test_bridge_wall_between_keeps_two_components(self):
+        """A wall on the straight line between nearest nodes blocks the bridge."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a1": (10, 10), "a2": (10, 20),
+                            "b1": (10, 30), "b2": (10, 40)})
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        mask[25, :] = 255  # horizontal wall between a2(y=20) and b1(y=30)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        assert nx.number_connected_components(G) == 2
+
+    def test_bridge_gap_beyond_threshold_not_connected(self):
+        """Nearest nodes ~40px apart with max=12 → stay separate."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a1": (10, 10), "a2": (10, 20),
+                            "b1": (10, 60), "b2": (10, 70)})
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        mask = np.zeros((90, 90), dtype=np.uint8)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        assert nx.number_connected_components(G) == 2
+
+    def test_bridge_single_component_is_noop(self):
+        """A connected graph gains no edges."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a": (10, 10), "b": (10, 15), "c": (10, 20)})
+        G.add_edge("a", "b")
+        G.add_edge("b", "c")
+        mask = np.zeros((40, 40), dtype=np.uint8)
+        before = G.number_of_edges()
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        assert G.number_of_edges() == before
+
+    def test_bridge_three_components_adds_two_edges(self):
+        """Three colinear components within threshold → exactly 2 bridges (MST)."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a1": (10, 10), "a2": (10, 18),
+                            "b1": (10, 26), "b2": (10, 34),
+                            "c1": (10, 42), "c2": (10, 50)})
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        G.add_edge("c1", "c2")
+        mask = np.zeros((70, 70), dtype=np.uint8)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        bridges = [(u, v) for u, v, d in G.edges(data=True) if d.get("bridge")]
+        assert len(bridges) == 2
+        assert nx.number_connected_components(G) == 1
+
+    def test_bridge_edge_has_corridor_type_and_pts(self):
+        """A bridge edge carries corridor_edge type, bridge flag, 2 pts, weight."""
+        G = nx.Graph()
+        self._add_nodes(G, {"a1": (10, 10), "a2": (10, 20),
+                            "b1": (10, 28), "b2": (10, 38)})
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        bridges = [d for _, _, d in G.edges(data=True) if d.get("bridge")]
+        assert len(bridges) == 1
+        d = bridges[0]
+        assert d["type"] == "corridor_edge"
+        assert d["bridge"] is True
+        assert len(d["pts"]) == 2
+        assert d["weight"] > 0
+
+    def test_bridge_preserves_node_positions(self):
+        """Original node positions are untouched by bridging."""
+        G = nx.Graph()
+        positions = {"a1": (10, 10), "a2": (10, 20),
+                     "b1": (10, 28), "b2": (10, 38)}
+        self._add_nodes(G, positions)
+        G.add_edge("a1", "a2")
+        G.add_edge("b1", "b2")
+        mask = np.zeros((60, 60), dtype=np.uint8)
+        bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
+        for n, pos in positions.items():
+            assert G.nodes[n]["pos"] == pos

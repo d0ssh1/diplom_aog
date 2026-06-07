@@ -6,6 +6,7 @@ maths), ``transform_doors_to_floor_canvas`` and ``build_floor_graph_from_mask``
 (delegation to the nav_graph pipeline).
 """
 
+import networkx as nx
 import numpy as np
 import pytest
 
@@ -300,3 +301,47 @@ def test_floor_graph_threads_wall_mask_and_max_snap(monkeypatch):
     assert captured["wall_mask"].shape == mask.shape
     assert captured["max_snap_dist_px"] != float("inf")
     assert captured["skip_px"] > 0.0
+
+
+def test_floor_graph_calls_bridge_with_mask_and_threshold(monkeypatch):
+    """build_floor_graph_from_mask calls bridge_graph_components with the wall mask
+    and a bounded threshold in [MIN_BRIDGE_PX, MAX_BRIDGE_PX]."""
+    import app.processing.nav_graph as ng
+    from app.processing.nav_graph_floor import MAX_BRIDGE_PX, MIN_BRIDGE_PX
+
+    captured: dict = {}
+    real_bridge = ng.bridge_graph_components
+
+    def spy(G, wall_mask, max_bridge_dist_px):
+        captured["wall_mask"] = wall_mask
+        captured["max_bridge_dist_px"] = max_bridge_dist_px
+        return real_bridge(G, wall_mask, max_bridge_dist_px)
+
+    monkeypatch.setattr(ng, "bridge_graph_components", spy)
+
+    mask = make_l_mask()
+    build_floor_graph_from_mask(mask, [], [], 200, 200)
+
+    assert captured["wall_mask"] is not None
+    assert captured["wall_mask"].shape == mask.shape
+    assert MIN_BRIDGE_PX <= captured["max_bridge_dist_px"] <= MAX_BRIDGE_PX
+
+
+def test_floor_graph_walled_sections_stay_separate():
+    """Two sections split by a solid full-height divider are NOT bridged.
+
+    ⚠ Coarse sanity: the sections are also >MAX_BRIDGE_PX apart, so this could
+    pass on distance alone. The strict LOS refusal (close nodes + wall between)
+    is rigorously covered by the unit test
+    ``TestBridgeGraphComponents.test_bridge_wall_between_keeps_two_components``.
+    Here the full-height divider guarantees any left↔right line crosses a wall.
+    """
+    graph = build_floor_graph_from_mask(make_two_section_mask(), [], [], 400, 200)
+    left = [n for n, d in graph.nodes(data=True)
+            if d.get("type") == "corridor_node" and d["pos"][0] < 195]
+    right = [n for n, d in graph.nodes(data=True)
+             if d.get("type") == "corridor_node" and d["pos"][0] > 205]
+    assert left and right, "both sections should have corridor nodes"
+    left_comp = nx.node_connected_component(graph, left[0])
+    assert not any(r in left_comp for r in right), \
+        "walled sections must not be bridged together"

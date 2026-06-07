@@ -9,6 +9,7 @@ without touching disk). Tests respect the REAL data model: ``Section`` has NO
 
 import json
 
+import networkx as nx
 import numpy as np
 import pytest
 from unittest.mock import AsyncMock, MagicMock
@@ -19,6 +20,7 @@ from app.core.exceptions import (
     FloorNotFoundError,
     FloorSchemaError,
 )
+from app.processing.nav_graph import serialize_nav_graph
 from app.services.floor_nav_service import FloorNavService
 
 
@@ -375,3 +377,150 @@ async def test_get_floor_nav_graph_2d_returns_shape(
 async def test_get_floor_nav_graph_2d_no_graph_raises_not_found(svc):
     with pytest.raises(FloorNavGraphNotFoundError):
         await svc.get_floor_nav_graph_2d(1)
+
+
+# ── persist assembled mask (build) ───────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_build_persists_floor_mask_png(svc, monkeypatch):
+    """build_floor_nav_graph persists the assembled mask via imwrite to the
+    floor_{id}_mask.png path.
+
+    Spy on imwrite rather than asserting a real file: cv2.imwrite returns False
+    on non-ASCII paths (pytest tmp_path lives under a Cyrillic home), which is a
+    Windows test-isolation quirk only — production upload_dir is ASCII. This
+    mirrors how the suite already stubs cv2.imread to avoid real cv2 disk IO.
+    """
+    captured: dict = {}
+
+    def spy_imwrite(path, img):
+        captured["path"] = path
+        captured["img"] = img
+        return True
+
+    monkeypatch.setattr(
+        "app.services.floor_nav_service.cv2.imwrite", spy_imwrite
+    )
+    await svc.build_floor_nav_graph(1)
+    assert captured.get("path", "").endswith("floor_1_mask.png")
+    assert captured["img"] is not None
+
+
+@pytest.mark.asyncio
+async def test_build_mask_dims_match_graph(svc, monkeypatch):
+    """Persisted mask shape == (canvas_h, canvas_w) of the graph metadata.
+
+    canvas_size_px = [canvas_w, canvas_h]; numpy shape = (rows, cols) =
+    (canvas_h, canvas_w) → assert shape == (size[1], size[0]).
+    """
+    captured: dict = {}
+
+    def spy_imwrite(path, img):
+        captured["path"] = path
+        captured["img"] = img
+        return True
+
+    monkeypatch.setattr(
+        "app.services.floor_nav_service.cv2.imwrite", spy_imwrite
+    )
+    result = await svc.build_floor_nav_graph(1)
+    assert captured["path"].endswith("floor_1_mask.png")
+    canvas_w, canvas_h = result["canvas_size_px"]
+    assert captured["img"].shape == (canvas_h, canvas_w)
+
+
+@pytest.mark.asyncio
+async def test_build_mask_write_failure_does_not_break_build(svc, monkeypatch):
+    """A mask imwrite failure is swallowed — the build still returns its meta."""
+    def boom(*a, **k):
+        raise IOError("disk full")
+
+    monkeypatch.setattr("app.services.floor_nav_service.cv2.imwrite", boom)
+    result = await svc.build_floor_nav_graph(1)
+    assert result["floor_id"] == 1
+    assert "nodes_count" in result
+
+
+# ── los_prune at route time ──────────────────────────────────────────────────
+
+
+def _routable_graph_json() -> dict:
+    """A 2-room graph with one corridor edge → find_route returns a path."""
+    G = nx.Graph()
+    G.add_node("room_A", type="room", pos=(20.0, 20.0))
+    G.add_node("room_B", type="room", pos=(120.0, 20.0))
+    G.add_edge(
+        "room_A", "room_B", weight=100.0, type="corridor_edge",
+        pts=[(20.0, 20.0), (70.0, 20.0), (120.0, 20.0)],
+    )
+    # mask_w=200, mask_h=150 → matches the small_mask fixture (150, 200).
+    return serialize_nav_graph(G, 200, 150, 0.02)
+
+
+@pytest.mark.asyncio
+async def test_route_applies_los_prune_when_mask_present(svc, monkeypatch):
+    """Mask present + dims match → los_prune is invoked with (coords, wall_mask)."""
+    with open(svc._nav_path(1), "w") as f:
+        json.dump(_routable_graph_json(), f)
+
+    captured: dict = {}
+
+    def spy_los(coords, wall_mask):
+        captured["coords"] = coords
+        captured["wall_mask"] = wall_mask
+        return [(20.0, 20.0), (120.0, 20.0)]
+
+    # cv2.imread is patched by the svc fixture → small_mask (150, 200) == dims.
+    monkeypatch.setattr("app.services.floor_nav_service.los_prune", spy_los)
+
+    result = await svc.find_floor_route(1, "A", "B")
+    assert result["status"] == "found"
+    assert captured["coords"] is not None
+    assert captured["wall_mask"] is not None
+    assert captured["wall_mask"].shape == (150, 200)
+
+
+@pytest.mark.asyncio
+async def test_route_missing_mask_falls_back_unpruned(svc, monkeypatch):
+    """No persisted mask (imread → None) → los_prune skipped, route still found."""
+    with open(svc._nav_path(1), "w") as f:
+        json.dump(_routable_graph_json(), f)
+
+    called = {"los": False}
+
+    def spy_los(coords, wall_mask):
+        called["los"] = True
+        return coords
+
+    monkeypatch.setattr("app.services.floor_nav_service.los_prune", spy_los)
+    monkeypatch.setattr(
+        "app.services.floor_nav_service.cv2.imread", lambda *a, **k: None
+    )
+
+    result = await svc.find_floor_route(1, "A", "B")
+    assert result["status"] == "found"
+    assert called["los"] is False
+
+
+@pytest.mark.asyncio
+async def test_route_mask_dim_mismatch_skips_los(svc, monkeypatch):
+    """Mask of a different shape → guard skips los_prune (wall-safety), no crash."""
+    with open(svc._nav_path(1), "w") as f:
+        json.dump(_routable_graph_json(), f)
+
+    called = {"los": False}
+
+    def spy_los(coords, wall_mask):
+        called["los"] = True
+        return coords
+
+    monkeypatch.setattr("app.services.floor_nav_service.los_prune", spy_los)
+    wrong = np.zeros((155, 200), dtype=np.uint8)  # (mask_h + 5, mask_w)
+    monkeypatch.setattr(
+        "app.services.floor_nav_service.cv2.imread", lambda *a, **k: wrong
+    )
+
+    result = await svc.find_floor_route(1, "A", "B")
+    assert result["status"] == "found"
+    assert called["los"] is False

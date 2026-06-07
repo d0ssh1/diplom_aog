@@ -575,6 +575,80 @@ def los_prune(coords_2d: list, wall_mask: np.ndarray) -> list:
     return result
 
 
+def bridge_graph_components(
+    G: nx.Graph,
+    wall_mask: np.ndarray,
+    max_bridge_dist_px: float,
+) -> nx.Graph:
+    """Сшивает разные компоненты связности короткими wall-clear рёбрами-мостами.
+
+    Скелетизация коридоров часто рвёт единый коридор на изолированные фрагменты
+    (разрыв в 1 пиксель медиальной оси). A* по такому графу не находит маршрут
+    между фрагментами. По образцу Краскала добавляется минимальный набор коротких
+    рёбер-мостов: для каждой пары узлов из РАЗНЫХ компонент, отстоящих не дальше
+    ``max_bridge_dist_px`` и соединимых прямой БЕЗ пересечения стены
+    (``_line_of_sight``), мост добавляется в порядке возрастания длины, пока
+    компоненты сливаются. LOS-гейт — настоящий предохранитель: он отказывается
+    сшивать фрагменты по разные стороны стены.
+
+    Чистая функция: только ``math`` / ``networkx`` + ``_line_of_sight`` этого
+    модуля. Мутирует и возвращает ``G`` (как ``prune_dendrites`` /
+    ``integrate_semantics``).
+
+    Args:
+        G: граф; у узлов-коридоров атрибут ``pos = (x_px, y_px)``.
+        wall_mask: ``(H, W)`` uint8 ``{0,255}`` — белый (> 127) = стена.
+        max_bridge_dist_px: максимальная длина моста в пикселях.
+
+    Returns:
+        тот же ``G`` с добавленными рёбрами-мостами
+        (``type='corridor_edge'``, ``bridge=True``).
+    """
+    t0 = time.perf_counter()
+    nodes = [(n, data["pos"]) for n, data in G.nodes(data=True) if "pos" in data]
+
+    # Засеять текущие компоненты. Изолированные узлы (без рёбер) создаются лениво
+    # как свои синглтоны при первом обращении uf[node] — это и есть их компонента.
+    uf = nx.utils.UnionFind()
+    for u, v in G.edges():
+        uf.union(u, v)
+
+    candidates: list[tuple[float, int, int]] = []
+    for i in range(len(nodes)):
+        a, pos_a = nodes[i]
+        for j in range(i + 1, len(nodes)):
+            b, pos_b = nodes[j]
+            dist = math.hypot(pos_a[0] - pos_b[0], pos_a[1] - pos_b[1])
+            if dist > max_bridge_dist_px:
+                continue
+            if uf[a] == uf[b]:
+                continue
+            if not _line_of_sight(pos_a, pos_b, wall_mask):
+                continue
+            candidates.append((dist, i, j))
+
+    candidates.sort(key=lambda c: c[0])
+
+    bridges_added = 0
+    for dist, i, j in candidates:
+        a, pos_a = nodes[i]
+        b, pos_b = nodes[j]
+        if uf[a] == uf[b]:           # уже слиты предыдущим мостом
+            continue
+        G.add_edge(
+            a, b, weight=dist, type="corridor_edge",
+            pts=[pos_a, pos_b], bridge=True,
+        )
+        uf.union(a, b)
+        bridges_added += 1
+
+    logger.info(
+        "bridge_graph_components: +%d bridges, %d candidates, %.1fms",
+        bridges_added, len(candidates), (time.perf_counter() - t0) * 1000,
+    )
+    return G
+
+
 def _line_of_sight(p1: tuple, p2: tuple, wall_mask: np.ndarray) -> bool:
     """Проверяет, что прямая p1→p2 не пересекает стены (белые пиксели)."""
     x1, y1 = int(p1[0]), int(p1[1])
@@ -831,25 +905,25 @@ def merge_floor_graphs(
         group_id = group["id"]
         group_name = group["name"]
         points = group.get("points", [])
-        
+
         valid_points = []
         for p in points:
             recon_id = p["reconstruction_id"]
             fd = floor_data_by_recon_id.get(recon_id)
             if fd is None:
                 continue
-                
+
             meta = fd.metadata
             px = p["x"] * meta.get("mask_width", 1)
             py = p["y"] * meta.get("mask_height", 1)
-            
+
             nearest = _find_nearest_node(merged, recon_id, px, py)
             if nearest is None:
                 continue
-                
+
             pos = merged.nodes[nearest].get("pos", (px, py))
             teleport_id = f"teleport_{group_id}_pt_{p['id']}"
-            
+
             merged.add_node(
                 teleport_id,
                 type="teleport",
@@ -859,9 +933,9 @@ def merge_floor_graphs(
                 transition_name=group_name,
             )
             merged.add_edge(nearest, teleport_id, weight=5.0, type="teleport_approach")
-            
+
             valid_points.append(teleport_id)
-            
+
         # Create a fully connected mesh between all valid points in this group
         for i in range(len(valid_points)):
             for j in range(i + 1, len(valid_points)):

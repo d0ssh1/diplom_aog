@@ -11,6 +11,7 @@ import {
   normalizeSegmentCoords,
   segmentYOffset,
 } from '../../hooks/useRouteTest.helpers';
+import { buildRoutePolyline, CORNER_RADIUS_M } from './routePath.helpers';
 
 interface TeleportButtonProps {
   position: [number, number, number];
@@ -129,13 +130,7 @@ export const FloorRouteView: React.FC<FloorRouteViewProps> = ({
     const vectors = local.map(
       ([x, y, z]) => new THREE.Vector3(x, (y ?? 0) + 0.15, z),
     );
-    const curve = new THREE.CatmullRomCurve3(
-      vectors,
-      false,
-      'centripetal',
-      0.1,
-    );
-    return curve.getPoints(Math.max(50, local.length * 5));
+    return buildRoutePolyline(vectors, CORNER_RADIUS_M);
   }, [segment, yOffset]);
 
   // Track any geometry we let drei build internally — drei's <Line>

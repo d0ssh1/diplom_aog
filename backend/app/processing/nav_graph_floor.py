@@ -43,6 +43,16 @@ SNAP_RATIO: float = 12.0
 MIN_SNAP_PX: float = 12.0
 MAX_SNAP_PX_CAP: float = 80.0
 
+# Bridge-distance bounds (06-pipeline-spec §B, ADR-5). Skeletonisation can break a
+# single corridor into disconnected fragments (1-px medial-axis gaps) → A* finds no
+# route across them. ``bridge_graph_components`` stitches fragments with short
+# wall-clear edges up to this many px apart. Only MIN is empirically validated
+# (room-2 gap = 10px on live floor 1); RATIO/MAX are extrapolation, easily tuned.
+# The LOS gate — not the distance cap — is the real guard against bridging a wall.
+BRIDGE_RATIO: float = 10.0
+MIN_BRIDGE_PX: float = 12.0
+MAX_BRIDGE_PX: float = 32.0
+
 
 @dataclass(frozen=True)
 class SectionRoomInput:
@@ -262,6 +272,7 @@ def build_floor_graph_from_mask(
         ImageProcessingError: if ``assembled_mask`` is None, empty, or wrong dtype.
     """
     from app.processing.nav_graph import (
+        bridge_graph_components,
         build_skeleton,
         build_topology_graph,
         extract_corridor_mask,
@@ -297,6 +308,15 @@ def build_floor_graph_from_mask(
     skeleton = build_skeleton(corridor_mask)
     graph = build_topology_graph(skeleton)
     graph = prune_dendrites(graph, min_branch_length=20.0)
+
+    # Reconnect corridor fragments split by skeletonisation BEFORE door snapping,
+    # so an isolated room's stub rejoins the network and its door can snap to it
+    # (06-pipeline-spec §B, ADR D6). LOS-gated → never bridges across a wall.
+    max_bridge_dist_px = min(
+        MAX_BRIDGE_PX, max(MIN_BRIDGE_PX, BRIDGE_RATIO * wall_thickness_px)
+    )
+    graph = bridge_graph_components(graph, assembled_mask, max_bridge_dist_px)
+
     graph = integrate_semantics(
         graph, floor_rooms, floor_doors, canvas_w, canvas_h,
         assembled_mask, max_snap_dist_px, skip_px,

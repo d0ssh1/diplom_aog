@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { Line, Box, Html } from '@react-three/drei';
+import { buildRoutePolyline, CORNER_RADIUS_M } from './routePath.helpers';
 
 interface NavigationPathProps {
   coordinates: number[][] | null;
@@ -23,9 +24,10 @@ export const NavigationPath: React.FC<NavigationPathProps> = ({
     const activeCoordinates = segments?.[0]?.coordinates ?? coordinates;
     if (!activeCoordinates || activeCoordinates.length < 2) return null;
 
-    const vectors = activeCoordinates.map(([x, y, z]) => new THREE.Vector3(x, (y ?? 0) + 0.15, z));
-    const curve = new THREE.CatmullRomCurve3(vectors, false, 'centripetal', 0.1);
-    return curve.getPoints(Math.max(50, activeCoordinates.length * 5));
+    const vectors = activeCoordinates.map(
+      ([x, y, z]) => new THREE.Vector3(x, (y ?? 0) + 0.15, z),
+    );
+    return buildRoutePolyline(vectors, CORNER_RADIUS_M);
   }, [coordinates, segments]);
 
   if (!curvePoints) return null;
