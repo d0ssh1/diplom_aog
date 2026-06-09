@@ -50,6 +50,8 @@ export interface StitchPointCanvasProps {
   snapTargets?: [number, number][];
   /** Only changes the cursor; click semantics stay generic (host interprets). */
   tool?: 'place' | 'delete';
+  /** Per-id marker colour (same id ⇒ same colour on both panels). Default: orange. */
+  colorOf?: (id: string) => string;
 
   /** Miss-click. `id` is the active id (MOVE) or '' when none is active (ADD). */
   onPlace(id: string, x: number, y: number): void;
@@ -62,6 +64,18 @@ const MARKER_BORDER = '#ffffff';
 const OUTLINE_COLOR = '#2563eb';
 const HALF = 11; // marker half-size px
 const HALF_ACTIVE = 13;
+
+/** Readable label colour for a marker fill — dark text on light fills, else white. */
+const contrastText = (hex: string): string => {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return '#ffffff';
+  const int = parseInt(m[1], 16);
+  const r = (int >> 16) & 255;
+  const g = (int >> 8) & 255;
+  const b = int & 255;
+  const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return lum > 0.6 ? '#111827' : '#ffffff';
+};
 
 const computeLayout = (
   elementWidth: number,
@@ -91,6 +105,7 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
   activeId,
   snapTargets,
   tool = 'place',
+  colorOf,
   onPlace,
   onSelect,
 }) => {
@@ -215,20 +230,24 @@ export const StitchPointCanvas: React.FC<StitchPointCanvasProps> = ({
       const isActive = point.id === activeId;
       const h = isActive ? HALF_ACTIVE : HALF;
       const { x, y } = toDisplayCoords(point, layout);
+      const fill = colorOf ? colorOf(point.id) : MARKER_FILL;
       if (isActive) {
-        ctx.fillStyle = 'rgba(240, 81, 35, 0.22)';
+        ctx.save();
+        ctx.globalAlpha = 0.25;
+        ctx.fillStyle = fill;
         ctx.fillRect(x - h - 3, y - h - 3, (h + 3) * 2, (h + 3) * 2);
+        ctx.restore();
       }
-      ctx.fillStyle = MARKER_FILL;
+      ctx.fillStyle = fill;
       ctx.fillRect(x - h, y - h, h * 2, h * 2);
       ctx.lineWidth = isActive ? 3 : 2;
       ctx.strokeStyle = MARKER_BORDER;
       ctx.strokeRect(x - h, y - h, h * 2, h * 2);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = contrastText(fill);
       ctx.font = `bold ${isActive ? 13 : 12}px monospace`;
       ctx.fillText(pointLabel(point.id), x, y + 0.5);
     }
-  }, [points, activeId, layout, invert, sectionOutlines, elementSize.w, elementSize.h, imageSize]);
+  }, [points, activeId, layout, invert, sectionOutlines, colorOf, elementSize.w, elementSize.h, imageSize]);
 
   const handleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {

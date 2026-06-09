@@ -1,6 +1,7 @@
 import { useEffect, useRef, useImperativeHandle, forwardRef, useCallback, useState } from 'react';
 import { fabric } from 'fabric';
-import type { RoomAnnotation, DoorAnnotation, CropRect } from '../../types/wizard';
+import type { RoomAnnotation, DoorAnnotation, CropRect, TransitionSpec } from '../../types/wizard';
+import { buildRoomAnnotation } from './buildRoomAnnotation';
 import styles from './WallEditorCanvas.module.css';
 
 export interface WallEditorCanvasRef {
@@ -18,7 +19,7 @@ interface WallEditorCanvasProps {
   eraserMode?: 'brush' | 'select';
   onRoomPopupRequest: (
     rect: { x: number; y: number; w: number; h: number },
-    onConfirm: (name: string) => void,
+    onConfirm: (name: string, transition?: TransitionSpec) => void,
     onCancel: () => void,
   ) => void;
   planUrl?: string;
@@ -33,15 +34,15 @@ interface WallEditorCanvasProps {
 
 const ROOM_FILL: Record<string, string> = {
   room: 'rgba(255,87,34,0.15)',
-  staircase: 'rgba(244,67,54,0.15)',
-  elevator: 'rgba(244,67,54,0.15)',
+  staircase: 'rgba(46,125,50,0.15)',
+  elevator: 'rgba(106,27,154,0.15)',
   corridor: 'rgba(33,150,243,0.15)',
 };
 
 const ROOM_STROKE: Record<string, string> = {
   room: '#FF5722',
-  staircase: '#F44336',
-  elevator: '#F44336',
+  staircase: '#2E7D32',
+  elevator: '#6A1B9A',
   corridor: '#2196F3',
 };
 
@@ -632,7 +633,7 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
 
         popupRequestRef.current(
           { x: pointer.x, y: pointer.y, w: normalizedRect.w, h: normalizedRect.h },
-          (name: string) => {
+          (name: string, transition?: TransitionSpec) => {
             canvas.remove(capturedRect);
 
             const id = crypto.randomUUID();
@@ -661,15 +662,18 @@ function WallEditorCanvasImpl(props: WallEditorCanvasProps, ref: React.Forwarded
               type: 'annotation',
             };
 
-            roomsRef.current.push({
-              id,
-              name,
-              room_type: currentTool,
-              x: normalizedRect.x,
-              y: normalizedRect.y,
-              width: normalizedRect.w,
-              height: normalizedRect.h,
-            });
+            roomsRef.current.push(
+              buildRoomAnnotation({
+                id,
+                name,
+                roomType: currentTool,
+                x: normalizedRect.x,
+                y: normalizedRect.y,
+                width: normalizedRect.w,
+                height: normalizedRect.h,
+                transition,
+              }),
+            );
 
             canvas.add(group);
             canvas.renderAll();

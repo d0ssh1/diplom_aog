@@ -22,6 +22,9 @@ function toRoomAnnotation(room: VectorizationResult['rooms'][number]): RoomAnnot
       y: Math.min(...ys),
       width: Math.max(...xs) - Math.min(...xs),
       height: Math.max(...ys) - Math.min(...ys),
+      floor_from: room.floor_from,
+      floor_to: room.floor_to,
+      floors_excluded: room.floors_excluded,
     };
   }
 
@@ -34,6 +37,9 @@ function toRoomAnnotation(room: VectorizationResult['rooms'][number]): RoomAnnot
     y: room.center.y - side / 2,
     width: side,
     height: side,
+    floor_from: room.floor_from,
+    floor_to: room.floor_to,
+    floors_excluded: room.floors_excluded,
   };
 }
 
@@ -89,6 +95,9 @@ export const EditPlanPage: React.FC = () => {
             polygon: r.polygon,
             center: r.center,
             area_normalized: r.area_normalized,
+            floor_from: r.floor_from,
+            floor_to: r.floor_to,
+            floors_excluded: r.floors_excluded,
           };
         });
 
@@ -177,6 +186,9 @@ export const EditPlanPage: React.FC = () => {
           { x: r.x, y: r.y + r.height },
         ],
         area_normalized: r.area_normalized ?? (r.width * r.height),
+        floor_from: r.floor_from,
+        floor_to: r.floor_to,
+        floors_excluded: r.floors_excluded,
       })),
       doors: doors.map((d) => ({
         id: d.id,

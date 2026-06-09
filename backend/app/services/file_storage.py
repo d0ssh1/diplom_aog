@@ -41,6 +41,46 @@ class FileStorage:
         os.makedirs(self._models_dir, exist_ok=True)
         logger.debug("FileStorage initialized: upload_dir=%s", upload_dir)
 
+    @staticmethod
+    def uploads_url(rel_path: str) -> str:
+        """Map a storage-relative path to its static URL.
+
+        E.g. ``"models/floor_3.glb"`` → ``"/api/v1/uploads/models/floor_3.glb"``. Mirrors
+        the ``/api/v1/uploads/...`` convention used by ``save_floor_preview_mesh`` /
+        ``promote_floor_preview``. Normalises Windows separators and strips any leading
+        slash so the result always has single forward slashes.
+
+        Args:
+            rel_path: a path relative to the uploads root (e.g. ``Floor.mesh_file_glb``).
+
+        Returns:
+            The static URL ``/api/v1/uploads/<rel_path>``.
+        """
+        rel = rel_path.replace("\\", "/").lstrip("/")
+        return f"/api/v1/uploads/{rel}"
+
+    def uploads_url_versioned(self, rel_path: str) -> str:
+        """``uploads_url`` + a ``?v=<mtime>`` cache-buster.
+
+        A rebuilt file at the SAME path (e.g. ``models/floor_3.glb`` after a re-confirm)
+        otherwise gets served stale from the browser / ``useGLTF`` cache. Appending the
+        file's mtime makes the URL change whenever the bytes change. Falls back to the
+        plain URL if the file cannot be stat'd.
+
+        Args:
+            rel_path: a path relative to the uploads root.
+
+        Returns:
+            ``/api/v1/uploads/<rel>?v=<mtime>`` (or the plain URL on stat failure).
+        """
+        url = self.uploads_url(rel_path)
+        rel = rel_path.replace("\\", "/").lstrip("/")
+        try:
+            mtime = int(os.path.getmtime(os.path.join(self._upload_dir, rel)))
+        except OSError:
+            return url
+        return f"{url}?v={mtime}"
+
     def find_file(self, file_id: str, subfolder: str) -> str:
         """
         Find file by ID in subfolder (any extension).

@@ -39,7 +39,7 @@
   background: #FF5722;
   border: none;
   color: #fff;
-  
+
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.1em;
@@ -50,4 +50,53 @@
 
 .confirmBtn:hover {
   background: #e64a19;
+}
+
+.confirmBtn:disabled {
+  background: #3a3a3a;
+  color: #777;
+  cursor: not-allowed;
+}
+
+.note {
+  font-size: 12px;
+  color: #BDBDBD;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rowLabel {
+  font-size: 11px;
+  color: #9E9E9E;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
+.row .input {
+  width: 70px;
+}
+
+.hint {
+  font-size: 11px;
+  color: #EF9A9A;
+  margin: 0;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.checkRow input {
+  accent-color: #2E7D32;
+  cursor: pointer;
 }

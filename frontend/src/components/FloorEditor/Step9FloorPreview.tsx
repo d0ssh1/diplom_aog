@@ -83,12 +83,20 @@ export const Step9FloorPreview: React.FC<Step9FloorPreviewProps> = ({
                   coordinates={nav.routeResult.path_3d}
                   fromRoom3D={
                     fromRoom3D
-                      ? { position: fromRoom3D.position, size: fromRoom3D.size }
+                      ? {
+                          position: fromRoom3D.position,
+                          size: fromRoom3D.size,
+                          rotation: fromRoom3D.rotation,
+                        }
                       : undefined
                   }
                   toRoom3D={
                     toRoom3D
-                      ? { position: toRoom3D.position, size: toRoom3D.size }
+                      ? {
+                          position: toRoom3D.position,
+                          size: toRoom3D.size,
+                          rotation: toRoom3D.rotation,
+                        }
                       : undefined
                   }
                   fromRoomName={fromRoom3D?.name}

@@ -5,8 +5,16 @@ import { buildRoutePolyline, CORNER_RADIUS_M } from './routePath.helpers';
 
 interface NavigationPathProps {
   coordinates: number[][] | null;
-  fromRoom3D?: { position: [number, number, number]; size: [number, number, number] };
-  toRoom3D?: { position: [number, number, number]; size: [number, number, number] };
+  fromRoom3D?: {
+    position: [number, number, number];
+    size: [number, number, number];
+    rotation?: number;
+  };
+  toRoom3D?: {
+    position: [number, number, number];
+    size: [number, number, number];
+    rotation?: number;
+  };
   fromRoomName?: string;
   toRoomName?: string;
   segments?: Array<{ coordinates: number[][] }>;
@@ -43,7 +51,7 @@ export const NavigationPath: React.FC<NavigationPathProps> = ({
       />
 
       {fromRoom3D && (
-        <group position={fromRoom3D.position}>
+        <group position={fromRoom3D.position} rotation={[0, fromRoom3D.rotation ?? 0, 0]}>
           <Box args={fromRoom3D.size}>
             <meshStandardMaterial
               color="#FF4500"
@@ -72,7 +80,7 @@ export const NavigationPath: React.FC<NavigationPathProps> = ({
       )}
 
       {toRoom3D && (
-        <group position={toRoom3D.position}>
+        <group position={toRoom3D.position} rotation={[0, toRoom3D.rotation ?? 0, 0]}>
           <Box args={toRoom3D.size}>
             <meshStandardMaterial
               color="#FF4500"

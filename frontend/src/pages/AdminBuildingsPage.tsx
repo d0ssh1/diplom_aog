@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
   Building2, Layers, Plus, Edit2, Trash2, Eye,
   ChevronDown, X, AlertTriangle, CheckCircle, AlertCircle,
-  MoreVertical, MoreHorizontal, GripVertical, Check, Map as MapIcon, ImageOff,
+  MoreVertical, MoreHorizontal, GripVertical, Check, Map as MapIcon, ImageOff, Boxes,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useBuildings } from '../hooks/useBuildings';
@@ -201,6 +201,16 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
 
         {!editing && (
           <div className={styles.buildingActions}>
+            {building.floors_count >= 2 && (
+              <button
+                className={styles.btnAssemble}
+                type="button"
+                onClick={(e) => { e.stopPropagation(); navigate(`/admin/buildings/${building.id}/assembly`); }}
+                title="Собрать здание — вертикальная стыковка этажей"
+              >
+                <Boxes size={14} /> Собрать здание
+              </button>
+            )}
             <span className={styles.floorsBadge}>
               <Layers size={14} /> {getPluralFloors(building.floors_count)}
             </span>

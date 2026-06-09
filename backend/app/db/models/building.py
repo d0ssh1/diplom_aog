@@ -27,6 +27,12 @@ class Building(Base):
     code: Mapped[str] = mapped_column(String(5), unique=True, nullable=False)
     address: Mapped[Optional[str]] = mapped_column(String(512), nullable=True)
 
+    # Operator overrides on top of the auto-matched cross-floor links
+    # (multifloor-routing, subfeature D). Format: [{lower_floor_id, lower_node,
+    # upper_floor_id, upper_node, action: "disable"|"force"}]. null/[] = pure
+    # auto-match. Mirrors the Floor.nav_cutouts JSON-column style.
+    transition_overrides: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     floors: Mapped[List["Floor"]] = relationship(
@@ -80,6 +86,22 @@ class Floor(Base):
     # Cutout zones (wizard step 8) — polygons that ERASE walls for nav + 3D.
     # Format: [{"points": [[x,y], ...]}, ...] normalised [0,1] over the master canvas.
     nav_cutouts: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+
+    # ── Vertical floor stitching (subfeature A) ──────────────────────────────
+    # Anchor points placed on THIS floor's wall mask for the pair (this floor ↔
+    # the floor BELOW). The pair is stored on the UPPER floor's row; the lowest
+    # floor stores nothing (it is the reference). Format: [{"id","x","y"}, ...]
+    # normalised [0,1] over this floor's wall mask.
+    stitch_points: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # Matching reference points on the floor BELOW's wall mask, paired with
+    # ``stitch_points`` by id. Format: [{"id","x","y"}, ...] normalised [0,1]
+    # over the lower floor's wall mask.
+    stitch_ref_points: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    # SHARED B/D CONTRACT (do NOT change semantics — see plan/README):
+    # a similarity mapping THIS floor's wall-mask pixels → the REFERENCE (lowest)
+    # floor's wall-mask pixels. Lowest floor = identity. ``None`` = unsolved /
+    # unlinked. Format: {scale, rotation_rad, tx, ty, residual_rms_px, n_points}.
+    building_transform: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

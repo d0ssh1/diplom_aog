@@ -7,6 +7,7 @@ import { RoomOverlay } from './MeshViewer/RoomOverlay';
 import type { RoomDisplay } from '../types/roomDisplay';
 import type { Room3DApi } from '../api/apiService';
 import { disposeObject3D } from '../lib/disposeObject3D';
+import { prepareTrimeshScene } from '../lib/glbScene';
 
 /* ────────────────────────────────────────────
    2GIS / Яндекс Карты palette
@@ -180,32 +181,11 @@ function GlbModel({ url, rooms, showRooms, rooms3D }: GlbModelProps) {
   const { scene } = useGLTF(url);
   const ref = useRef<THREE.Object3D>(null);
 
-  // Process materials BEFORE render via useMemo (not useEffect which runs after)
-  const processedScene = useMemo(() => {
-    const cloned = scene.clone(true);
-    cloned.traverse((child) => {
-      if (child instanceof THREE.Mesh) {
-        // Clone geometry to avoid mutating useGLTF cached version
-        child.geometry = child.geometry.clone();
-        // Fix 1: remove vertex colors (see bug description above)
-        if (child.geometry.hasAttribute('color')) {
-          child.geometry.deleteAttribute('color');
-        }
-        // Fix 2: recompute normals (see bug description above)
-        child.geometry.computeVertexNormals();
-        // Apply clean material with desired wall color
-        child.material = new THREE.MeshStandardMaterial({
-          color: COLORS.wallFallback,
-          roughness: 1.0,   // fully matte — убирает блики, маскирует артефакты нормалей
-          metalness: 0.0,
-          side: THREE.DoubleSide,
-        });
-        child.castShadow = true;
-        child.receiveShadow = true;
-      }
-    });
-    return cloned;
-  }, [scene]);
+  // Process materials BEFORE render via useMemo (not useEffect which runs after).
+  // The trimesh-GLB fix (strip baked vertex colors + recompute normals + apply a
+  // matte material — see bug description above) lives in the shared lib/glbScene
+  // helper so MeshViewer and BuildingMeshViewer use the identical, tested fix.
+  const processedScene = useMemo(() => prepareTrimeshScene(scene), [scene]);
 
   // Dispose the cloned geometries + the MeshStandardMaterials minted above when
   // this processedScene is replaced or the component unmounts. disposeGeometry=

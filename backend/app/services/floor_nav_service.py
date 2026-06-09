@@ -212,6 +212,13 @@ class FloorNavService:
                         rotation_rad=rot,
                         tx_k=tx_k,
                         ty_k=ty_k,
+                        # Transition metadata (D) — carry stair gates + elevator
+                        # range from vectorization_data onto the nav node.
+                        floor_from=room.get("floor_from"),
+                        floor_to=room.get("floor_to"),
+                        floors_excluded=room.get("floors_excluded") or [],
+                        connects_up=bool(room.get("connects_up", True)),
+                        connects_down=bool(room.get("connects_down", True)),
                     )
                 )
             # Doors from the same reconstruction (VectorDoor: position + connects).
@@ -484,7 +491,8 @@ class FloorNavService:
 
         Returns:
             List of dicts matching the ``Room3DApi`` shape: ``id``, ``name``,
-            ``room_type``, ``position`` ``[x, y, z]``, ``size`` ``[w, h, d]``.
+            ``room_type``, ``position`` ``[x, y, z]``, ``size`` ``[w, h, d]``,
+            ``rotation`` (Y-axis radians; 0 when the section was not rotated).
         """
         logger.debug("get_floor_rooms_3d: floor_id=%d", floor_id)
         path = self._nav_path(floor_id)
@@ -498,11 +506,24 @@ class FloorNavService:
         mask_h = metadata["mask_height"]
         rooms_3d: list[dict] = []
         for node_id, data in graph.nodes(data=True):
-            if data.get("type") != "room" or "bbox" not in data:
+            if data.get("type") != "room":
                 continue
-            rx, ry, rw, rh = data["bbox"]
-            cx = rx + rw / 2.0
-            cy = ry + rh / 2.0
+            # Prefer the oriented box (true dims + rotation); fall back to the
+            # axis-aligned bbox (single-plan / legacy graphs) with no rotation.
+            obox = data.get("obox")
+            if obox is not None:
+                cx, cy, bw, bh, angle = obox
+                # Canvas (x, y-down) warp by +φ → three.js Y-rotation of -φ
+                # (canvas-y maps to world-z with the same sign; a +Y rotation
+                # sends local +x toward -z).
+                rot_y = -float(angle)
+            elif "bbox" in data:
+                rx, ry, bw, bh = data["bbox"]
+                cx = rx + bw / 2.0
+                cy = ry + bh / 2.0
+                rot_y = 0.0
+            else:
+                continue
             rooms_3d.append(
                 {
                     "id": data.get("room_id", str(node_id)),
@@ -514,10 +535,11 @@ class FloorNavService:
                         round((cy - mask_h) * scale_factor, 4),
                     ],
                     "size": [
-                        round(rw * scale_factor, 4),
+                        round(bw * scale_factor, 4),
                         round(FLOOR_HEIGHT, 4),
-                        round(rh * scale_factor, 4),
+                        round(bh * scale_factor, 4),
                     ],
+                    "rotation": round(rot_y, 6),
                 }
             )
         return rooms_3d

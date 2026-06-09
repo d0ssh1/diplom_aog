@@ -358,6 +358,9 @@ export interface Room3DApi {
   room_type: string;
   position: [number, number, number];
   size: [number, number, number];
+  /** Y-axis rotation (radians) so the box matches a rotated section. 0/absent
+   *  for the single-plan path (rooms there are never rotated). */
+  rotation?: number;
 }
 
 export default apiClient;

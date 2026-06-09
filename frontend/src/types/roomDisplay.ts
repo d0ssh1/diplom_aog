@@ -15,8 +15,8 @@ export interface RoomDisplay {
 export const ROOM_COLORS: Record<string, string> = {
   classroom: '#f5c542',
   corridor:  '#4287f5',
-  staircase: '#f54242',
-  elevator:  '#a742f5',
+  staircase: '#2E7D32',
+  elevator:  '#6A1B9A',
   toilet:    '#42f5c8',
   other:     '#c8c8c8',
   room:      '#c8c8c8',

@@ -49,6 +49,20 @@ export const Sidebar: React.FC = () => {
           <span className={styles.arrow}>&gt;</span> Редактор отсеков
         </button>
         <button
+          className={`${styles.item} ${isActive('/admin/vertical-stitching') ? styles.active : ''}`}
+          onClick={() => navigate('/admin/vertical-stitching')}
+          type="button"
+        >
+          <span className={styles.arrow}>&gt;</span> Вертикальное сшивание
+        </button>
+        <button
+          className={`${styles.item} ${isActive('/admin/3d-routes') ? styles.active : ''}`}
+          onClick={() => navigate('/admin/3d-routes')}
+          type="button"
+        >
+          <span className={styles.arrow}>&gt;</span> 3D-маршруты
+        </button>
+        <button
           className={`${styles.item} ${isActive('/admin/transitions') ? styles.active : ''}`}
           onClick={() => navigate('/admin/transitions')}
           type="button"

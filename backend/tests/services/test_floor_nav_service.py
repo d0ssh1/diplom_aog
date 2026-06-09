@@ -252,6 +252,78 @@ def test_read_doors_returns_position_connects():
     assert doors[0]["connects"] == ["abc"]
 
 
+_STAIR = {
+    "id": "s1",
+    "name": "Лестница",
+    "room_type": "staircase",
+    "polygon": [
+        {"x": 0.3, "y": 0.3},
+        {"x": 0.45, "y": 0.3},
+        {"x": 0.45, "y": 0.45},
+        {"x": 0.3, "y": 0.45},
+    ],
+    "connects_up": False,
+    "connects_down": True,
+}
+
+_ELEVATOR = {
+    "id": "e1",
+    "name": "Лифт",
+    "room_type": "elevator",
+    "polygon": [
+        {"x": 0.6, "y": 0.6},
+        {"x": 0.75, "y": 0.6},
+        {"x": 0.75, "y": 0.75},
+        {"x": 0.6, "y": 0.75},
+    ],
+    "floor_from": 1,
+    "floor_to": 5,
+    "floors_excluded": [3],
+}
+
+
+@pytest.mark.asyncio
+async def test_build_graph_threads_transition_metadata_onto_nodes(
+    tmp_path, monkeypatch, small_mask
+):
+    """Stair gates + elevator range ride onto the persisted nav room nodes (D)."""
+    from app.processing.nav_graph import deserialize_nav_graph
+
+    section = make_section(rooms=[_STAIR, _ELEVATOR])
+    svc = _make_svc(tmp_path, monkeypatch, small_mask, sections=[section])
+    await svc.build_floor_nav_graph(1)
+
+    with open(svc._nav_path(1)) as f:
+        graph, _ = deserialize_nav_graph(json.load(f))
+
+    stair = graph.nodes["room_s1"]
+    assert stair["connects_up"] is False
+    assert stair["connects_down"] is True
+    elevator = graph.nodes["room_e1"]
+    assert elevator["floor_from"] == 1
+    assert elevator["floor_to"] == 5
+    assert elevator["floors_excluded"] == [3]
+
+
+@pytest.mark.asyncio
+async def test_build_graph_legacy_rooms_default_gates(
+    tmp_path, monkeypatch, small_mask
+):
+    """A room with no gate keys still builds; the node defaults to True/True."""
+    from app.processing.nav_graph import deserialize_nav_graph
+
+    section = make_section(rooms=[_ROOM])  # _ROOM carries no transition keys
+    svc = _make_svc(tmp_path, monkeypatch, small_mask, sections=[section])
+    await svc.build_floor_nav_graph(1)
+
+    with open(svc._nav_path(1)) as f:
+        graph, _ = deserialize_nav_graph(json.load(f))
+
+    node = graph.nodes["room_abc"]
+    assert node["connects_up"] is True
+    assert node["connects_down"] is True
+
+
 @pytest.mark.asyncio
 async def test_build_nav_graph_threads_rotation(tmp_path, monkeypatch, small_mask):
     """The section's rotation_rad reaches the SectionRoomInput fed to the transform."""
@@ -333,6 +405,47 @@ async def test_get_floor_rooms_3d_positions_use_scale_factor(
     # k=1 canvas (master 200x150, no upscale needed) → 30 px.
     expected_w = 0.15 * 200 * scale_factor
     assert room["size"][0] == pytest.approx(expected_w, rel=0.1)
+    # No rotation on this section → box rotation is 0.
+    assert room["rotation"] == pytest.approx(0.0, abs=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_get_floor_rooms_3d_uses_oriented_box_rotation(svc):
+    """A room node with an oriented box → rooms-3d returns rotation = -angle and
+    the oriented (true) dims rather than the inflated AABB."""
+    G = nx.Graph()
+    G.add_node(
+        "room_abc", type="room", room_id="abc", room_name="A",
+        room_type="room", pos=(100.0, 75.0),
+        bbox=(70.0, 60.0, 60.0, 30.0),         # inflated AABB
+        obox=(100.0, 75.0, 40.0, 20.0, 0.5),   # cx, cy, w, h, angle(rad)
+    )
+    with open(svc._nav_path(1), "w") as f:
+        json.dump(serialize_nav_graph(G, 200, 150, 0.02), f)
+
+    rooms = await svc.get_floor_rooms_3d(1)
+    assert len(rooms) == 1
+    assert rooms[0]["rotation"] == pytest.approx(-0.5, abs=1e-6)
+    # size uses the oriented (true) dims, not the inflated AABB.
+    assert rooms[0]["size"][0] == pytest.approx(40.0 * 0.02, abs=1e-6)
+    assert rooms[0]["size"][2] == pytest.approx(20.0 * 0.02, abs=1e-6)
+
+
+@pytest.mark.asyncio
+async def test_get_floor_rooms_3d_bbox_only_falls_back_no_rotation(svc):
+    """A legacy room node with only an AABB bbox → rotation 0, no crash."""
+    G = nx.Graph()
+    G.add_node(
+        "room_x", type="room", room_id="x", room_name="X",
+        room_type="room", pos=(50.0, 50.0), bbox=(40.0, 40.0, 20.0, 20.0),
+    )
+    with open(svc._nav_path(1), "w") as f:
+        json.dump(serialize_nav_graph(G, 200, 150, 0.02), f)
+
+    rooms = await svc.get_floor_rooms_3d(1)
+    assert len(rooms) == 1
+    assert rooms[0]["rotation"] == 0.0
+    assert rooms[0]["size"][0] == pytest.approx(20.0 * 0.02, abs=1e-6)
 
 
 # ── get_floor_nav_graph_2d ───────────────────────────────────────────────────

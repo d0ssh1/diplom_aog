@@ -72,7 +72,7 @@ describe('fromRoomAnnotation', () => {
     const r = makeAnnotation({ room_type: 'elevator' });
     const d = fromRoomAnnotation(r);
     expect(d.color).toBe(ROOM_COLORS.elevator);
-    expect(d.color).toBe('#a742f5');
+    expect(d.color).toBe('#6A1B9A');
   });
 
   it('falls back to other color for unknown room_type', () => {

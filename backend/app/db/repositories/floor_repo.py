@@ -211,3 +211,43 @@ class FloorRepository(BaseRepository):
         await self._session.commit()
         await self._session.refresh(floor)
         return floor
+
+    async def update_stitch_points(
+        self,
+        floor_id: int,
+        points: list,
+        ref_points: list,
+    ) -> Floor:
+        """UPDATE stitch_points + stitch_ref_points (vertical stitching, A).
+
+        ``points`` are this floor's anchor points; ``ref_points`` are the matching
+        points on the floor below (paired by id). Raises FloorNotFoundError.
+        """
+        logger.debug("update_stitch_points: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.stitch_points = points
+        floor.stitch_ref_points = ref_points
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor
+
+    async def update_building_transform(
+        self,
+        floor_id: int,
+        building_transform: Optional[dict],
+    ) -> Floor:
+        """UPDATE building_transform (vertical stitching, A).
+
+        Accepts ``None`` to reset an unlinked floor on re-solve. Raises
+        FloorNotFoundError.
+        """
+        logger.debug("update_building_transform: floor_id=%d", floor_id)
+        floor = await self._session.get(Floor, floor_id)
+        if not floor:
+            raise FloorNotFoundError(floor_id)
+        floor.building_transform = building_transform
+        await self._session.commit()
+        await self._session.refresh(floor)
+        return floor

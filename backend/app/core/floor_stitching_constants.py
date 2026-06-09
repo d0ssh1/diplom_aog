@@ -98,3 +98,18 @@ is invisible next to the multi-px section walls. This pixel floor keeps a
 connector readable on any floor regardless of scale; at normal ppm the
 metric calculation already exceeds it, so this is a no-op.
 """
+
+# ── Multifloor routing (subfeature D) ───────────────────────────────────────────
+MATCH_TOLERANCE_M = 1.5
+"""Shaft-match radius in the building frame (metres).
+
+A stair/lift node on floor N matches its partner on N±1 only when their
+building-frame XY (06-pipeline-spec §1 projection) are within this distance —
+roughly a typical shaft footprint. Tunable (03 open question — validate on a
+real stitched building; the operator can override a wrong/missing link)."""
+
+TRANSITION_COST_M = 3.0
+"""Cost (metres) of traversing one stair/elevator link in the merged graph.
+
+Defaults to ``FLOOR_HEIGHT`` (3.0) so a single vertical move costs about one
+storey, keeping the metric A* honest across floors. Tunable."""

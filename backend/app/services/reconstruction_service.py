@@ -84,7 +84,18 @@ class ReconstructionService:
         Returns:
             Reconstruction ORM model with status=3 (ready) or status=4
             (error)
+
+        Raises:
+            ValueError: if a manual elevator room has an invalid floor range
+                (surfaced as HTTP 400 by the caller). Validated up front so no
+                status=4 record is created for bad input.
         """
+        # 0. Validate elevator floor fields BEFORE creating any DB record, so
+        #    invalid input is rejected (400) instead of silently swallowed by
+        #    the build try/except below (which would produce a status=4 row).
+        if manual_rooms is not None:
+            self._validate_manual_room_floor_fields(manual_rooms)
+
         # 1. Create reconstruction record with status=2 (processing)
         reconstruction = await self._repo.create_reconstruction(
             plan_file_id, mask_file_id, user_id, status=2
@@ -154,7 +165,12 @@ class ReconstructionService:
                             polygon=poly,
                             center=Point2D(x=cx, y=cy),
                             room_type=r_dict.get("room_type", "room"),
-                            area_normalized=rw * rh
+                            area_normalized=rw * rh,
+                            floor_from=r_dict.get("floor_from"),
+                            floor_to=r_dict.get("floor_to"),
+                            floors_excluded=r_dict.get("floors_excluded", []),
+                            connects_up=r_dict.get("connects_up", True),
+                            connects_down=r_dict.get("connects_down", True),
                         )
                     )
             else:
@@ -427,8 +443,8 @@ class ReconstructionService:
             return []
         colors = {
             "classroom": "#f5c542", "corridor": "#4287f5",
-            "staircase": "#f54242", "toilet": "#42f5c8",
-            "other": "#c8c8c8", "room": "#c8c8c8",
+            "staircase": "#2E7D32", "elevator": "#6A1B9A",
+            "toilet": "#42f5c8", "other": "#c8c8c8", "room": "#c8c8c8",
         }
         return [
             {
@@ -441,6 +457,38 @@ class ReconstructionService:
             }
             for room in vr.rooms
         ]
+
+    @staticmethod
+    def _validate_manual_room_floor_fields(manual_rooms: List[dict]) -> None:
+        """Validate elevator floor-link fields on manual rooms (raises 400).
+
+        Reuses the ``Room`` model validator: builds a minimal Room per entry
+        that carries floor fields, so an invalid range raises ``ValueError``
+        before any DB record is created. Non-elevator rooms (no floor fields)
+        pass through untouched.
+
+        Args:
+            manual_rooms: Raw room dicts from the request.
+
+        Raises:
+            ValueError: if any elevator floor range is invalid.
+        """
+        for r_dict in manual_rooms:
+            ff = r_dict.get("floor_from")
+            ft = r_dict.get("floor_to")
+            fx = r_dict.get("floors_excluded", [])
+            if ff is None and ft is None:
+                continue
+            # Constructing Room fires the @model_validator floor-range check.
+            Room(
+                id="_validate",
+                polygon=[Point2D(x=0.0, y=0.0)],
+                center=Point2D(x=0.0, y=0.0),
+                room_type=r_dict.get("room_type", "elevator"),
+                floor_from=ff,
+                floor_to=ft,
+                floors_excluded=fx,
+            )
 
     def build_mesh_url(self, reconstruction: Reconstruction) -> Optional[str]:
         """

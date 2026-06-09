@@ -1,17 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { TransitionSpec } from '../../types/wizard';
+import {
+  resolveConfirmPayload,
+  validateElevator,
+  type PopupRoomType,
+} from './roomPopup.helpers';
 import styles from './RoomPopup.module.css';
-
-const TYPE_LABELS: Record<string, string> = {
-  room: 'Кабинет',
-  staircase: 'Лестница',
-  elevator: 'Лифт',
-  corridor: 'Коридор',
-};
 
 interface RoomPopupProps {
   position: { x: number; y: number };
-  roomType: 'room' | 'staircase' | 'elevator' | 'corridor';
-  onConfirm: (name: string) => void;
+  roomType: PopupRoomType;
+  onConfirm: (name: string, transition?: TransitionSpec) => void;
   onCancel: () => void;
 }
 
@@ -22,10 +21,16 @@ export const RoomPopup: React.FC<RoomPopupProps> = ({
   onCancel,
 }) => {
   const [inputValue, setInputValue] = useState('');
+  const [floorFrom, setFloorFrom] = useState('');
+  const [floorTo, setFloorTo] = useState('');
+  const [excludedRaw, setExcludedRaw] = useState('');
+  // Stair directional gates (multifloor-routing, D) — both ON by default.
+  const [connectsUp, setConnectsUp] = useState(true);
+  const [connectsDown, setConnectsDown] = useState(true);
   const popupRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-focus input on mount
+  // Auto-focus first input on mount
   useEffect(() => {
     inputRef.current?.focus();
   }, []);
@@ -50,10 +55,26 @@ export const RoomPopup: React.FC<RoomPopupProps> = ({
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [onCancel]);
 
+  const elevator = validateElevator(floorFrom, floorTo, excludedRaw);
+  const canConfirm =
+    roomType === 'elevator'
+      ? elevator.valid
+      : roomType === 'room'
+        ? inputValue.trim().length > 0
+        : true;
+
   const handleConfirm = () => {
-    const name = roomType === 'room' ? inputValue.trim() : TYPE_LABELS[roomType];
-    if (roomType === 'room' && !name) return;
-    onConfirm(name);
+    const payload = resolveConfirmPayload(
+      roomType,
+      inputValue,
+      floorFrom,
+      floorTo,
+      excludedRaw,
+      connectsUp,
+      connectsDown,
+    );
+    if (!payload) return;
+    onConfirm(payload.name, payload.transition);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -80,7 +101,73 @@ export const RoomPopup: React.FC<RoomPopupProps> = ({
           />
         </>
       )}
-      <button type="button" className={styles.confirmBtn} onClick={handleConfirm}>
+
+      {roomType === 'staircase' && (
+        <>
+          <p className={styles.note}>Соединяет соседние этажи</p>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={connectsUp}
+              onChange={(e) => setConnectsUp(e.target.checked)}
+            />
+            <span className={styles.rowLabel}>Доступ на верхний этаж</span>
+          </label>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={connectsDown}
+              onChange={(e) => setConnectsDown(e.target.checked)}
+            />
+            <span className={styles.rowLabel}>Доступ на нижний этаж</span>
+          </label>
+        </>
+      )}
+
+      {roomType === 'elevator' && (
+        <>
+          <div className={styles.row}>
+            <span className={styles.rowLabel}>Этажи с</span>
+            <input
+              ref={inputRef}
+              type="number"
+              min={1}
+              step={1}
+              className={styles.input}
+              value={floorFrom}
+              onChange={(e) => setFloorFrom(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+            <span className={styles.rowLabel}>по</span>
+            <input
+              type="number"
+              min={1}
+              step={1}
+              className={styles.input}
+              value={floorTo}
+              onChange={(e) => setFloorTo(e.target.value)}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+          <p className={styles.label}>Исключить этажи</p>
+          <input
+            type="text"
+            className={styles.input}
+            value={excludedRaw}
+            onChange={(e) => setExcludedRaw(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="например, 5, 7"
+          />
+          {elevator.hint && <p className={styles.hint}>{elevator.hint}</p>}
+        </>
+      )}
+
+      <button
+        type="button"
+        className={styles.confirmBtn}
+        onClick={handleConfirm}
+        disabled={!canConfirm}
+      >
         Подтвердить
       </button>
     </div>

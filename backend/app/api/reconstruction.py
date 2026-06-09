@@ -139,6 +139,10 @@ async def calculate_mesh(
             rotation_angle=vectorization.rotation_angle if vectorization else 0,
             error_message=reconstruction.error_message,
         )
+    except ValueError as e:
+        # Invalid manual-room input (e.g. elevator floor range) — reject as 400.
+        logger.warning("build_mesh rejected invalid input: %s", e)
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error("build_mesh failed: %s", e, exc_info=True)
         raise HTTPException(status_code=500, detail="Ошибка построения 3D модели")

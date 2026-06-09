@@ -935,6 +935,14 @@ def normalize_coords(
             ),
             room_type=room.room_type,
             area_normalized=room.area_normalized,
+            # Carry inter-floor link fields through the rebuild so elevator
+            # data is not silently dropped (floor-transition-tools), and the
+            # stair directional gates likewise (multifloor-routing, D).
+            floor_from=room.floor_from,
+            floor_to=room.floor_to,
+            floors_excluded=list(room.floors_excluded),
+            connects_up=room.connects_up,
+            connects_down=room.connects_down,
         ))
 
     normalized_doors: List[Door] = []

@@ -4,7 +4,7 @@ import { WallEditorCanvas } from '../Editor/WallEditorCanvas';
 import type { WallEditorCanvasRef } from '../Editor/WallEditorCanvas';
 import { RoomPopup } from '../Editor/RoomPopup';
 import { reconstructionApi } from '../../api/apiService';
-import type { CropRect } from '../../types/wizard';
+import type { CropRect, TransitionSpec } from '../../types/wizard';
 import styles from './StepWallEditor.module.css';
 import panelStyles from '../Editor/ToolPanelV2.module.css';
 
@@ -13,7 +13,7 @@ type ActiveTool = 'wall' | 'eraser' | 'room' | 'staircase' | 'elevator' | 'corri
 interface PopupState {
   position: { x: number; y: number };
   roomType: 'room' | 'staircase' | 'elevator' | 'corridor';
-  onConfirm: (name: string) => void;
+  onConfirm: (name: string, transition?: TransitionSpec) => void;
   onCancel: () => void;
 }
 
@@ -128,16 +128,16 @@ export const StepWallEditor: React.FC<StepWallEditorProps> = ({
 
   const handleRoomPopupRequest = (
     rect: { x: number; y: number; w: number; h: number },
-    onConfirm: (name: string) => void,
+    onConfirm: (name: string, transition?: TransitionSpec) => void,
     onCancel: () => void,
   ) => {
     const roomType = activeTool as 'room' | 'staircase' | 'elevator' | 'corridor';
     setPopupState({ position: { x: rect.x, y: rect.y }, roomType, onConfirm, onCancel });
   };
 
-  const handlePopupConfirm = (name: string) => {
+  const handlePopupConfirm = (name: string, transition?: TransitionSpec) => {
     if (!popupState) return;
-    popupState.onConfirm(name);
+    popupState.onConfirm(name, transition);
     setPopupState(null);
   };
 

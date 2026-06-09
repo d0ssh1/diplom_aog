@@ -20,6 +20,24 @@ export interface RoomAnnotation {
   polygon?: {x: number, y: number}[];
   center?: {x: number, y: number};
   area_normalized?: number;
+  // Inter-floor link data for elevators (floor-transition-tools).
+  floor_from?: number;
+  floor_to?: number;
+  floors_excluded?: number[];
+  // Stair directional gates (multifloor-routing, D). Default true on the backend.
+  connects_up?: boolean;
+  connects_down?: boolean;
+}
+
+// Floor-link payload emitted by RoomPopup on confirm for stairs/elevator.
+export interface TransitionSpec {
+  kind: 'stairs' | 'elevator';
+  floor_from?: number;
+  floor_to?: number;
+  floors_excluded?: number[];
+  // Stair gates (D) — present only for kind === 'stairs'.
+  connects_up?: boolean;
+  connects_down?: boolean;
 }
 
 export interface DoorAnnotation {

@@ -12,6 +12,10 @@ import { StitchingPage } from './pages/StitchingPage';
 import { TransitionsPage } from './pages/TransitionsPage';
 import { RouteTestPage } from './pages/RouteTestPage';
 import { AdminBuildingsPage } from './pages/AdminBuildingsPage';
+import { BuildingAssemblyPage } from './pages/BuildingAssemblyPage';
+import { VerticalStitchingPage } from './pages/VerticalStitchingPage';
+import { Multifloor3DRoutesPage } from './pages/Multifloor3DRoutesPage';
+import { BuildingScenePage } from './pages/BuildingScenePage';
 import { FloorViewerPage } from './pages/FloorViewerPage';
 import { FloorEditorPage } from './pages/FloorEditorPage';
 
@@ -29,6 +33,10 @@ function App() {
         <Route path="stitching" element={<StitchingPage />} />
       </Route>
       <Route path="/admin/buildings" element={<AdminBuildingsPage />} />
+      <Route path="/admin/buildings/:id/assembly" element={<BuildingAssemblyPage />} />
+      <Route path="/admin/buildings/:id/scene" element={<BuildingScenePage />} />
+      <Route path="/admin/vertical-stitching" element={<VerticalStitchingPage />} />
+      <Route path="/admin/3d-routes" element={<Multifloor3DRoutesPage />} />
       <Route path="/admin/floor-editor" element={<FloorEditorPage />} />
       <Route path="/admin/transitions" element={<TransitionsPage />} />
       <Route path="/admin/transitions/:buildingId" element={<TransitionsPage />} />

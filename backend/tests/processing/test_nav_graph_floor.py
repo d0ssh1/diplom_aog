@@ -6,6 +6,8 @@ maths), ``transform_doors_to_floor_canvas`` and ``build_floor_graph_from_mask``
 (delegation to the nav_graph pipeline).
 """
 
+import math
+
 import networkx as nx
 import numpy as np
 import pytest
@@ -167,10 +169,13 @@ def test_transform_rooms_drops_zero_area():
 
 
 def test_transform_rooms_output_shape():
-    """Output dict keys are exactly {id,name,room_type,x,y,width,height}."""
+    """Output keys: AABB + oriented box + transition metadata pass-through (D)."""
     out = transform_rooms_to_floor_canvas([make_room()], 100, 100)
     assert set(out[0].keys()) == {
-        "id", "name", "room_type", "x", "y", "width", "height"
+        "id", "name", "room_type", "x", "y", "width", "height",
+        "obb_cx", "obb_cy", "obb_w", "obb_h", "rotation_rad",
+        "floor_from", "floor_to", "floors_excluded",
+        "connects_up", "connects_down",
     }
 
 
@@ -345,3 +350,38 @@ def test_floor_graph_walled_sections_stay_separate():
     left_comp = nx.node_connected_component(graph, left[0])
     assert not any(r in left_comp for r in right), \
         "walled sections must not be bridged together"
+
+
+# ── oriented room box (rotation fix) ─────────────────────────────────────────
+
+
+def test_transform_rooms_emits_oriented_box_with_rotation():
+    """A rotated room carries TRUE (un-inflated) dims + rotation_rad; the
+    axis-aligned width/height are inflated by the rotation."""
+    room = make_room(
+        x=0.3, y=0.3, w=0.2, h=0.1, scale_k=1.0, tx=0.0, ty=0.0,
+        mask_w=100, mask_h=100, rotation_rad=math.radians(30), room_id="r1",
+    )
+    out = transform_rooms_to_floor_canvas([room], 200, 200)
+    assert len(out) == 1
+    r = out[0]
+    assert r["rotation_rad"] == pytest.approx(math.radians(30))
+    # True dims normalised: w = 0.2*100/200 = 0.1 ; h = 0.1*100/200 = 0.05.
+    assert r["obb_w"] == pytest.approx(0.1, abs=1e-6)
+    assert r["obb_h"] == pytest.approx(0.05, abs=1e-6)
+    # The AABB of the rotated rectangle is strictly larger than the true dims.
+    assert r["width"] > r["obb_w"]
+    assert r["height"] > r["obb_h"]
+
+
+def test_transform_rooms_no_rotation_obb_matches_aabb():
+    """With rotation 0 the oriented box equals the axis-aligned bbox (no spin)."""
+    room = make_room(
+        x=0.3, y=0.3, w=0.2, h=0.1, scale_k=1.0, tx=0.0, ty=0.0,
+        mask_w=100, mask_h=100, rotation_rad=0.0, room_id="r1",
+    )
+    out = transform_rooms_to_floor_canvas([room], 200, 200)
+    r = out[0]
+    assert r["rotation_rad"] == 0.0
+    assert r["obb_w"] == pytest.approx(r["width"], abs=1e-6)
+    assert r["obb_h"] == pytest.approx(r["height"], abs=1e-6)

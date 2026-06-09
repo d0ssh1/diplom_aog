@@ -11,6 +11,9 @@ from app.db.repositories.transition_repo import TransitionRepository
 from app.db.repositories.user_repository import UserRepository
 from app.db.repositories.floor_transition_repo import FloorTransitionRepository
 from app.db.repositories.floor_connector_repo import FloorConnectorRepository
+from app.services.building_assembly_service import BuildingAssemblyService
+from app.services.building_nav_service import BuildingNavService
+from app.services.building_scene_service import BuildingSceneService
 from app.services.building_service import BuildingService
 from app.services.floor_assembly_service import FloorAssemblyService
 from app.services.floor_nav_service import FloorNavService
@@ -90,9 +93,6 @@ async def get_stitching_service(
 ) -> StitchingService:
     """Dependency factory for StitchingService."""
     return StitchingService(reconstruction_repo=repo)
-
-
-
 
 
 async def get_floor_transition_service(
@@ -209,6 +209,49 @@ async def get_floor_nav_service(
         floor_repo=floor_repo,
         section_repo=section_repo,
         connector_repo=connector_repo,
+        storage=storage,
+        upload_dir=str(settings.UPLOAD_DIR),
+    )
+
+
+# ── Vertical floor-stitching deps (subfeature A) ──────────────────────────────
+
+
+async def get_building_assembly_service(
+    building_repo: BuildingRepository = Depends(get_building_repo),
+    floor_repo: FloorRepository = Depends(get_floor_repo),
+    storage: FileStorage = Depends(get_file_storage),
+) -> BuildingAssemblyService:
+    return BuildingAssemblyService(
+        building_repo=building_repo,
+        floor_repo=floor_repo,
+        storage=storage,
+    )
+
+
+async def get_building_scene_service(
+    building_repo: BuildingRepository = Depends(get_building_repo),
+    floor_repo: FloorRepository = Depends(get_floor_repo),
+    storage: FileStorage = Depends(get_file_storage),
+) -> BuildingSceneService:
+    return BuildingSceneService(
+        building_repo=building_repo,
+        floor_repo=floor_repo,
+        storage=storage,
+    )
+
+
+# ── Multifloor-routing deps (subfeature D) ────────────────────────────────────
+
+
+async def get_building_nav_service(
+    building_repo: BuildingRepository = Depends(get_building_repo),
+    floor_repo: FloorRepository = Depends(get_floor_repo),
+    storage: FileStorage = Depends(get_file_storage),
+) -> BuildingNavService:
+    return BuildingNavService(
+        building_repo=building_repo,
+        floor_repo=floor_repo,
         storage=storage,
         upload_dir=str(settings.UPLOAD_DIR),
     )

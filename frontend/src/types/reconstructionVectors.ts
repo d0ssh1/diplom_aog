@@ -10,6 +10,10 @@ export interface VectorRoom {
   center: VectorPoint;
   polygon: VectorPoint[];
   area_normalized: number;
+  // Elevator floor-link metadata (floor-transition-tools). Absent for room/stairs/corridor.
+  floor_from?: number;
+  floor_to?: number;
+  floors_excluded?: number[];
 }
 
 export interface VectorDoor {

@@ -12,6 +12,7 @@ interface ComputedRoom {
   color: string;
   position: [number, number, number];
   size: [number, number, number];
+  rotation: number;
 }
 
 interface RoomOverlayProps {
@@ -61,6 +62,7 @@ export const RoomOverlay: React.FC<RoomOverlayProps> = ({
             color: meta?.color ?? '#c8c8c8',
             position: r.position,
             size: r.size,
+            rotation: r.rotation ?? 0,
           };
         }),
       );
@@ -93,6 +95,7 @@ export const RoomOverlay: React.FC<RoomOverlayProps> = ({
           wallHeight * 0.8,
           Math.max(room.height_norm * rangeZ, 0.1),
         ],
+        rotation: 0,
       })),
     );
   }, [visible, rooms, rooms3D, modelRef, wallHeight, colorById]);
@@ -102,7 +105,7 @@ export const RoomOverlay: React.FC<RoomOverlayProps> = ({
   return (
     <>
       {computed.map((r) => (
-        <group key={r.id} position={r.position}>
+        <group key={r.id} position={r.position} rotation={[0, r.rotation, 0]}>
           <Box args={r.size as [number, number, number]}>
             <meshStandardMaterial
               color={r.color}

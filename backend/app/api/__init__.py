@@ -18,6 +18,9 @@ from app.api.stitching import router as stitching_router
 from app.api.floor_transitions import router as floor_transitions_router
 from app.api.floor_assembly import router as floor_assembly_router
 from app.api.floor_nav import router as floor_nav_router
+from app.api.building_assembly import router as building_assembly_router
+from app.api.building_scene import router as building_scene_router
+from app.api.building_nav import router as building_nav_router
 
 # Main API router
 router = APIRouter()
@@ -38,6 +41,9 @@ router.include_router(stitching_router)
 router.include_router(floor_transitions_router)
 router.include_router(floor_assembly_router)
 router.include_router(floor_nav_router)
+router.include_router(building_assembly_router)
+router.include_router(building_scene_router)
+router.include_router(building_nav_router)
 
 
 # Common info endpoint

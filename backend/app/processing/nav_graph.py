@@ -314,15 +314,34 @@ def integrate_semantics(
         cy = ry + rh / 2.0
 
         node_id = f"room_{room['id']}"
-        G.add_node(
-            node_id,
-            type='room',
-            pos=(cx, cy),
-            room_id=room['id'],
-            room_name=room.get('name', ''),
-            room_type=room.get('room_type', 'room'),
-            bbox=(rx, ry, rw, rh),
-        )
+        node_attrs = {
+            'type': 'room',
+            'pos': (cx, cy),
+            'room_id': room['id'],
+            'room_name': room.get('name', ''),
+            'room_type': room.get('room_type', 'room'),
+            'bbox': (rx, ry, rw, rh),
+            # Transition metadata (multifloor-routing, D) — copied onto the node
+            # so route-time matching reads it straight off the persisted graph.
+            # Default-safe: legacy callers (single-plan nav_service) omit these
+            # keys → stairs open both ways, no elevator range constraint.
+            'floor_from': room.get('floor_from'),
+            'floor_to': room.get('floor_to'),
+            'floors_excluded': room.get('floors_excluded', []),
+            'connects_up': room.get('connects_up', True),
+            'connects_down': room.get('connects_down', True),
+        }
+        # Oriented box from the floor transform (rotation-aware 3D room box, Q2
+        # fix). Absent for the single-plan caller → node keeps only the AABB bbox.
+        if 'obb_w' in room:
+            node_attrs['obox'] = (
+                room['obb_cx'] * mask_width,
+                room['obb_cy'] * mask_height,
+                room['obb_w'] * mask_width,
+                room['obb_h'] * mask_height,
+                room.get('rotation_rad', 0.0),
+            )
+        G.add_node(node_id, **node_attrs)
         room_nodes[room['id']] = node_id
 
     # --- 2. Геометрия коридоров для snap ---

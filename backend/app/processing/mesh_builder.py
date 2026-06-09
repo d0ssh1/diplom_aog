@@ -14,6 +14,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Floor-slab vertex colour baked into the GLB. A LIGHT warm beige — distinctly
+# lighter than the wall colour (mesh_generator.WALL_SIDE_COLOR = 158 grey) and warm
+# vs the neutral-grey walls, so the floor reads as its own surface (not merged) in
+# the stacked building viewer while staying visible against the white background.
+FLOOR_SLAB_COLOR = [208, 202, 188, 255]  # light warm beige
+
 
 def _create_floor(
     width_m: float,
@@ -219,6 +225,45 @@ def build_mesh_from_mask(
             "build_mesh_from_mask", "No wall meshes created",
         )
 
+    # Step 3.4: Floor slab — fill the building footprint so the floor reads as a
+    # solid surface under the walls (not floating walls). Union the EXTERIORS of
+    # the wall polygons (drop interior holes) → the solid footprint, then extrude a
+    # thin slab and drop it a few cm BELOW z=0 (walls rise from z=0) so the slab top
+    # never sits coplanar with the wall bottoms — that coplanarity is what causes
+    # z-fighting. Best-effort: a slab failure must never block the walls.
+    try:
+        from shapely.ops import unary_union
+        from trimesh import creation as trimesh_creation
+
+        solids = [
+            ShapelyPolygon(p.exterior) for p in polygons if p.exterior is not None
+        ]
+        footprint = unary_union(solids) if solids else None
+        if footprint is not None and not footprint.is_empty:
+            slab_geoms = (
+                list(footprint.geoms)
+                if footprint.geom_type == "MultiPolygon"
+                else [footprint]
+            )
+            slab_count = 0
+            for sp in slab_geoms:
+                if not sp.is_valid:
+                    sp = sp.buffer(0)
+                if sp.is_empty or sp.area <= 0:
+                    continue
+                slab = trimesh_creation.extrude_polygon(sp, height=0.1)
+                # z in [-0.13, -0.03] → top 3 cm below the walls (no z-fighting).
+                slab.apply_translation([0.0, 0.0, -0.13])
+                colors = np.tile(
+                    FLOOR_SLAB_COLOR, (len(slab.vertices), 1)
+                ).astype(np.uint8)
+                slab.visual.vertex_colors = colors
+                meshes.append(slab)
+                slab_count += 1
+            logger.info("Floor slab pieces: %d", slab_count)
+    except Exception as exc:  # noqa: BLE001 — slab is cosmetic, never fatal
+        logger.warning("floor slab build failed (walls kept): %s", exc)
+
     # Step 3.5: Extrude transitions
     if transitions:
         for t_geom in transitions:
@@ -230,9 +275,11 @@ def build_mesh_from_mask(
                 if poly.is_valid and not poly.is_empty and poly.area > 0:
                     t_mesh = extrude_wall(poly, height=0.05)
                     if t_mesh is not None:
-                        t_mesh.apply_translation([0, 0, 0.01]) # slightly above floor
+                        t_mesh.apply_translation([0, 0, 0.01])  # slightly above floor
                         # Green color for transitions
-                        colors = np.tile([34, 197, 94, 200], (len(t_mesh.vertices), 1)).astype(np.uint8)
+                        colors = np.tile(
+                            [34, 197, 94, 200], (len(t_mesh.vertices), 1)
+                        ).astype(np.uint8)
                         t_mesh.visual.vertex_colors = colors
                         meshes.append(t_mesh)
             except Exception as exc:

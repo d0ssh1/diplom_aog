@@ -25,7 +25,7 @@ construction.
 
 import logging
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 import networkx as nx
@@ -78,6 +78,11 @@ class SectionRoomInput:
             rotation is invariant to the uniform memory-guard factor ``k``).
         tx_k: ``section.transform["tx"] * k``.
         ty_k: ``section.transform["ty"] * k``.
+        floor_from: elevator lowest served floor (``None`` for non-elevators).
+        floor_to: elevator highest served floor (``None`` for non-elevators).
+        floors_excluded: elevator floors the cabin skips (empty for non-elevators).
+        connects_up: stair gate — links to the floor ABOVE (default ``True``).
+        connects_down: stair gate — links to the floor BELOW (default ``True``).
     """
 
     room_id: str
@@ -90,6 +95,13 @@ class SectionRoomInput:
     rotation_rad: float
     tx_k: float
     ty_k: float
+    # Transition metadata (multifloor-routing, D) — threaded onto the persisted
+    # nav node so route-time matching never re-reads ``vectorization_data``.
+    floor_from: Optional[int] = None
+    floor_to: Optional[int] = None
+    floors_excluded: list[int] = field(default_factory=list)
+    connects_up: bool = True
+    connects_down: bool = True
 
 
 def transform_rooms_to_floor_canvas(
@@ -116,10 +128,12 @@ def transform_rooms_to_floor_canvas(
 
     Returns:
         List of dicts with keys ``id``, ``name``, ``room_type``, ``x``, ``y``,
-        ``width``, ``height`` all normalised [0,1] over ``(canvas_w, canvas_h)``.
-        The dict shape matches what ``nav_graph.integrate_semantics`` consumes.
-        Rooms are clipped to the canvas; zero-area rooms (after clipping) are
-        dropped.
+        ``width``, ``height`` (axis-aligned bbox) plus the oriented box
+        ``obb_cx``/``obb_cy``/``obb_w``/``obb_h`` and ``rotation_rad`` (Q2 fix —
+        true dims + angle so the 3D room box renders rotated); all lengths
+        normalised [0,1] over ``(canvas_w, canvas_h)``. The dict shape matches
+        what ``nav_graph.integrate_semantics`` consumes. Rooms are clipped to the
+        canvas; zero-area rooms (after clipping) are dropped.
     """
     result: list[dict] = []
     for room in rooms:
@@ -128,10 +142,14 @@ def transform_rooms_to_floor_canvas(
         sin = room.scale_k * math.sin(room.rotation_rad)
         floor_xs: list[float] = []
         floor_ys: list[float] = []
+        sec_xs: list[float] = []
+        sec_ys: list[float] = []
         for norm_x, norm_y in room.polygon:
             # De-normalise by the LOADED MASK dims (the warped array) — ADR-11.
             sec_px_x = norm_x * room.mask_w
             sec_px_y = norm_y * room.mask_h
+            sec_xs.append(sec_px_x)
+            sec_ys.append(sec_px_y)
             floor_xs.append(cos * sec_px_x - sin * sec_px_y + room.tx_k)
             floor_ys.append(sin * sec_px_x + cos * sec_px_y + room.ty_k)
         if not floor_xs:
@@ -146,6 +164,19 @@ def transform_rooms_to_floor_canvas(
         if floor_px_w <= 0 or floor_px_h <= 0:
             continue
 
+        # Oriented box (Q2-поворот fix): the room is axis-aligned in its OWN
+        # section, so the section-space AABB gives the TRUE (un-inflated) dims.
+        # Warp the section-bbox CENTER through the SAME similarity and carry
+        # rotation_rad, so the 3D room box can render rotated to match the warped
+        # walls — the floor-space AABB above is inflated + axis-aligned and so
+        # cannot represent the rotation.
+        sec_cx = (min(sec_xs) + max(sec_xs)) / 2.0
+        sec_cy = (min(sec_ys) + max(sec_ys)) / 2.0
+        obb_cx = cos * sec_cx - sin * sec_cy + room.tx_k
+        obb_cy = sin * sec_cx + cos * sec_cy + room.ty_k
+        obb_w = (max(sec_xs) - min(sec_xs)) * room.scale_k
+        obb_h = (max(sec_ys) - min(sec_ys)) * room.scale_k
+
         result.append(
             {
                 "id": room.room_id,
@@ -155,6 +186,17 @@ def transform_rooms_to_floor_canvas(
                 "y": y0 / canvas_h,
                 "width": floor_px_w / canvas_w,
                 "height": floor_px_h / canvas_h,
+                "obb_cx": obb_cx / canvas_w,
+                "obb_cy": obb_cy / canvas_h,
+                "obb_w": obb_w / canvas_w,
+                "obb_h": obb_h / canvas_h,
+                "rotation_rad": room.rotation_rad,
+                # Transition metadata pass-through (D) — pure carry, no maths.
+                "floor_from": room.floor_from,
+                "floor_to": room.floor_to,
+                "floors_excluded": list(room.floors_excluded),
+                "connects_up": room.connects_up,
+                "connects_down": room.connects_down,
             }
         )
     return result
