@@ -31,51 +31,18 @@ export const Sidebar: React.FC = () => {
           onClick={() => navigate('/admin')}
           type="button"
         >
-          <span className={styles.arrow}>&gt;</span> Редактировать план
-        </button>
-        
-        <button
-          className={`${styles.item} ${isActive('/admin/buildings') ? styles.active : ''}`}
-          onClick={() => navigate('/admin/buildings')}
-          type="button"
-        >
           <span className={styles.arrow}>&gt;</span> Корпуса и этажи
         </button>
-        <button
-          className={`${styles.item} ${isActive('/admin/floor-editor') ? styles.active : ''}`}
-          onClick={() => navigate('/admin/floor-editor')}
-          type="button"
-        >
-          <span className={styles.arrow}>&gt;</span> Редактор отсеков
-        </button>
-        <button
-          className={`${styles.item} ${isActive('/admin/vertical-stitching') ? styles.active : ''}`}
-          onClick={() => navigate('/admin/vertical-stitching')}
-          type="button"
-        >
-          <span className={styles.arrow}>&gt;</span> Вертикальное сшивание
-        </button>
+        
         <button
           className={`${styles.item} ${isActive('/admin/3d-routes') ? styles.active : ''}`}
           onClick={() => navigate('/admin/3d-routes')}
           type="button"
         >
-          <span className={styles.arrow}>&gt;</span> 3D-маршруты
-        </button>
-        <button
-          className={`${styles.item} ${isActive('/admin/transitions') ? styles.active : ''}`}
-          onClick={() => navigate('/admin/transitions')}
-          type="button"
-        >
-          <span className={styles.arrow}>&gt;</span> Переходы между планами
-        </button>
-        <button
-          className={`${styles.item} ${isActive('/admin/route-test') ? styles.active : ''}`}
-          onClick={() => navigate('/admin/route-test')}
-          type="button"
-        >
           <span className={styles.arrow}>&gt;</span> Тестовый маршрут
         </button>
+        
+        
         {canApproveUsers && (
           <button
             className={`${styles.item} ${isActive('/admin/pending-users') ? styles.active : ''}`}

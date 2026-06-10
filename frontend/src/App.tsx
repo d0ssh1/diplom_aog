@@ -4,7 +4,6 @@ import { LoginPage } from './pages/LoginPage';
 import { RegisterPage } from './pages/RegisterPage';
 import { ForgotPasswordPage } from './pages/ForgotPasswordPage';
 import { PublicHomePage } from './pages/PublicHomePage';
-import { DashboardPage } from './pages/DashboardPage';
 import { WizardPage } from './pages/WizardPage';
 import { EditPlanPage } from './pages/EditPlanPage';
 import { PendingUsersPage } from './pages/PendingUsersPage';
@@ -28,11 +27,11 @@ function App() {
       <Route path="/register" element={<RegisterPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/admin" element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<AdminBuildingsPage />} />
         <Route path="pending-users" element={<PendingUsersPage />} />
         <Route path="stitching" element={<StitchingPage />} />
+        <Route path="buildings" element={<Navigate to="/admin" replace />} />
       </Route>
-      <Route path="/admin/buildings" element={<AdminBuildingsPage />} />
       <Route path="/admin/buildings/:id/assembly" element={<BuildingAssemblyPage />} />
       <Route path="/admin/buildings/:id/scene" element={<BuildingScenePage />} />
       <Route path="/admin/vertical-stitching" element={<VerticalStitchingPage />} />

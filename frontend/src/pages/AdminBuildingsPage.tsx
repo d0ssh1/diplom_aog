@@ -150,7 +150,7 @@ const BuildingCard: React.FC<BuildingCardProps> = ({
   return (
     <div className={styles.buildingCard}>
       {/* Building row */}
-      <div className={`${styles.buildingRow} ${isEditingBuilding ? styles.buildingRowEditing : ''}`}>
+      <div onClick={handleExpand} className={`${styles.buildingRow} ${isEditingBuilding ? styles.buildingRowEditing : ''}`}>
         <div className={styles.buildingIcons}>
           <GripVertical size={18} className={styles.gripIcon} />
           <Building2 size={20} className={styles.buildingIcon} />
@@ -335,7 +335,7 @@ const FloorRow: React.FC<FloorRowProps> = ({
     <div className={styles.floorWrap}>
       <div className={styles.treeLine} />
       <div className={styles.treeLineH} />
-      <div className={`${styles.floorRow} ${isEditing ? styles.floorRowEditing : ''}`}>
+      <div onClick={toggleExpand} className={`${styles.floorRow} ${isEditing ? styles.floorRowEditing : ''}`}>
         <div className={styles.floorRowIcons}>
           <GripVertical size={16} className={styles.gripIcon} />
           <button
@@ -388,7 +388,7 @@ const FloorRow: React.FC<FloorRowProps> = ({
           <div className={styles.floorActions}>
             {floor.sections_count > 0 && (
               <button className={styles.btnGhost} type="button" title="Открыть редактор карты отсеков" onClick={() => navigate(`/admin/floor-editor?floor_id=${floor.id}`)}>
-                <Eye size={16} />
+                <Edit2 size={16} /> Редактировать карту отсеков
               </button>
             )}
             <button className={`${styles.btnGhost} ${styles.btnGhostDanger}`} type="button" title="Удалить этаж" onClick={() => onDeleteFloor(floor, building)}>
@@ -652,7 +652,6 @@ type ModalState =
 // Page
 // ========================================================
 export const AdminBuildingsPage: React.FC = () => {
-  const navigate = useNavigate();
   const { buildings, isLoading, error, refetch: refetchBuildings, createBuilding, updateBuilding, deleteBuilding } = useBuildings();
   const { createFloor, deleteFloor } = useFloors();
   const [modal, setModal] = useState<ModalState>({ kind: 'none' });
@@ -714,10 +713,6 @@ export const AdminBuildingsPage: React.FC = () => {
   if (isLoading) {
     return (
       <div className={styles.page}>
-        <div className={styles.darkHeader}>
-          <span className={styles.darkHeaderLabel}>Корпуса и этажи</span>
-          <button className={styles.darkHeaderClose} type="button" onClick={() => navigate('/admin')}><X size={20} /></button>
-        </div>
         <div className={styles.content}>
           <div className={styles.inner}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '2rem' }}>
@@ -746,9 +741,6 @@ export const AdminBuildingsPage: React.FC = () => {
   if (error) {
     return (
       <div className={styles.page}>
-        <div className={styles.darkHeader}>
-          <span className={styles.darkHeaderLabel}>Корпуса и этажи</span>
-        </div>
         <div className={styles.content}><div className={styles.inner} style={{ textAlign: 'center', padding: '3rem', color: '#ef4444' }}>{error}</div></div>
       </div>
     );
@@ -756,11 +748,6 @@ export const AdminBuildingsPage: React.FC = () => {
 
   return (
     <div className={styles.page}>
-      <div className={styles.darkHeader}>
-        <span className={styles.darkHeaderLabel}>Корпуса и этажи</span>
-        <button className={styles.darkHeaderClose} type="button" onClick={() => navigate('/admin')} title="Закрыть"><X size={20} /></button>
-      </div>
-
       <div className={styles.content}>
         <div className={styles.inner}>
           <header className={styles.pageHeader}>

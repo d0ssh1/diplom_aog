@@ -277,6 +277,11 @@ class NavService:
                     status="no_path",
                     message=f"Reconstruction {from_reconstruction_id} not found",
                 )
+            logger.info(
+                "find_multifloor_route same-floor: recon_id=%s, mask_file_id=%s, "
+                "from_room=%s, to_room=%s",
+                from_reconstruction_id, recon.mask_file_id, from_room_id, to_room_id,
+            )
             result = await self.find_route(
                 graph_id=recon.mask_file_id,
                 from_room_id=from_room_id,

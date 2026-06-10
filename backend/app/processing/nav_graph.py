@@ -504,7 +504,42 @@ def find_route(
         return None
 
     if not nx.has_path(G, from_node, to_node):
-        logger.warning("find_route: no path from %s to %s", from_node, to_node)
+        # Диагностика: разбираем компоненты связности, чтобы понять,
+        # почему путь не найден (фрагментированный коридор vs синглтон-комната).
+        components = list(nx.connected_components(G))
+        node_comp_idx: dict = {}
+        for idx, comp in enumerate(components):
+            for n in comp:
+                node_comp_idx[n] = idx
+
+        def _summarize(node_id: str) -> str:
+            idx = node_comp_idx.get(node_id)
+            if idx is None:
+                return f"{node_id}: NOT IN ANY COMPONENT"
+            comp = components[idx]
+            type_counts: dict[str, int] = {}
+            for n in comp:
+                t = G.nodes[n].get('type', 'unknown')
+                type_counts[t] = type_counts.get(t, 0) + 1
+            pos = G.nodes[node_id].get('pos')
+            return (
+                f"{node_id} in component #{idx} (size={len(comp)}, "
+                f"types={type_counts}, node_pos={pos})"
+            )
+
+        largest_idx = max(range(len(components)), key=lambda i: len(components[i]))
+        singletons = sum(1 for c in components if len(c) == 1)
+
+        logger.warning(
+            "find_route: no path from %s to %s | total_components=%d, "
+            "largest_component_size=%d, singletons=%d | FROM: %s | TO: %s",
+            from_node, to_node,
+            len(components),
+            len(components[largest_idx]),
+            singletons,
+            _summarize(from_node),
+            _summarize(to_node),
+        )
         return None
 
     def heuristic(u, v):

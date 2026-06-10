@@ -25,7 +25,7 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
 
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    birth_date: Mapped[date] = mapped_column(Date, nullable=False)
+    birth_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
 
     first_name: Mapped[Optional[str]] = mapped_column(String(50), default="")
     last_name: Mapped[Optional[str]] = mapped_column(String(50), default="")

@@ -63,7 +63,7 @@ export const Multifloor3DRoutesPage: React.FC = () => {
   return (
     <div className={styles.page}>
       <div className={styles.darkHeader}>
-        <span className={styles.darkHeaderLabel}>3D-маршруты</span>
+        <span className={styles.darkHeaderLabel}>Тестовые маршруты</span>
         <button
           className={styles.darkHeaderClose}
           type="button"
@@ -77,7 +77,7 @@ export const Multifloor3DRoutesPage: React.FC = () => {
       <div className={styles.content}>
         <div className={styles.inner}>
           <header className={styles.pageHeader}>
-            <h1 className={styles.title}>3D-маршруты</h1>
+            <h1 className={styles.title}>Тестовые маршруты</h1>
             <p className={styles.subtitle}>
               Выберите корпус, чтобы открыть его 3D-модель и построить маршрут
               между этажами — кратчайший путь проложится через лестницы и лифты.
