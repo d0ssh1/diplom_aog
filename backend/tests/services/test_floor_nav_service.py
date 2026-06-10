@@ -8,6 +8,7 @@ without touching disk). Tests respect the REAL data model: ``Section`` has NO
 """
 
 import json
+import logging
 
 import networkx as nx
 import numpy as np
@@ -345,6 +346,48 @@ async def test_build_nav_graph_threads_rotation(tmp_path, monkeypatch, small_mas
 
     assert captured["rooms"], "a room input should have been built"
     assert captured["rooms"][0].rotation_rad == pytest.approx(0.6)
+
+
+# ── rooms_on_corridor build metric (AC-6) ────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_build_floor_nav_graph_returns_rooms_on_corridor(
+    tmp_path, monkeypatch, small_mask
+):
+    """The build dict carries an additive int rooms_on_corridor in [0, rooms_count]."""
+    section = make_section(rooms=[_ROOM])
+    svc = _make_svc(tmp_path, monkeypatch, small_mask, sections=[section])
+    result = await svc.build_floor_nav_graph(1)
+    assert "rooms_on_corridor" in result
+    assert isinstance(result["rooms_on_corridor"], int)
+    assert 0 <= result["rooms_on_corridor"] <= result["rooms_count"]
+
+
+@pytest.mark.asyncio
+async def test_build_floor_nav_graph_all_attached_no_warning(
+    tmp_path, monkeypatch, small_mask, caplog
+):
+    """All rooms reach the corridor → rooms_on_corridor == rooms_count, no warning."""
+    section = make_section(rooms=[_ROOM])
+    svc = _make_svc(tmp_path, monkeypatch, small_mask, sections=[section])
+    with caplog.at_level(logging.WARNING, logger="app.services.floor_nav_service"):
+        result = await svc.build_floor_nav_graph(1)
+    assert result["rooms_count"] >= 1
+    assert result["rooms_on_corridor"] == result["rooms_count"]
+    assert "reach a corridor" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_build_floor_nav_graph_unlinked_room_warns(tmp_path, monkeypatch, caplog):
+    """A room with no reachable corridor → rooms_on_corridor < rooms_count + warning."""
+    walled = np.full((150, 200), 255, dtype=np.uint8)  # all-wall mask → no corridor
+    section = make_section(rooms=[_ROOM])
+    svc = _make_svc(tmp_path, monkeypatch, walled, sections=[section])
+    with caplog.at_level(logging.WARNING, logger="app.services.floor_nav_service"):
+        result = await svc.build_floor_nav_graph(1)
+    assert result["rooms_on_corridor"] < result["rooms_count"]
+    assert "reach a corridor" in caplog.text
 
 
 # ── find_floor_route ─────────────────────────────────────────────────────────

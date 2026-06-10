@@ -64,6 +64,31 @@ async def test_build_floor_graph_valid_floor_200(client, auth_headers):
 
 
 @pytest.mark.asyncio
+async def test_build_floor_graph_200_includes_rooms_on_corridor(client, auth_headers):
+    svc = _mock_svc()
+    svc.build_floor_nav_graph.return_value = {
+        "floor_id": 1,
+        "nodes_count": 312,
+        "edges_count": 287,
+        "rooms_count": 14,
+        "corridor_nodes_count": 298,
+        "rooms_on_corridor": 14,
+        "canvas_size_px": [1200, 900],
+        "scale_factor": 0.0096,
+    }
+    _use(svc)
+    try:
+        resp = await client.post(
+            "/api/v1/floors/1/build-floor-graph", headers=auth_headers
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["rooms_on_corridor"] == 14
+    finally:
+        _clear()
+
+
+@pytest.mark.asyncio
 async def test_build_floor_graph_unknown_floor_404(client, auth_headers):
     svc = _mock_svc()
     svc.build_floor_nav_graph.side_effect = FloorNotFoundError(99)

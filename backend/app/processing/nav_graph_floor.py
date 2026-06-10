@@ -43,15 +43,26 @@ SNAP_RATIO: float = 12.0
 MIN_SNAP_PX: float = 12.0
 MAX_SNAP_PX_CAP: float = 80.0
 
-# Bridge-distance bounds (06-pipeline-spec §B, ADR-5). Skeletonisation can break a
+# Bridge-distance bounds (06-pipeline-spec §B, ADR-5/ADR-6). Skeletonisation can break a
 # single corridor into disconnected fragments (1-px medial-axis gaps) → A* finds no
-# route across them. ``bridge_graph_components`` stitches fragments with short
-# wall-clear edges up to this many px apart. Only MIN is empirically validated
-# (room-2 gap = 10px on live floor 1); RATIO/MAX are extrapolation, easily tuned.
-# The LOS gate — not the distance cap — is the real guard against bridging a wall.
+# route across them. ``bridge_graph_components`` stitches fragments with short wall-clear
+# edges up to this many px apart. The ceiling was RAISED 32→60 (ADR-6, Stage A) so the
+# main corridor absorbs more skeleton-break fragments before rooms attach; still
+# LOS-gated — the distance cap, not the gate, is what changed, so it still refuses to
+# bridge across a wall. Only MIN is empirically validated (room-2 gap = 10px on live
+# floor 1); RATIO/MAX are extrapolation, easily tuned.
 BRIDGE_RATIO: float = 10.0
 MIN_BRIDGE_PX: float = 12.0
-MAX_BRIDGE_PX: float = 32.0
+MAX_BRIDGE_PX: float = 60.0
+
+# Room→corridor attach cap (design ADR-4, 06-pipeline-spec §Parameters). For rooms with
+# NO door (every stair/elevator) and any door-snap failure: snap the room to the nearest
+# LOS-clear corridor node from its bbox edge. Wall-thickness-scaled like SNAP_RATIO; the
+# seeded LOS — not this cap — is the wall guard. Edge-distance ~60px validated on live
+# floor 1; RATIO/MIN/MAX are EXTRAPOLATION, tune if a live floor needs it.
+ATTACH_RATIO: float = 12.0
+MIN_ATTACH_PX: float = 24.0
+MAX_ATTACH_PX: float = 64.0
 
 
 @dataclass(frozen=True)
@@ -314,6 +325,7 @@ def build_floor_graph_from_mask(
         ImageProcessingError: if ``assembled_mask`` is None, empty, or wrong dtype.
     """
     from app.processing.nav_graph import (
+        attach_unlinked_rooms,
         bridge_graph_components,
         build_skeleton,
         build_topology_graph,
@@ -363,4 +375,14 @@ def build_floor_graph_from_mask(
         graph, floor_rooms, floor_doors, canvas_w, canvas_h,
         assembled_mask, max_snap_dist_px, skip_px,
     )
+
+    # Stage B (06-pipeline-spec §Where in the Pipeline): runs LAST so it sees the
+    # bridged corridor fragments + the door-linked rooms, and only attaches rooms
+    # still OFF the corridor (every door-less stair/elevator + any door-snap failure)
+    # to the nearest LOS-clear corridor node. Reuses the already-computed
+    # wall_thickness_px / skip_px — the seeded LOS, not this cap, is the wall guard.
+    max_attach_px = min(
+        MAX_ATTACH_PX, max(MIN_ATTACH_PX, ATTACH_RATIO * wall_thickness_px)
+    )
+    graph = attach_unlinked_rooms(graph, assembled_mask, max_attach_px, skip_px)
     return graph

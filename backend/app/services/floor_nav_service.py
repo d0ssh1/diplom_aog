@@ -25,6 +25,7 @@ import os
 from typing import Optional
 
 import cv2
+import networkx as nx
 import numpy as np
 from networkx.readwrite import json_graph
 
@@ -323,6 +324,26 @@ class FloorNavService:
                 if d.get("type") == "corridor_node"
             ]
         )
+        # Connectivity guard (design AC-6): how many rooms actually reach the
+        # corridor. A shortfall flags door-less rooms that couldn't attach OR a
+        # severed section (floor-2 wings: a data/assembly gap, not a routing bug —
+        # design ADR-9). Additive only — never raises, never blocks the build.
+        corridor_comp_nodes: set[str] = set()
+        for comp in nx.connected_components(graph):
+            if any(graph.nodes[n].get("type") == "corridor_node" for n in comp):
+                corridor_comp_nodes |= comp
+        rooms_on_corridor = sum(
+            1
+            for n, d in graph.nodes(data=True)
+            if d.get("type") == "room" and n in corridor_comp_nodes
+        )
+        if rooms_on_corridor < rooms_count:
+            logger.warning(
+                "build_floor_nav_graph: floor_id=%d only %d/%d rooms reach a corridor",
+                floor_id,
+                rooms_on_corridor,
+                rooms_count,
+            )
         logger.info(
             "build_floor_nav_graph: floor_id=%d nodes=%d edges=%d rooms=%d",
             floor_id,
@@ -336,6 +357,7 @@ class FloorNavService:
             "edges_count": graph.number_of_edges(),
             "rooms_count": rooms_count,
             "corridor_nodes_count": corridor_nodes_count,
+            "rooms_on_corridor": rooms_on_corridor,
             "canvas_size_px": [canvas_w, canvas_h],
             "scale_factor": round(scale_factor, 6),
         }

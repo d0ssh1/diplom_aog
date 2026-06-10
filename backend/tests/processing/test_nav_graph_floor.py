@@ -14,6 +14,7 @@ import pytest
 
 from app.core.exceptions import ImageProcessingError
 from app.processing.nav_graph_floor import (
+    MAX_BRIDGE_PX,
     SectionDoorInput,
     SectionRoomInput,
     build_floor_graph_from_mask,
@@ -350,6 +351,96 @@ def test_floor_graph_walled_sections_stay_separate():
     left_comp = nx.node_connected_component(graph, left[0])
     assert not any(r in left_comp for r in right), \
         "walled sections must not be bridged together"
+
+
+# ── attach_unlinked_rooms wiring (cross-floor fragmentation fix) ──────────────
+
+
+def make_two_band_mask(band: int = 18, gap: int = 6, w: int = 160) -> np.ndarray:
+    """Two horizontal free corridor bands split by a thin full-width wall.
+
+    The two band skeletons sit ~24 px apart (< ``MAX_BRIDGE_PX`` = 60), so the
+    RAISED bridge ceiling would reach across them by distance — only the LOS gate
+    refuses, because a solid wall lies between (AC-4).
+    """
+    h = 12 + band + gap + band + 12
+    m = np.zeros((h, w), dtype=np.uint8)
+    m[0:6, :] = 255
+    m[-6:, :] = 255
+    m[:, 0:6] = 255
+    m[:, -6:] = 255
+    y1b = 6 + band            # bottom of band 1
+    ywb = y1b + gap           # bottom of the divider wall
+    y2b = ywb + band          # bottom of band 2
+    m[y1b:ywb, 6:w - 6] = 255       # solid full-width divider between the bands
+    m[y2b:h - 6, 6:w - 6] = 255     # wall below band 2 → exactly two free bands
+    return m
+
+
+def test_build_floor_graph_attaches_doorless_stair_to_corridor():
+    """AC-2: a door-less staircase lands on the corridor via a room_to_corridor edge."""
+    stair = {
+        "id": "s1", "name": "Лестница", "room_type": "staircase",
+        "x": 0.05, "y": 0.2, "width": 0.1, "height": 0.1,
+    }
+    graph = build_floor_graph_from_mask(make_l_mask(), [stair], [], 200, 200)
+    assert "room_s1" in graph
+    comp = nx.node_connected_component(graph, "room_s1")
+    assert any(graph.nodes[n].get("type") == "corridor_node" for n in comp), \
+        "the door-less stair must share a component with a corridor node"
+    assert any(
+        d.get("type") == "room_to_corridor"
+        for _, _, d in graph.edges("room_s1", data=True)
+    ), "the linking edge must be a room_to_corridor attach edge"
+
+
+def test_build_floor_graph_linked_room_single_link():
+    """A door-linked room reaches the corridor via its door; the attach pass skips
+    it — no duplicate room_to_corridor edge is added."""
+    room = {
+        "id": "r1", "name": "R", "room_type": "room",
+        "x": 0.3, "y": 0.3, "width": 0.1, "height": 0.1,
+    }
+    door = {
+        "id": "d1", "x1": 0.35, "y1": 0.29, "x2": 0.35, "y2": 0.29, "room_id": "r1",
+    }
+    graph = build_floor_graph_from_mask(make_l_mask(), [room], [door], 200, 200)
+    comp = nx.node_connected_component(graph, "room_r1")
+    assert any(graph.nodes[n].get("type") == "corridor_node" for n in comp), \
+        "the door-linked room must be on the corridor"
+    room_edge_types = {
+        d.get("type") for _, _, d in graph.edges("room_r1", data=True)
+    }
+    assert "room_to_corridor" not in room_edge_types, \
+        "an already-linked room must not get an extra attach edge"
+    assert room_edge_types == {"room_to_door"}, "room's only link is the door path"
+    assert any(
+        d.get("type") == "door_to_corridor" for _, _, d in graph.edges(data=True)
+    ), "the door must have snapped to the corridor"
+
+
+def test_build_floor_graph_walled_strips_not_bridged():
+    """AC-4: two corridor bands within the raised bridge cap by distance but split
+    by a solid wall stay in separate components (the LOS gate refuses to bridge)."""
+    graph = build_floor_graph_from_mask(make_two_band_mask(), [], [], 160, 66)
+    corridor = [
+        (n, d["pos"]) for n, d in graph.nodes(data=True)
+        if d.get("type") == "corridor_node"
+    ]
+    top = [n for n, pos in corridor if pos[1] < 24]
+    bottom = [n for n, pos in corridor if pos[1] > 30]
+    assert top and bottom, "both bands must produce corridor nodes"
+    # The nearest cross-wall pair is within the raised bridge ceiling by distance,
+    # so only the LOS gate (not the cap) can keep the bands apart.
+    nearest = min(
+        math.hypot(tp[0] - bp[0], tp[1] - bp[1])
+        for _, tp in corridor if tp[1] < 24
+        for _, bp in corridor if bp[1] > 30
+    )
+    assert nearest < MAX_BRIDGE_PX, "test setup: bands must be within the bridge cap"
+    top_comp = nx.node_connected_component(graph, top[0])
+    assert not any(b in top_comp for b in bottom), \
+        "a solid wall between the bands must block bridging (LOS gate)"
 
 
 # ── oriented room box (rotation fix) ─────────────────────────────────────────

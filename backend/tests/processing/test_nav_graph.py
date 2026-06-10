@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 import pytest
 import networkx as nx
@@ -16,6 +18,7 @@ from app.processing.nav_graph import (
     simplify_path,
     los_prune,
     bridge_graph_components,
+    attach_unlinked_rooms,
     _line_of_sight,
 )
 
@@ -594,3 +597,120 @@ class TestBridgeGraphComponents:
         bridge_graph_components(G, mask, max_bridge_dist_px=12.0)
         for n, pos in positions.items():
             assert G.nodes[n]["pos"] == pos
+
+
+class TestAttachUnlinkedRooms:
+    """attach_unlinked_rooms — boundary-snap a door-less room to the corridor."""
+
+    @staticmethod
+    def _room(G: nx.Graph, node: str, center, bbox) -> None:
+        G.add_node(node, type="room", pos=center, bbox=bbox)
+
+    @staticmethod
+    def _corridor(G: nx.Graph, node, pos) -> None:
+        G.add_node(node, type="corridor_node", pos=pos)
+
+    def test_attach_doorless_room_attaches_to_corridor(self):
+        """A door-less room with a clear LOS corridor node within cap attaches."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 50))
+        self._room(G, "room_r1", (30, 30), (20, 20, 20, 20))
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        attach_unlinked_rooms(G, mask, max_attach_px=30.0, skip_px=3.0)
+        assert G.has_edge("room_r1", "c0")
+        edge = G.get_edge_data("room_r1", "c0")
+        assert edge["type"] == "room_to_corridor"
+        assert edge["attached"] is True
+
+    def test_attach_uses_bbox_edge_not_center_when_center_blocked(self):
+        """RC1: a wall on the room's own boundary blocks the centre ray, but the
+        seeded edge ray clears → the room still attaches from its bbox edge."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 75))
+        # bbox x[40,60], y[40,60]; centre (50,50). Nearest AABB point to c0 is
+        # the bottom edge (50,60).
+        self._room(G, "room_r1", (50, 50), (40, 40, 20, 20))
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        mask[60:62, 40:61] = 255  # wall on the room's bottom boundary
+        attach_unlinked_rooms(G, mask, max_attach_px=40.0, skip_px=3.0)
+        assert G.has_edge("room_r1", "c0"), "edge-seeded LOS must reach the corridor"
+        edge = G.get_edge_data("room_r1", "c0")
+        assert edge["pts"][1] == (50, 60), "snap point must be the bbox-edge clamp"
+
+    def test_attach_already_linked_room_adds_no_edge(self):
+        """A room already in a corridor component is skipped (no duplicate edge)."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 50))
+        self._room(G, "room_r1", (30, 30), (20, 20, 20, 20))
+        G.add_edge("room_r1", "c0", weight=10.0)  # already linked
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        before = G.number_of_edges()
+        attach_unlinked_rooms(G, mask, max_attach_px=50.0, skip_px=3.0)
+        assert G.number_of_edges() == before
+        assert not any(
+            d.get("type") == "room_to_corridor" for _, _, d in G.edges(data=True)
+        )
+
+    def test_attach_wall_blocked_room_stays_unlinked(self):
+        """A full wall between the room edge and the only corridor node blocks it."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 80))
+        self._room(G, "room_r1", (50, 30), (40, 20, 20, 20))
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        mask[55:58, :] = 255  # full-width wall between edge (y=40) and corridor
+        attach_unlinked_rooms(G, mask, max_attach_px=60.0, skip_px=3.0)
+        assert not G.has_edge("room_r1", "c0")
+        assert G.degree("room_r1") == 0
+
+    def test_attach_beyond_cap_stays_unlinked(self):
+        """A LOS-clear corridor node farther than max_attach_px is not a candidate."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 90))
+        self._room(G, "room_r1", (50, 20), (40, 10, 20, 20))  # edge (50,30) → d=60
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        attach_unlinked_rooms(G, mask, max_attach_px=30.0, skip_px=3.0)
+        assert not G.has_edge("room_r1", "c0")
+        assert G.degree("room_r1") == 0
+
+    def test_attach_prefers_largest_component(self):
+        """Two LOS-clear nodes within cap: the nearer is in a 1-node comp, the
+        farther in a 5-node comp → attaches to the LARGER component (ADR-5)."""
+        G = nx.Graph()
+        self._corridor(G, "small", (50, 65))   # nearer (d_edge=5), comp size 1
+        self._corridor(G, "big0", (50, 72))    # farther (d_edge=12), comp size 5
+        for i, pos in enumerate([(10, 10), (10, 20), (20, 10), (20, 20)]):
+            self._corridor(G, f"big{i + 1}", pos)
+        G.add_edge("big0", "big1")
+        G.add_edge("big1", "big2")
+        G.add_edge("big2", "big3")
+        G.add_edge("big3", "big4")
+        self._room(G, "room_r1", (50, 50), (40, 40, 20, 20))  # edge (50,60)
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        attach_unlinked_rooms(G, mask, max_attach_px=20.0, skip_px=3.0)
+        assert G.has_edge("room_r1", "big0"), "largest component must win"
+        assert not G.has_edge("room_r1", "small"), "nearer-but-smaller is not chosen"
+
+    def test_attach_no_corridor_nodes_returns_unchanged(self):
+        """A graph with rooms but zero corridor nodes returns the same G unchanged."""
+        G = nx.Graph()
+        self._room(G, "room_r1", (30, 30), (20, 20, 20, 20))
+        self._room(G, "room_r2", (70, 70), (60, 60, 20, 20))
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        before = G.number_of_edges()
+        result = attach_unlinked_rooms(G, mask, max_attach_px=50.0, skip_px=3.0)
+        assert result is G
+        assert G.number_of_edges() == before
+
+    def test_attach_edge_has_polyline_and_metadata(self):
+        """The added edge carries the 3-point polyline + type/attached/weight."""
+        G = nx.Graph()
+        self._corridor(G, "c0", (50, 50))
+        self._room(G, "room_r1", (30, 30), (20, 20, 20, 20))  # edge_pt (40,40)
+        mask = np.zeros((100, 100), dtype=np.uint8)
+        attach_unlinked_rooms(G, mask, max_attach_px=30.0, skip_px=3.0)
+        edge = G.get_edge_data("room_r1", "c0")
+        assert edge["pts"] == [(30, 30), (40, 40), (50, 50)]
+        assert edge["type"] == "room_to_corridor"
+        assert edge["attached"] is True
+        expected = math.hypot(30 - 40, 30 - 40) + math.hypot(40 - 50, 40 - 50)
+        assert edge["weight"] == pytest.approx(expected)

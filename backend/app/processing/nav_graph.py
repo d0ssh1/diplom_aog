@@ -721,6 +721,126 @@ def _los_clear(
     return _line_of_sight(seed, snap_xy, wall_mask)
 
 
+def attach_unlinked_rooms(
+    G: nx.Graph,
+    wall_mask: np.ndarray,
+    max_attach_px: float,
+    skip_px: float,
+) -> nx.Graph:
+    """Привязывает комнаты вне коридорной компоненты к видимому corridor_node.
+
+    Универсальный fallback Stage B (06-pipeline-spec §Algorithm, ADR-1..5). После
+    ``integrate_semantics`` комната без двери (каждая лестница/лифт) остаётся
+    синглтон-компонентой ``{'room': 1}`` — маршрутизировать не через что. Для
+    каждой такой комнаты луч засевается от КРАЯ её bbox (а не центра — из центра
+    LOS всегда упирается в собственную стену, RC1) к каждому ``corridor_node``:
+    при чистой видимости (seeded ``_los_clear``) в пределах ``max_attach_px``
+    добавляется ребро ``room → corridor_node``. Среди кандидатов предпочитается
+    узел в САМОЙ БОЛЬШОЙ компоненте, затем ближайший — чтобы не цепляться к
+    шумовому фрагменту, когда магистральный коридор тоже видим (ADR-5).
+
+    Чистая функция: только ``math`` / ``networkx`` + ``_los_clear`` /
+    ``_line_of_sight`` этого модуля. Мутирует и возвращает тот же ``G`` (как
+    ``bridge_graph_components`` / ``integrate_semantics``). ``wall_mask`` НЕ
+    мутируется (Bresenham только читает).
+
+    Args:
+        G: граф после ``integrate_semantics``; ``corridor_node`` несут
+            ``pos=(x_px, y_px)``, ``room`` — ``pos`` (центр bbox) и
+            ``bbox=(rx, ry, rw, rh)`` в пикселях.
+        wall_mask: ``(H, W)`` uint8 ``{0,255}`` — белый (> 127) = стена. Та же
+            ассемблированная маска, что у ``bridge_graph_components``.
+        max_attach_px: максимум дистанции «край bbox → corridor_node» (px).
+        skip_px: отступ луча за собственную стену комнаты перед LOS-проверкой
+            (px; семантика ``_los_clear``, ``wall_thickness + 1``).
+
+    Returns:
+        тот же ``G`` с добавленными рёбрами ``room → corridor_node``
+        (``type='room_to_corridor'``, ``attached=True``,
+        ``weight=|center−edge|+|edge−node|``, ``pts=[center, edge_pt, node_pos]``).
+    """
+    t0 = time.perf_counter()
+
+    corridor_nodes = [
+        (n, data["pos"])
+        for n, data in G.nodes(data=True)
+        if data.get("type") == "corridor_node"
+    ]
+    if not corridor_nodes:           # не к чему привязывать
+        return G
+
+    # Компоненты считаем ОДИН раз: целями привязки служат только corridor_node, а
+    # непривязанные комнаты целями быть не могут → пересчёт не нужен, результат
+    # детерминирован по построению (ADR-5, 06-pipeline-spec §Notes).
+    node_comp: dict = {}
+    comp_size: list[int] = []
+    comp_has_corridor: list[bool] = []
+    for idx, comp in enumerate(nx.connected_components(G)):
+        comp_size.append(len(comp))
+        comp_has_corridor.append(
+            any(G.nodes[n].get("type") == "corridor_node" for n in comp)
+        )
+        for n in comp:
+            node_comp[n] = idx
+
+    attached = 0
+    unlinked = 0
+    for r, data in list(G.nodes(data=True)):
+        if data.get("type") != "room":
+            continue
+        if comp_has_corridor[node_comp[r]]:
+            continue                 # уже на коридоре (через дверь) — пропускаем
+        bbox = data.get("bbox")
+        center = data.get("pos")
+        if bbox is None or center is None:
+            unlinked += 1
+            continue
+        rx, ry, rw, rh = bbox
+
+        best_key: tuple[int, float] | None = None
+        best_c = None
+        best_c_pos = None
+        best_edge_pt = None
+        best_d_edge = 0.0
+        for c, c_pos in corridor_nodes:
+            # Ближайшая точка AABB комнаты к узлу коридора (clamp на грань).
+            edge_x = min(max(c_pos[0], rx), rx + rw)
+            edge_y = min(max(c_pos[1], ry), ry + rh)
+            d_edge = math.hypot(edge_x - c_pos[0], edge_y - c_pos[1])
+            if d_edge > max_attach_px:
+                continue
+            # Seeded LOS от грани — настоящий предохранитель против стены.
+            if not _los_clear((edge_x, edge_y), c_pos, wall_mask, skip_px):
+                continue
+            key = (comp_size[node_comp[c]], -d_edge)
+            if best_key is None or key > best_key:
+                best_key = key
+                best_c = c
+                best_c_pos = c_pos
+                best_edge_pt = (edge_x, edge_y)
+                best_d_edge = d_edge
+
+        if best_key is None:
+            unlinked += 1
+            continue
+
+        weight = (
+            math.hypot(center[0] - best_edge_pt[0], center[1] - best_edge_pt[1])
+            + best_d_edge
+        )
+        G.add_edge(
+            r, best_c, weight=weight, type="room_to_corridor",
+            pts=[center, best_edge_pt, best_c_pos], attached=True,
+        )
+        attached += 1
+
+    logger.info(
+        "attach_unlinked_rooms: +%d attached, %d still unlinked, %.1fms",
+        attached, unlinked, (time.perf_counter() - t0) * 1000,
+    )
+    return G
+
+
 def simplify_path(
     coords_2d: list[tuple[float, float]],
     dp_epsilon: float = 3.0,
