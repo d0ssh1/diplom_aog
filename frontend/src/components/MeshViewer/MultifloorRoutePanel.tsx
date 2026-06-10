@@ -5,6 +5,7 @@
 // in both the admin view and the end-user start screen.
 
 import React, { useEffect, useMemo } from 'react';
+import { ArrowRight } from 'lucide-react';
 import { useMultifloorRoute } from '../../hooks/useMultifloorRoute';
 import type { MultifloorRouteResponse } from '../../types/buildingNav';
 import type { Room3DApi } from '../../api/apiService';
@@ -23,8 +24,16 @@ interface Props {
   onGoToAssembly?: () => void;
 }
 
+// Only real rooms (cabinets) are pickable endpoints — stairs and elevators are
+// transit points the route passes THROUGH, so they're excluded from the list.
 function roomOptions(rooms: Room3DApi[] | undefined): Room3DApi[] {
-  return (rooms ?? []).filter((r) => r.id !== undefined && r.id !== null);
+  return (rooms ?? []).filter(
+    (r) =>
+      r.id !== undefined &&
+      r.id !== null &&
+      r.room_type !== 'staircase' &&
+      r.room_type !== 'elevator',
+  );
 }
 
 export const MultifloorRoutePanel: React.FC<Props> = ({
@@ -75,6 +84,8 @@ export const MultifloorRoutePanel: React.FC<Props> = ({
 
   const fromValue = fromFloorId !== null && fromRoom ? `${fromFloorId}:${fromRoom}` : '';
   const toValue = toFloorId !== null && toRoom ? `${toFloorId}:${toRoom}` : '';
+  // Block routing a room to itself — same floor AND same room (identical value).
+  const sameRoom = fromValue !== '' && fromValue === toValue;
 
   const pickRoom = (
     value: string,
@@ -93,7 +104,7 @@ export const MultifloorRoutePanel: React.FC<Props> = ({
 
   return (
     <div className={styles.panel}>
-      <h3 className={styles.heading}>Построить маршрут</h3>
+      <h3 className={styles.heading}>Маршрут</h3>
 
       <div className={styles.group}>
         <span className={styles.groupLabel}>Откуда</span>
@@ -102,7 +113,7 @@ export const MultifloorRoutePanel: React.FC<Props> = ({
           value={fromValue}
           onChange={(e) => pickRoom(e.target.value, setFromFloorId, setFromRoom)}
         >
-          <option value="">Комната…</option>
+          <option value="">Кабинет…</option>
           {allRooms.map((r) => (
             <option key={r.key} value={r.key}>
               {r.label}
@@ -118,7 +129,7 @@ export const MultifloorRoutePanel: React.FC<Props> = ({
           value={toValue}
           onChange={(e) => pickRoom(e.target.value, setToFloorId, setToRoom)}
         >
-          <option value="">Комната…</option>
+          <option value="">Кабинет…</option>
           {allRooms.map((r) => (
             <option key={r.key} value={r.key}>
               {r.label}
@@ -131,24 +142,24 @@ export const MultifloorRoutePanel: React.FC<Props> = ({
         type="button"
         className={styles.runBtn}
         onClick={() => void run()}
-        disabled={loading}
+        disabled={loading || sameRoom}
       >
-        {loading ? 'Поиск…' : 'Построить'}
+        {loading ? (
+          'Поиск…'
+        ) : (
+          <>
+            Построить маршрут
+            <ArrowRight size={18} />
+          </>
+        )}
       </button>
+
+      {sameRoom && (
+        <div className={styles.warn}>Откуда и куда — один и тот же кабинет.</div>
+      )}
 
       {error && <div className={styles.error}>{error}</div>}
 
-      {result && result.status === 'success' && (
-        <div className={styles.readout}>
-          <div>
-            Длина: <b>{(result.total_distance_meters ?? 0).toFixed(1)} м</b>
-          </div>
-          <div>
-            Время: <b>{result.estimated_time_seconds ?? 0} с</b>
-          </div>
-          <div>Переходов: {result.transitions_used.length}</div>
-        </div>
-      )}
       {result && result.status === 'no_path' && (
         <div className={styles.warn}>Маршрут не найден.</div>
       )}

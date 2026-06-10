@@ -40,6 +40,11 @@ class TransitionUsed3D(BaseModel):
     to_3d: List[float]
     from_floor_id: int
     to_floor_id: int
+    # Bare room node ids of the two shaft ends (e.g. ``room_<uuid>``) so the client
+    # can highlight the matching stair/lift icon + label its target floor. Default
+    # "" keeps older payloads / the same-floor (no-transition) case valid.
+    from_node: str = ""
+    to_node: str = ""
 
 
 class MultifloorRouteResponse(BaseModel):

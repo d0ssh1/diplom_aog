@@ -30,7 +30,7 @@ from app.core.exceptions import (
     FileStorageError,
     ImageProcessingError,
 )
-from app.core.floor_stitching_constants import FLOOR_HEIGHT
+from app.core.floor_stitching_constants import FLOOR_HEIGHT, INTER_FLOOR_GAP_M
 from app.db.repositories.building_repo import BuildingRepository
 from app.db.repositories.floor_repo import FloorRepository
 from app.models.building_scene import (
@@ -95,7 +95,9 @@ class BuildingSceneService:
 
         scene_floors: list[SceneFloor] = []
         for floor in floors:
-            elevation = (floor.number - min_number) * FLOOR_HEIGHT
+            # Stacking pitch clears the upper floor's slab off the lower floor's
+            # walls (FLOOR_HEIGHT alone makes them intersect — see INTER_FLOOR_GAP_M).
+            elevation = (floor.number - min_number) * (FLOOR_HEIGHT + INTER_FLOOR_GAP_M)
             has_mesh = floor.mesh_file_glb is not None
             mesh_url = (
                 self._storage.uploads_url_versioned(floor.mesh_file_glb)

@@ -23,6 +23,8 @@ export interface TransitionUsed3D {
   to_3d: number[];
   from_floor_id: number;
   to_floor_id: number;
+  from_node: string; // bare room node id of the lower-side shaft (e.g. 'room_<uuid>')
+  to_node: string; // bare room node id of the upper-side shaft
 }
 
 // status ∈ 'success' | 'no_path' | 'not_aligned' (all HTTP 200).

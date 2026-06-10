@@ -34,6 +34,7 @@ from app.core.exceptions import (
 )
 from app.core.floor_stitching_constants import (
     FLOOR_HEIGHT,
+    INTER_FLOOR_GAP_M,
     MATCH_TOLERANCE_M,
     TRANSITION_COST_M,
 )
@@ -151,7 +152,12 @@ class BuildingNavService:
             if not self._has_graph(fid):
                 raise FloorNavGraphNotFoundError(fid)
 
-        # ── Same-floor → single-floor 2D route, laid out in the building frame.
+        # ── Same-floor: try the single-floor 2D route first (cheaper, and
+        # LOS-straightened against the floor mask). If the endpoints sit in
+        # DISCONNECTED parts of the floor — e.g. two wings joined only by an
+        # upper-floor passage — fall through to the multi-floor graph below,
+        # which can route UP-AND-OVER (up the stairs, across another floor, back
+        # down). Only fall through on no_path; a missing room still raises (422).
         if from_floor_id == to_floor_id:
             floor = floor_by_id[from_floor_id]
             if not self._is_aligned(floor, ref.id):
@@ -159,9 +165,11 @@ class BuildingNavService:
                     status="not_aligned", message=_NOT_ALIGNED_MSG
                 )
             entry = self._load_floor_entry(floor, min_number)
-            return self._single_floor_response(
+            single = self._single_floor_response(
                 entry, from_room, to_room, ppm_ref, ref_height_m
             )
+            if single.status == "success":
+                return single
 
         # ── Multi-floor: load every graph-bearing floor; all must be aligned.
         entries: list[FloorRouteEntry] = []
@@ -214,6 +222,8 @@ class BuildingNavService:
                     to_3d=self._project_point(tr["to_pos"], te, ppm_ref, ref_height_m),
                     from_floor_id=tr["from_floor_id"],
                     to_floor_id=tr["to_floor_id"],
+                    from_node=tr.get("from_node", ""),
+                    to_node=tr.get("to_node", ""),
                 )
             )
 
@@ -580,7 +590,9 @@ class BuildingNavService:
             floor_mask_w=dims[0],
             floor_mask_h=dims[1],
             building_transform=floor.building_transform,
-            elevation_m=(floor.number - min_number) * FLOOR_HEIGHT,
+            # Same stacking pitch as the floor GLB placement (BuildingSceneService)
+            # so the route rides on top of each floor mesh, not buried in the slab.
+            elevation_m=(floor.number - min_number) * (FLOOR_HEIGHT + INTER_FLOOR_GAP_M),
         )
 
     def _floor_mask_dims(self, floor) -> Optional[tuple[int, int]]:  # type: ignore[no-untyped-def]

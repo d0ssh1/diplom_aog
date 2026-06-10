@@ -107,6 +107,29 @@ def _two_stair_floors(tmp_path):
     )
 
 
+def _disconnected_wings_with_bridge(tmp_path):
+    """Floor 10: two wings (room_A↔s1) and (room_B↔s2) NOT connected to each
+    other. Floor 20: a corridor s1u↔s2u bridging the two stacked stair shafts,
+    so the only A→B route is up-and-over via floor 20."""
+    nav = tmp_path / "nav"
+    _write_floor(
+        nav, 10,
+        [
+            _room("room_A", 20.0, 20.0), _stair("room_s1", 100.0, 20.0),
+            _room("room_B", 20.0, 180.0), _stair("room_s2", 100.0, 180.0),
+        ],
+        [
+            _corridor("room_A", "room_s1", 80.0, [(20.0, 20.0), (100.0, 20.0)]),
+            _corridor("room_B", "room_s2", 80.0, [(20.0, 180.0), (100.0, 180.0)]),
+        ],
+    )
+    _write_floor(
+        nav, 20,
+        [_stair("room_s1u", 100.0, 20.0), _stair("room_s2u", 100.0, 180.0)],
+        [_corridor("room_s1u", "room_s2u", 160.0, [(100.0, 20.0), (100.0, 180.0)])],
+    )
+
+
 @pytest.mark.asyncio
 async def test_find_route_stacks_segments_by_elevation(tmp_path):
     _two_stair_floors(tmp_path)
@@ -121,9 +144,10 @@ async def test_find_route_stacks_segments_by_elevation(tmp_path):
     assert resp.status == "success"
     assert len(resp.path_segments) == 2
     by_floor = {s.floor_id: s for s in resp.path_segments}
-    # Floor 10 (number 1) sits at elevation 0 → y ≈ 0.1; floor 20 at 3.0 → y ≈ 3.1.
+    # Floor 10 (number 1) sits at elevation 0 → y ≈ 0.1; floor 20 one pitch up
+    # (FLOOR_HEIGHT + INTER_FLOOR_GAP_M = 3.2) → y ≈ 3.3, matching the GLB stack.
     assert all(pt[1] == pytest.approx(0.1) for pt in by_floor[10].coordinates_3d)
-    assert all(pt[1] == pytest.approx(3.1) for pt in by_floor[20].coordinates_3d)
+    assert all(pt[1] == pytest.approx(3.3) for pt in by_floor[20].coordinates_3d)
     assert len(resp.transitions_used) == 1
     assert resp.transitions_used[0].type == "staircase"
     assert resp.total_distance_meters == pytest.approx(19.0)
@@ -141,6 +165,23 @@ async def test_find_route_same_floor_delegates(tmp_path):
     assert len(resp.path_segments) == 1
     assert resp.path_segments[0].floor_id == 10
     assert resp.transitions_used == []
+
+
+@pytest.mark.asyncio
+async def test_find_route_same_floor_routes_up_and_over_when_disconnected(tmp_path):
+    """A10_3→A10_2 bug: same-floor endpoints in disconnected wings must route up
+    the stairs, across the upper floor, and back down — not fall back to no_path."""
+    _disconnected_wings_with_bridge(tmp_path)
+    floors = [_floor(10, 1, transform=None), _floor(20, 2, transform=_IDENTITY)]
+    svc, _ = _make_svc(tmp_path, floors, _building())
+
+    resp = await svc.find_multifloor_route(3, 10, "A", 10, "B")
+
+    assert resp.status == "success"
+    # Up-and-over: floor 10 → floor 20 → floor 10 = 3 segments, 2 stair hops.
+    assert [s.floor_id for s in resp.path_segments] == [10, 20, 10]
+    assert len(resp.transitions_used) == 2
+    assert all(t.type == "staircase" for t in resp.transitions_used)
 
 
 @pytest.mark.asyncio

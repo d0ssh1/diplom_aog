@@ -4,7 +4,14 @@
 // labels are shown for the TOP visible floor only (lower floors stay clean).
 // Reuses the shared trimesh fix (lib/glbScene) + dispose util. No `any`.
 
-import React, { Suspense, useEffect, useMemo, useRef } from 'react';
+import React, {
+  Suspense,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Html, OrbitControls, useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
@@ -16,6 +23,14 @@ import type { FloorPathSegment3D, TransitionUsed3D } from '../types/buildingNav'
 import type { Room3DApi } from '../api/apiService';
 
 const BACKGROUND = '#FFFFFF';
+
+/** Imperative camera handle so the page chrome (+/− buttons) can zoom the scene. */
+export interface BuildingMeshViewerHandle {
+  zoomIn: () => void;
+  zoomOut: () => void;
+}
+
+const ZOOM_FACTOR = 1.15;
 
 const LABEL_STYLE: React.CSSProperties = {
   color: 'white',
@@ -37,6 +52,29 @@ const ICON_PILL_STYLE: React.CSSProperties = {
   padding: '3px',
   display: 'inline-flex',
   lineHeight: 0,
+};
+
+// A shaft the route uses → the same pill on the brand-orange background.
+const ACTIVE_ICON_PILL_STYLE: React.CSSProperties = {
+  ...ICON_PILL_STYLE,
+  background: '#F97316',
+};
+
+// Wrapper keeps the icon centred on the stair (drei <Html center>); the floor tag
+// is taken out of flow and floated to its right so it doesn't shift the icon.
+const ICON_WRAP_STYLE: React.CSSProperties = {
+  position: 'relative',
+  display: 'inline-flex',
+};
+
+// «N этаж» tag shown to the right of an active DEPARTURE shaft icon.
+const FLOOR_TAG_STYLE: React.CSSProperties = {
+  ...LABEL_STYLE,
+  position: 'absolute',
+  left: '100%',
+  top: '50%',
+  transform: 'translateY(-50%)',
+  marginLeft: '4px',
 };
 
 /** Stairs glyph (descending steps), white stroke for the dark chip. */
@@ -76,8 +114,16 @@ function ElevatorGlyph(): React.ReactElement {
   );
 }
 
-/** Floating labels for one floor: stairs/lifts → icon, other rooms → name. */
-function FloorLabels({ rooms }: { rooms: Room3DApi[] }): React.ReactElement {
+/** Floating labels for one floor: stairs/lifts → icon, other rooms → name.
+ *  `activeStairs` (keyed by room id): present ⇒ the shaft is on the route (orange);
+ *  a numeric value labels a DEPARTURE shaft with the floor it leads to. */
+function FloorLabels({
+  rooms,
+  activeStairs,
+}: {
+  rooms: Room3DApi[];
+  activeStairs?: Map<string, number | null>;
+}): React.ReactElement {
   return (
     <>
       {rooms
@@ -90,20 +136,27 @@ function FloorLabels({ rooms }: { rooms: Room3DApi[] }): React.ReactElement {
         .map((r) => {
           const isStair = r.room_type === 'staircase';
           const isLift = r.room_type === 'elevator';
+          const active = activeStairs?.has(r.id) ?? false;
+          const targetFloor = active ? activeStairs?.get(r.id) ?? null : null;
           return (
             <Html
               key={r.id}
               center
               position={r.position}
               style={{ pointerEvents: 'none' }}
-              zIndexRange={[10, 0]}
+              zIndexRange={active ? [20, 0] : [10, 0]}
             >
               {isStair || isLift ? (
-                <div
-                  style={ICON_PILL_STYLE}
-                  title={r.name || (isStair ? 'Лестница' : 'Лифт')}
-                >
-                  {isStair ? <StairsGlyph /> : <ElevatorGlyph />}
+                <div style={ICON_WRAP_STYLE}>
+                  <div
+                    style={active ? ACTIVE_ICON_PILL_STYLE : ICON_PILL_STYLE}
+                    title={r.name || (isStair ? 'Лестница' : 'Лифт')}
+                  >
+                    {isStair ? <StairsGlyph /> : <ElevatorGlyph />}
+                  </div>
+                  {typeof targetFloor === 'number' && (
+                    <div style={FLOOR_TAG_STYLE}>{targetFloor} этаж</div>
+                  )}
                 </div>
               ) : (
                 <div style={LABEL_STYLE}>{r.name}</div>
@@ -119,9 +172,11 @@ function FloorLabels({ rooms }: { rooms: Room3DApi[] }): React.ReactElement {
 function FloorGlb({
   floor,
   labels,
+  activeStairs,
 }: {
   floor: SceneFloor;
   labels?: Room3DApi[];
+  activeStairs?: Map<string, number | null>;
 }): React.ReactElement | null {
   // Renderable floors always have a url + placement (the parent filters), but the
   // hook must be called unconditionally → assert here.
@@ -148,7 +203,9 @@ function FloorGlb({
       scale={p.scale}
     >
       <primitive object={prepared} />
-      {labels && labels.length > 0 ? <FloorLabels rooms={labels} /> : null}
+      {labels && labels.length > 0 ? (
+        <FloorLabels rooms={labels} activeStairs={activeStairs} />
+      ) : null}
     </group>
   );
 }
@@ -181,11 +238,12 @@ class FloorErrorBoundary extends React.Component<
  */
 function CameraRig({
   groupRef,
+  userMovedRef,
 }: {
   groupRef: React.RefObject<THREE.Group>;
+  userMovedRef: React.MutableRefObject<boolean>;
 }): null {
   const { camera, controls } = useThree();
-  const userMovedRef = useRef(false);
 
   // Freeze auto-framing the moment the operator interacts with the controls.
   useEffect(() => {
@@ -219,13 +277,13 @@ function CameraRig({
     const groundDiag = Math.hypot(size.x, size.z);
     const distForWidth = groundDiag / 2 / Math.tan(hFov / 2);
     const distForHeight = (size.y + groundDiag * 0.5) / 2 / Math.tan(vFov / 2);
-    const dist = Math.max(distForWidth, distForHeight, 2) * 1.25;
-    // Lower, more side-on isometric angle (~33° elevation) so the building reads
-    // as a 3D volume and fills the frame, like the end-user floor viewer.
+    const dist = Math.max(distForWidth, distForHeight, 2) * 1.4;
+    // Lower, more side-on isometric angle (~27° elevation) so the whole building
+    // fits in frame and reads as a 3D volume, like the end-user floor viewer.
     camera.position.set(
-      center.x + dist * 0.62,
-      center.y + dist * 0.55,
-      center.z + dist * 0.56,
+      center.x + dist * 0.66,
+      center.y + dist * 0.46,
+      center.z + dist * 0.6,
     );
     camera.lookAt(center);
     persp.far = Math.max(5000, dist * 4);
@@ -243,6 +301,47 @@ function CameraRig({
   return null;
 }
 
+/**
+ * Exposes camera zoom outward via the viewer ref. Mirrors MeshViewer's
+ * ControlsBridge — dolly the camera along the (camera − target) vector, which
+ * works regardless of whether OrbitControls.dollyIn/Out is public. Marking
+ * userMoved freezes CameraRig's auto-fit so the manual zoom is not overwritten.
+ */
+function ControlsBridge({
+  handleRef,
+  userMovedRef,
+}: {
+  handleRef: React.ForwardedRef<BuildingMeshViewerHandle>;
+  userMovedRef: React.MutableRefObject<boolean>;
+}): null {
+  const { camera, controls } = useThree();
+
+  useImperativeHandle(
+    handleRef,
+    () => {
+      const dolly = (factor: number): void => {
+        const ctrl = controls as unknown as {
+          target: THREE.Vector3;
+          update: () => void;
+        } | null;
+        const target = ctrl?.target ?? new THREE.Vector3(0, 0, 0);
+        const offset = new THREE.Vector3().subVectors(camera.position, target);
+        offset.multiplyScalar(factor);
+        camera.position.copy(target).add(offset);
+        userMovedRef.current = true;
+        ctrl?.update();
+      };
+      return {
+        zoomIn: () => dolly(1 / ZOOM_FACTOR),
+        zoomOut: () => dolly(ZOOM_FACTOR),
+      };
+    },
+    [camera, controls, userMovedRef],
+  );
+
+  return null;
+}
+
 export interface BuildingMeshViewerProps {
   /** Floors to draw — already filtered to renderable ∧ visible by the caller. */
   floors: SceneFloor[];
@@ -253,15 +352,20 @@ export interface BuildingMeshViewerProps {
   routeSegments?: FloorPathSegment3D[];
   /** Optional stair/elevator risers for the route. */
   routeTransitions?: TransitionUsed3D[];
+  /** Stair/lift rooms the route uses, keyed by room id → highlight them orange;
+   *  a numeric value labels a departure shaft with the floor it leads to. */
+  activeStairs?: Map<string, number | null>;
 }
 
-export const BuildingMeshViewer: React.FC<BuildingMeshViewerProps> = ({
-  floors,
-  roomsByFloor,
-  routeSegments,
-  routeTransitions,
-}) => {
+export const BuildingMeshViewer = forwardRef<
+  BuildingMeshViewerHandle,
+  BuildingMeshViewerProps
+>(function BuildingMeshViewer(
+  { floors, roomsByFloor, routeSegments, routeTransitions, activeStairs },
+  ref,
+) {
   const groupRef = useRef<THREE.Group>(null);
+  const userMovedRef = useRef(false);
   // Top visible floor = the highest floor number among the drawn floors.
   const topFloorId =
     floors.length > 0
@@ -291,6 +395,7 @@ export const BuildingMeshViewer: React.FC<BuildingMeshViewerProps> = ({
                     ? roomsByFloor?.[floor.floor_id]
                     : undefined
                 }
+                activeStairs={activeStairs}
               />
             </Suspense>
           </FloorErrorBoundary>
@@ -307,7 +412,7 @@ export const BuildingMeshViewer: React.FC<BuildingMeshViewerProps> = ({
         )}
       </group>
 
-      <CameraRig groupRef={groupRef} />
+      <CameraRig groupRef={groupRef} userMovedRef={userMovedRef} />
 
       <OrbitControls
         makeDefault
@@ -317,8 +422,10 @@ export const BuildingMeshViewer: React.FC<BuildingMeshViewerProps> = ({
         minDistance={1}
         maxDistance={2000}
       />
+
+      <ControlsBridge handleRef={ref} userMovedRef={userMovedRef} />
     </Canvas>
   );
-};
+});
 
 export default BuildingMeshViewer;

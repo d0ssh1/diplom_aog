@@ -542,10 +542,14 @@ def find_multifloor_route_by_id(
                     {
                         "type": edge.get("transition_type", ""),
                         "from_floor_id": fid,
+                        # Bare node id (drop the "{floor_id}:" merge prefix) so the
+                        # client can match the hop to a stair/lift room icon.
+                        "from_node": node.split(":", 1)[-1],
                         "from_pos": (
                             (float(pos[0]), float(pos[1])) if pos is not None else None
                         ),
                         "to_floor_id": merged.nodes[nxt].get("floor_id"),
+                        "to_node": nxt.split(":", 1)[-1],
                         "to_pos": (
                             (float(npos[0]), float(npos[1])) if npos is not None else None
                         ),

@@ -11,7 +11,11 @@ import React, { useMemo } from 'react';
 import * as THREE from 'three';
 import { Line } from '@react-three/drei';
 import type { FloorPathSegment3D, TransitionUsed3D } from '../../types/buildingNav';
-import { liftPoint } from './multifloorRoutePath.helpers';
+import {
+  liftPoint,
+  segmentOccluded,
+  topRouteFloorNumber,
+} from './multifloorRoutePath.helpers';
 
 const ROUTE_COLOR = '#FF4500';
 const ROUTE_LIFT = 0.15; // metres above the floor, matching NavigationPath
@@ -25,14 +29,21 @@ export const MultifloorRoutePath: React.FC<MultifloorRoutePathProps> = ({
   segments,
   transitions,
 }) => {
+  // The topmost shown floor's line stays always-on-top; lower floors are
+  // depth-tested so the floor meshes above occlude them (no bleed-through onto
+  // the floor you're looking at). A single visible floor is its own top.
+  const topFloor = useMemo(() => topRouteFloorNumber(segments), [segments]);
   const segmentLines = useMemo(
     () =>
       segments
-        .map((seg) =>
-          seg.coordinates_3d.map((pt) => new THREE.Vector3(...liftPoint(pt, ROUTE_LIFT))),
-        )
-        .filter((pts) => pts.length >= 2),
-    [segments],
+        .map((seg) => ({
+          occluded: segmentOccluded(seg.floor_number, topFloor),
+          points: seg.coordinates_3d.map(
+            (pt) => new THREE.Vector3(...liftPoint(pt, ROUTE_LIFT)),
+          ),
+        }))
+        .filter((s) => s.points.length >= 2),
+    [segments, topFloor],
   );
 
   const risers = useMemo(
@@ -46,14 +57,14 @@ export const MultifloorRoutePath: React.FC<MultifloorRoutePathProps> = ({
 
   return (
     <>
-      {segmentLines.map((pts, i) => (
+      {segmentLines.map((seg, i) => (
         <Line
           key={`seg-${i}`}
-          points={pts}
+          points={seg.points}
           color={ROUTE_COLOR}
           lineWidth={4}
           renderOrder={2}
-          depthTest={false}
+          depthTest={seg.occluded}
         />
       ))}
       {risers.map((pts, i) => (

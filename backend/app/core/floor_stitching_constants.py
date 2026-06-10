@@ -50,6 +50,15 @@ PPM_WARN_RATIO = 0.10
 FLOOR_HEIGHT = 3.0
 """Extrusion height (metres) passed to build_mesh_from_mask."""
 
+INTER_FLOOR_GAP_M = 0.2
+"""Vertical clearance (metres) inserted between stacked floors in the 3D building
+view. The floor slab extrudes ~0.13 m BELOW its mesh origin, so with the stacking
+pitch equal to FLOOR_HEIGHT the upper floor's slab intersects the lower floor's
+wall tops — the lower floor appears to poke up through the floor above. The
+stacking pitch is therefore ``FLOOR_HEIGHT + INTER_FLOOR_GAP_M``, applied
+IDENTICALLY to the floor GLB placement (BuildingSceneService) AND the route
+elevation (BuildingNavService) so the meshes and the route stay in lock-step."""
+
 # ── Metric (scale-invariant) thresholds ─────────────────────────────────────────
 # Derivation note (no longer "magic"): both thresholds below are fixed in METRES
 # here (scale-invariant); the service converts them to pixels at runtime using
